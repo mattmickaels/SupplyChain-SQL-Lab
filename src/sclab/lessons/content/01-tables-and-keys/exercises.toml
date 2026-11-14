@@ -6,9 +6,9 @@ Show every column of plant.
 The columns are plant_code, name, city, and country.
 """
 hints = [
-  "The table name is plant.",
-  "Name those four columns, or use SELECT *.",
-  "You do not need WHERE or ORDER BY.",
+  "Every column means the whole plant row, not a filtered subset.",
+  "Use SELECT and FROM, with no WHERE.",
+  "SELECT plant_code, name, city, country FROM plant",
 ]
 reference_sql = [
   """
@@ -28,9 +28,9 @@ prompt_md = """
 List material_no, description, and material_type for every material.
 """
 hints = [
-  "The table name is material.",
-  "Select material_no, description, and material_type.",
-  "Leave the other material columns out.",
+  "You want three facts about every material, and the other columns stay out.",
+  "SELECT those three names FROM material.",
+  "SELECT material_no, description, material_type FROM material",
 ]
 reference_sql = [
   """
@@ -54,9 +54,9 @@ How many rows does purchase_order_item have?
 Return one column with that number.
 """
 hints = [
-  "The table name is purchase_order_item.",
-  "count(*) counts rows.",
-  "The result is one row and one column.",
+  "The question asks how many rows exist, which is one number.",
+  "Use COUNT(*) on purchase_order_item.",
+  "SELECT COUNT(*) AS row_count FROM purchase_order_item",
 ]
 reference_sql = [
   """
@@ -83,9 +83,9 @@ supplier_count is count(DISTINCT supplier_no).
 When the two numbers match, every supplier number appears on exactly one row.
 """
 hints = [
-  "count(*) counts the rows.",
-  "count(DISTINCT supplier_no) counts different supplier numbers.",
-  "Name the columns row_count and supplier_count.",
+  "A unique key means the row count equals the count of different supplier numbers.",
+  "Use COUNT(*) and COUNT(DISTINCT supplier_no) in the same SELECT.",
+  "SELECT COUNT(*) AS row_count, COUNT(DISTINCT supplier_no) AS supplier_count FROM supplier",
 ]
 reference_sql = [
   """
@@ -111,9 +111,9 @@ po_no alone is not the key, because one order has several lines.
 po_no plus line_no is the key, because that pair identifies exactly one line.
 """
 hints = [
-  "Read purchase_order_item, not purchase_order.",
-  "Filter with WHERE po_no = 'PO-0011971'.",
-  "Select po_no, line_no, material_no, and order_qty.",
+  "Several lines can share one purchase order number, so filter to the named order.",
+  "Use WHERE po_no = 'PO-0011971' on purchase_order_item.",
+  "SELECT po_no, line_no, material_no, order_qty FROM purchase_order_item WHERE po_no = 'PO-0011971'",
 ]
 reference_sql = [
   """

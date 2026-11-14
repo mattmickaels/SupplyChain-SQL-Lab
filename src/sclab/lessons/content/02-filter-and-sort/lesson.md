@@ -28,8 +28,55 @@ Austin comes before Santa Clara because AU01 comes before SC01.
 A blank value does not pass a comparison.
 A confirmed date that is blank is not after today, and a blank lead time is not between two numbers.
 
-Each exercise in this lesson reads one table, except the open lines for customer C-2003.
-The customer number is on sales_order, and the line is on sales_order_item, so that exercise reads both.
+LIKE uses % for any text in that spot.
+'%RF generator%' matches the phrase anywhere, including Spare RF generator kit.
+'RF generator%' matches only when the description starts with that phrase.
+
+```sql
+SELECT description
+FROM material
+WHERE description LIKE '%RF generator%'
+```
+
+BETWEEN includes both ends.
+A lead time of 120 or 180 is inside BETWEEN 120 AND 180.
+A blank lead time is not.
+
+```sql
+SELECT material_no
+FROM material_plant
+WHERE planned_lead_time_days BETWEEN 120 AND 180
+```
+
+ORDER BY name DESC sorts Z to A.
+On plant, that order is Singapore, then Santa Clara, then Austin.
+
+```sql
+SELECT name
+FROM plant
+ORDER BY name DESC
+```
+
+LIMIT keeps only the first rows after the sort.
+LIMIT 2 on plant codes keeps AU01 and SC01.
+
+```sql
+SELECT plant_code
+FROM plant
+ORDER BY plant_code
+LIMIT 2
+```
+
+AS names a computed column.
+name_length below is the number of characters in the plant name.
+Santa Clara is 12 characters, Singapore is 9, and Austin is 6.
+
+```sql
+SELECT name, LENGTH(name) AS name_length
+FROM plant
+```
+
+Each exercise in this lesson reads one table.
 
 Check yourself.
 Say which rows your WHERE removes.
