@@ -1,0 +1,29 @@
+[[exercise]]
+id = "sample-plants"
+title = "List the plants"
+prompt_md = "Return every plant code."
+hints = [
+  "Start from the plant table.",
+  "Select the plant code column.",
+  "You do not need an ORDER BY.",
+]
+reference_sql = [
+  "SELECT plant_code FROM plant",
+  "SELECT plant_code FROM plant ORDER BY 1",
+]
+order_matters = false
+names_matter = false
+excel_tip = "This is like listing one column in a sheet."
+
+[[exercise]]
+id = "sample-count"
+title = "Count the plants"
+prompt_md = "How many plants are there?"
+hints = [
+  "Use count.",
+  "Count every row.",
+  "The result is one number.",
+]
+reference_sql = ["SELECT count(*) AS plant_count FROM plant"]
+order_matters = false
+names_matter = true
