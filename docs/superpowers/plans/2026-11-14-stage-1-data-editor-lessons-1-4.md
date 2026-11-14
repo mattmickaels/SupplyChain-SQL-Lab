@@ -492,3 +492,4 @@ Lesson 4, Joins, taught as VLOOKUP and beyond (8 exercises):
   CI and the learner's laptop keep `uv run pytest` and `uv run sclab`.
 - 2026-11-14, Task 3 review ruling (coordinator): `production_order.so_line_no` and `goods_receipt.line_no` are `INTEGER`, matching the `line_no INTEGER` keys they reference; the Task 2 table left them unannotated by mistake, and the pinned contract test is correct.
 - 2026-11-14, Task 4 review ruling (coordinator): cancelled tool sales order lines get no production order, as in a real ERP; the "one production order per tool sales order line" rule applies to non-cancelled lines.
+- 2026-11-14, Task 4 round 3 ruling (coordinator): no sales order is dated after AS_OF_DATE; the open tool backlog is booked 3-12 months ahead with requested dates to about October 2027; later demand lives only in demand_forecast. Production starts are planned back from the promised date. The Corvane shortage targets 5-15 at-risk Etch lines.
