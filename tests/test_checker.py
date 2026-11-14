@@ -168,3 +168,47 @@ def test_normalize_value_leaves_null_bool_and_text(value: object, normalized: ob
     got = normalize_value(value)
     assert type(got) is type(normalized)
     assert got == normalized
+
+
+def test_reordered_columns_pass_by_default() -> None:
+    expected = result(["plant_code", "name"], [("P1", "North"), ("P2", "South")])
+    actual = result(["name", "plant_code"], [("North", "P1"), ("South", "P2")])
+    outcome = compare(actual, expected)
+    assert outcome.passed is True
+    assert outcome.summary == "Result matches."
+    assert outcome.missing_rows == []
+    assert outcome.extra_rows == []
+
+
+def test_reordered_unnamed_columns_pass_by_values() -> None:
+    expected = result(["plant_code", "name"], [("P1", "North"), ("P2", "South")])
+    actual = result(["col_b", "col_a"], [("North", "P1"), ("South", "P2")])
+    outcome = compare(actual, expected)
+    assert outcome.passed is True
+    assert outcome.summary == "Result matches."
+
+
+def test_columns_in_order_required_fails_on_swap() -> None:
+    expected = result(["plant_code", "name"], [("P1", "North")])
+    actual = result(["name", "plant_code"], [("North", "P1")])
+    outcome = compare(actual, expected, columns_in_order=True)
+    assert outcome.passed is False
+    assert outcome.missing_rows == [("P1", "North")]
+    assert outcome.extra_rows == [("North", "P1")]
+    assert outcome.summary == "1 missing row and 1 extra row."
+
+
+def test_ambiguous_identical_columns_resolved() -> None:
+    expected = result(
+        ["left", "right", "tag"],
+        [(1, 2, "X"), (2, 1, "Y")],
+    )
+    actual = result(
+        ["c", "b", "a"],
+        [("X", 2, 1), ("Y", 1, 2)],
+    )
+    outcome = compare(actual, expected)
+    assert outcome.passed is True
+    assert outcome.summary == "Result matches."
+    positional = compare(actual, expected, columns_in_order=True)
+    assert positional.passed is False

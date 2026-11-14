@@ -1,4 +1,5 @@
-from collections import Counter
+import itertools
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -6,6 +7,7 @@ from decimal import Decimal
 from sclab.engine.types import QueryResult
 
 _EXAMPLE_LIMIT = 5
+_MAX_COLUMN_PERMUTATIONS = 5040
 
 
 @dataclass
@@ -30,6 +32,96 @@ def normalize_value(v: object) -> object:
 
 def _row_key(row: tuple) -> tuple:
     return tuple(normalize_value(value) for value in row)
+
+
+def _value_sort_key(value: object) -> tuple[str, str]:
+    return (type(value).__name__, repr(value))
+
+
+def _column_signature(rows: list[tuple], index: int) -> tuple:
+    counts = Counter(normalize_value(row[index]) for row in rows)
+    return tuple(sorted(counts.items(), key=lambda item: _value_sort_key(item[0])))
+
+
+def _align_by_name(actual: list[str], expected: list[str]) -> list[int] | None:
+    actual_keys = [name.casefold() for name in actual]
+    expected_keys = [name.casefold() for name in expected]
+    if set(actual_keys) != set(expected_keys) or len(set(actual_keys)) != len(actual_keys):
+        return None
+    index_by_name = {name: index for index, name in enumerate(actual_keys)}
+    return [index_by_name[name] for name in expected_keys]
+
+
+def _value_mappings(actual_rows: list[tuple], expected_rows: list[tuple], width: int):
+    actual_sigs = [_column_signature(actual_rows, index) for index in range(width)]
+    expected_sigs = [_column_signature(expected_rows, index) for index in range(width)]
+    if Counter(actual_sigs) != Counter(expected_sigs):
+        return
+    actual_groups: dict[tuple, list[int]] = defaultdict(list)
+    expected_groups: dict[tuple, list[int]] = defaultdict(list)
+    for index, signature in enumerate(actual_sigs):
+        actual_groups[signature].append(index)
+    ordered_sigs: list[tuple] = []
+    seen: set[tuple] = set()
+    for signature in expected_sigs:
+        if signature not in seen:
+            seen.add(signature)
+            ordered_sigs.append(signature)
+            for index, candidate in enumerate(expected_sigs):
+                if candidate == signature:
+                    expected_groups[signature].append(index)
+    pools = [actual_groups[signature] for signature in ordered_sigs]
+    targets = [expected_groups[signature] for signature in ordered_sigs]
+    tries = 0
+    permutations = (itertools.permutations(pool) for pool in pools)
+    for choice in itertools.product(*permutations):
+        if tries >= _MAX_COLUMN_PERMUTATIONS:
+            return
+        tries += 1
+        mapping = [-1] * width
+        for expected_indexes, actual_indexes in zip(targets, choice, strict=True):
+            for expected_index, actual_index in zip(expected_indexes, actual_indexes, strict=True):
+                mapping[expected_index] = actual_index
+        yield mapping
+
+
+def _project(rows: list[tuple], mapping: list[int]) -> list[tuple]:
+    return [tuple(row[index] for index in mapping) for row in rows]
+
+
+def _rows_equal(actual: list[tuple], expected: list[tuple], order_matters: bool) -> bool:
+    actual_keys = [_row_key(row) for row in actual]
+    expected_keys = [_row_key(row) for row in expected]
+    if order_matters:
+        return actual_keys == expected_keys
+    return Counter(actual_keys) == Counter(expected_keys)
+
+
+def _aligned_rows(
+    actual: QueryResult,
+    expected: QueryResult,
+    order_matters: bool,
+    columns_in_order: bool,
+) -> list[tuple]:
+    if columns_in_order:
+        return list(actual.rows)
+    mapping = _align_by_name(actual.columns, expected.columns)
+    if mapping is not None:
+        return _project(actual.rows, mapping)
+    matched: list[tuple] | None = None
+    first: list[tuple] | None = None
+    for candidate in _value_mappings(actual.rows, expected.rows, len(expected.columns)):
+        projected = _project(actual.rows, candidate)
+        if first is None:
+            first = projected
+        if _rows_equal(projected, expected.rows, order_matters):
+            matched = projected
+            break
+    if matched is not None:
+        return matched
+    if first is not None:
+        return first
+    return list(actual.rows)
 
 
 def _unmatched(rows: list[tuple], other: list[tuple]) -> tuple[list[tuple], int]:
@@ -67,6 +159,7 @@ def compare(
     expected: QueryResult,
     order_matters: bool = False,
     names_matter: bool = False,
+    columns_in_order: bool = False,
 ) -> CheckOutcome:
     expected_count = len(expected.rows)
     actual_count = len(actual.rows)
@@ -93,9 +186,10 @@ def compare(
             actual_count=actual_count,
         )
 
-    missing_rows, missing_total = _unmatched(expected.rows, actual.rows)
-    extra_rows, extra_total = _unmatched(actual.rows, expected.rows)
-    order_wrong = order_matters and [_row_key(row) for row in actual.rows] != [
+    aligned_rows = _aligned_rows(actual, expected, order_matters, columns_in_order)
+    missing_rows, missing_total = _unmatched(expected.rows, aligned_rows)
+    extra_rows, extra_total = _unmatched(aligned_rows, expected.rows)
+    order_wrong = order_matters and [_row_key(row) for row in aligned_rows] != [
         _row_key(row) for row in expected.rows
     ]
     passed = missing_total == 0 and extra_total == 0 and not order_wrong
