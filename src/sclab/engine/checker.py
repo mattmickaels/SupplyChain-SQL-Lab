@@ -72,17 +72,19 @@ def _value_mappings(actual_rows: list[tuple], expected_rows: list[tuple], width:
                     expected_groups[signature].append(index)
     pools = [actual_groups[signature] for signature in ordered_sigs]
     targets = [expected_groups[signature] for signature in ordered_sigs]
-    tries = 0
-    permutations = (itertools.permutations(pool) for pool in pools)
-    for choice in itertools.product(*permutations):
-        if tries >= _MAX_COLUMN_PERMUTATIONS:
+    mapping = [-1] * width
+
+    def visit(group: int):
+        if group == len(pools):
+            yield mapping.copy()
             return
-        tries += 1
-        mapping = [-1] * width
-        for expected_indexes, actual_indexes in zip(targets, choice, strict=True):
+        expected_indexes = targets[group]
+        for actual_indexes in itertools.permutations(pools[group]):
             for expected_index, actual_index in zip(expected_indexes, actual_indexes, strict=True):
                 mapping[expected_index] = actual_index
-        yield mapping
+            yield from visit(group + 1)
+
+    yield from visit(0)
 
 
 def _project(rows: list[tuple], mapping: list[int]) -> list[tuple]:
@@ -105,22 +107,19 @@ def _aligned_rows(
 ) -> list[tuple]:
     if columns_in_order:
         return list(actual.rows)
-    mapping = _align_by_name(actual.columns, expected.columns)
-    if mapping is not None:
-        return _project(actual.rows, mapping)
-    matched: list[tuple] | None = None
-    first: list[tuple] | None = None
-    for candidate in _value_mappings(actual.rows, expected.rows, len(expected.columns)):
+
+    def candidates():
+        yield list(range(len(expected.columns)))
+        mapping = _align_by_name(actual.columns, expected.columns)
+        if mapping is not None:
+            yield mapping
+        yield from _value_mappings(actual.rows, expected.rows, len(expected.columns))
+
+    # One budget includes identity, name alignment, and lazy value alignments.
+    for candidate in itertools.islice(candidates(), _MAX_COLUMN_PERMUTATIONS):
         projected = _project(actual.rows, candidate)
-        if first is None:
-            first = projected
         if _rows_equal(projected, expected.rows, order_matters):
-            matched = projected
-            break
-    if matched is not None:
-        return matched
-    if first is not None:
-        return first
+            return projected
     return list(actual.rows)
 
 
@@ -172,9 +171,15 @@ def compare(
             expected_count=expected_count,
             actual_count=actual_count,
         )
-    if names_matter and [name.casefold() for name in actual.columns] != [
-        name.casefold() for name in expected.columns
-    ]:
+    aligned_rows = _aligned_rows(actual, expected, order_matters, columns_in_order)
+    actual_names = [name.casefold() for name in actual.columns]
+    expected_names = [name.casefold() for name in expected.columns]
+    names_match = (
+        actual_names == expected_names
+        if columns_in_order
+        else set(actual_names) == set(expected_names)
+    )
+    if names_matter and not names_match:
         expected_names = ", ".join(expected.columns)
         actual_names = ", ".join(actual.columns)
         return CheckOutcome(
@@ -186,7 +191,6 @@ def compare(
             actual_count=actual_count,
         )
 
-    aligned_rows = _aligned_rows(actual, expected, order_matters, columns_in_order)
     missing_rows, missing_total = _unmatched(expected.rows, aligned_rows)
     extra_rows, extra_total = _unmatched(aligned_rows, expected.rows)
     order_wrong = order_matters and [_row_key(row) for row in aligned_rows] != [

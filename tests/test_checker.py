@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 
+from sclab.engine import checker
 from sclab.engine.checker import CheckOutcome, compare, normalize_value
 from sclab.engine.types import QueryError, QueryResult
 
@@ -67,7 +68,7 @@ def test_column_names_checked_when_required() -> None:
     same_case = result(["Plant_Code", "NAME"], [("P1", "North")])
     assert compare(same_case, expected, names_matter=True).passed is True
     swapped = result(["name", "plant_code"], [("North", "P1")])
-    assert compare(swapped, expected, names_matter=True).passed is False
+    assert compare(swapped, expected, names_matter=True).passed is True
 
 
 def test_column_count_mismatch_message() -> None:
@@ -212,3 +213,54 @@ def test_ambiguous_identical_columns_resolved() -> None:
     assert outcome.summary == "Result matches."
     positional = compare(actual, expected, columns_in_order=True)
     assert positional.passed is False
+
+
+def test_swapped_aliases_with_values_in_place_pass() -> None:
+    expected = result(["a", "b"], [(1, 2)])
+    actual = result(["b", "a"], [(1, 2)])
+    assert compare(actual, expected).passed is True
+
+
+def test_names_matter_ignores_name_order_when_columns_not_in_order() -> None:
+    expected = result(["a", "b"], [(1, 2)])
+    actual = result(["B", "A"], [(2, 1)])
+    assert compare(actual, expected, names_matter=True).passed is True
+    assert compare(result(["B", "A"], [(1, 2)]), expected, names_matter=True).passed is True
+
+
+def test_names_matter_and_columns_in_order_fail_on_name_swap() -> None:
+    expected = result(["a", "b"], [(1, 2)])
+    actual = result(["B", "A"], [(1, 2)])
+    outcome = compare(actual, expected, names_matter=True, columns_in_order=True)
+    assert outcome.passed is False
+    assert outcome.summary == "Expected columns a, b, got B, A."
+
+
+@pytest.mark.parametrize("rows_match", [False, True])
+def test_wide_ambiguous_result_respects_cap(monkeypatch, rows_match: bool) -> None:
+    width = 12
+    actual = result([f"a{i}" for i in range(width)], [(0,) * width, (1,) * width])
+    expected_rows = actual.rows if rows_match else [(0, 1) * 6, (1, 0) * 6]
+    expected = result([f"e{i}" for i in range(width)], expected_rows)
+    original_permutations = checker.itertools.permutations
+    original_rows_equal = checker._rows_equal
+    generated = comparisons = 0
+
+    def guarded_permutations(pool):
+        nonlocal generated
+        for permutation in original_permutations(pool):
+            generated += 1
+            # Stop an eager factorial allocation before it can exhaust memory.
+            assert generated <= 5040
+            yield permutation
+
+    def counted_rows_equal(*args):
+        nonlocal comparisons
+        comparisons += 1
+        assert comparisons <= 5040
+        return original_rows_equal(*args)
+
+    monkeypatch.setattr(checker.itertools, "permutations", guarded_permutations)
+    monkeypatch.setattr(checker, "_rows_equal", counted_rows_equal)
+    assert compare(actual, expected).passed is rows_match
+    assert comparisons == (1 if rows_match else 5040)
