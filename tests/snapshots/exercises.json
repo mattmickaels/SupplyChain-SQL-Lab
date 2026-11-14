@@ -1,0 +1,62 @@
+{
+  "group-avg-quoted-lead-time": {
+    "md5": "51c7ebaafa39bdb82746d252c2e10b3f",
+    "row_count": 150
+  },
+  "group-lines-by-order-year": {
+    "md5": "997c3267ec172b04b93014efd08ae145",
+    "row_count": 5
+  },
+  "group-materials-by-type": {
+    "md5": "cdc83693ff84d80d753252ff00ae54d2",
+    "row_count": 4
+  },
+  "group-materials-many-suppliers": {
+    "md5": "52a8da7e8517123b2292d43a3afe62b0",
+    "row_count": 2753
+  },
+  "group-null-lead-time": {
+    "md5": "53d99b093ecc9c3c5277bdb15c718c53",
+    "row_count": 3
+  },
+  "group-open-qty-by-customer": {
+    "md5": "31cf8d14eb1531887a2aca83ff60252e",
+    "row_count": 25
+  },
+  "group-suppliers-by-country": {
+    "md5": "f4469d391f508763de3e150eacc6157d",
+    "row_count": 9
+  },
+  "join-corvane-late-lines": {
+    "md5": "fe7d2d780a92fb8bc8caf82f20538fe0",
+    "row_count": 59
+  },
+  "join-etch-tool-components": {
+    "md5": "22a5262174a7a82ba60896ba218aa5e4",
+    "row_count": 5
+  },
+  "join-long-lead-without-open-po": {
+    "md5": "f3c9469e15e087db8a3500293d61cb58",
+    "row_count": 5
+  },
+  "join-october-po-supplier": {
+    "md5": "6410d3706b40f6c353c697ac72fbfa89",
+    "row_count": 2240
+  },
+  "join-october-received-qty": {
+    "md5": "7b543b3aaa2c513c37707eda025b0af1",
+    "row_count": 2240
+  },
+  "join-open-rf-po-lines": {
+    "md5": "d0d5dac2b1057f19cd7be98948531888",
+    "row_count": 42
+  },
+  "join-open-sales-lines": {
+    "md5": "37d6ca697920cf40039bf99519bd779a",
+    "row_count": 546
+  },
+  "join-single-source-long-lead": {
+    "md5": "46002e15b3d48c8b45ab9bf54764c856",
+    "row_count": 12
+  }
+}
