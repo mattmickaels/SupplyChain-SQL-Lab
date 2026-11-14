@@ -480,3 +480,13 @@ Lesson 4, Joins, taught as VLOOKUP and beyond (8 exercises):
 - [ ] **Step 2:** In the browser, complete one exercise per lesson, trigger each Review Focus case, check Schema and Playground, and review the pages in light and dark mode for layout problems.
 - [ ] **Step 3:** Confirm CI is green on Windows and macOS.
 - [ ] **Step 4:** Update README with the learner's quick start and the stage 1 scope; commit `docs: stage 1 quick start`.
+
+---
+
+## Changes during execution
+
+- 2026-11-14, parallel lanes (Matt approved): Tasks 2-4 run in the main folder while Tasks 6-7 run in a separate worktree.
+  - `QueryResult` and `QueryError` move from Task 5 to Task 6, in `src/sclab/engine/types.py`; Task 5 imports and re-exports them.
+  - `check_answer` takes an injectable `runner: Callable[[str], QueryResult] | None = None`, lazily importing `run_query` when None, so Task 7 can be tested without a database.
+- 2026-11-14, build laptop: uv console-script launchers are blocked locally ("Access is denied", os error 5), so local commands use `uv run -m pytest` and `uv run -m sclab`; Task 8 adds `src/sclab/__main__.py`.
+  CI and the learner's laptop keep `uv run pytest` and `uv run sclab`.
