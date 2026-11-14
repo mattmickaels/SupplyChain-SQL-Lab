@@ -12,6 +12,8 @@ SAP-named views are created by the database build.
 
 **Tech Stack:** Stages 1-2 stack plus Chart.js 4.4.1 (UMD build, vendored) for notebook charts.
 
+**Status:** approved by Matt, 2026-11-14.
+
 **Spec:** `docs/superpowers/specs/2026-11-14-supply-chain-sql-lab-design.md`
 **Builds on:** the stage 1 and stage 2 plans and the code they produced.
 Before dispatching each task, the orchestrator checks the interfaces named below against the merged code and corrects the brief if a name moved.
