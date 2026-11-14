@@ -491,3 +491,4 @@ Lesson 4, Joins, taught as VLOOKUP and beyond (8 exercises):
 - 2026-11-14, build laptop: uv console-script launchers are blocked locally ("Access is denied", os error 5), so local commands use `uv run -m pytest` and `uv run -m sclab`; Task 8 adds `src/sclab/__main__.py`.
   CI and the learner's laptop keep `uv run pytest` and `uv run sclab`.
 - 2026-11-14, Task 3 review ruling (coordinator): `production_order.so_line_no` and `goods_receipt.line_no` are `INTEGER`, matching the `line_no INTEGER` keys they reference; the Task 2 table left them unannotated by mistake, and the pinned contract test is correct.
+- 2026-11-14, Task 4 review ruling (coordinator): cancelled tool sales order lines get no production order, as in a real ERP; the "one production order per tool sales order line" rule applies to non-cancelled lines.
