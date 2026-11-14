@@ -7,3 +7,4 @@ Local ERP-style SQL learning lab for a semiconductor-equipment supply chain, bui
 Install uv from https://docs.astral.sh/uv/.
 Clone this repository.
 From the repository root, run `uv run sclab`.
+If that launcher is blocked, run `uv run -m sclab`.

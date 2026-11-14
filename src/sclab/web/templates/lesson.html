@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ lesson_title }}{% endblock %}
+{% block content %}
+<p class="today">Today in the lab is {{ today }}.</p>
+<h1>{{ lesson_title }}</h1>
+<div class="prose">{{ body_html }}</div>
+{% for exercise in exercises %}
+<section class="exercise" id="exercise-{{ exercise.id }}">
+  <h2>{{ exercise.title }}</h2>
+  <div class="prose">{{ exercise.prompt_html }}</div>
+  {% if exercise.excel_tip %}
+  <p class="tip">Excel tip. {{ exercise.excel_tip }}</p>
+  {% endif %}
+  <form id="form-{{ exercise.id }}">
+    <label for="sql-{{ exercise.id }}">SQL</label>
+    <textarea id="sql-{{ exercise.id }}" name="sql" data-editor rows="6">{{ exercise.sql }}</textarea>
+    <input type="hidden" name="target" value="lesson">
+    <div class="actions">
+      <button type="button" data-run hx-post="/api/run" hx-include="#form-{{ exercise.id }}" hx-target="#result-{{ exercise.id }}">Run</button>
+      <button type="button" hx-post="/api/check/{{ exercise.id }}" hx-include="#form-{{ exercise.id }}" hx-target="#check-{{ exercise.id }}">Check</button>
+      <button type="button" hx-get="/api/hint/{{ exercise.id }}/1" hx-target="#hint-{{ exercise.id }}">Hint</button>
+      <button type="button" hx-get="/api/solution/{{ exercise.id }}" hx-target="#solution-{{ exercise.id }}">Show solution</button>
+    </div>
+  </form>
+  <div class="hint-panel" id="hint-{{ exercise.id }}"></div>
+  <div id="solution-{{ exercise.id }}"></div>
+  <div id="result-{{ exercise.id }}"></div>
+  <div id="check-{{ exercise.id }}"></div>
+</section>
+{% endfor %}
+{% endblock %}

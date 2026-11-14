@@ -1,0 +1,211 @@
+:root {
+  color-scheme: light;
+  --bg: #f3f5f7;
+  --paper: #ffffff;
+  --ink: #1b242c;
+  --muted: #5c6b78;
+  --line: #d5dee6;
+  --accent: #0f6e6b;
+  --accent-ink: #ffffff;
+  --ok: #0d6b3a;
+  --ok-bg: #e5f6ec;
+  --warn: #8a4b12;
+  --warn-bg: #fdeee6;
+  --null-bg: #e7edf2;
+  --shadow: 0 1px 2px rgba(20, 32, 42, 0.06);
+  --sans: "Segoe UI", system-ui, sans-serif;
+  --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #12171c;
+    --paper: #1b232b;
+    --ink: #e7eef4;
+    --muted: #a8b6c2;
+    --line: #2e3b46;
+    --accent: #3dbeb6;
+    --accent-ink: #06211f;
+    --ok: #8ed7ad;
+    --ok-bg: #163226;
+    --warn: #f0c08a;
+    --warn-bg: #3a261c;
+    --null-bg: #2a3641;
+    --shadow: none;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  line-height: 1.5;
+}
+
+a { color: var(--accent); }
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.9rem 1.25rem;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
+.wordmark {
+  color: var(--ink);
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+}
+
+nav { display: flex; gap: 1rem; }
+
+nav a { text-decoration: none; font-weight: 600; }
+
+main {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+h1 { margin: 0.2rem 0 1rem; font-size: 1.7rem; }
+
+.today { color: var(--muted); margin: 0; }
+
+.lesson-list, .schema-list { list-style: none; padding: 0; margin: 0; }
+
+.lesson-list a, .schema-list li, .exercise, .tip, .message, .banner, .summary, .hint {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  box-shadow: var(--shadow);
+}
+
+.lesson-list a {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.8rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.6rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.lesson-list small, .schema-list small { display: block; color: var(--muted); }
+
+.lesson-number, .progress {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.schema-list li {
+  display: grid;
+  grid-template-columns: 14rem 8rem 1fr;
+  gap: 0.8rem;
+  padding: 0.7rem 1rem;
+  margin-bottom: 0.45rem;
+}
+
+.exercise { padding: 1rem; margin: 1rem 0; }
+
+.tip, .hint, .message, .summary { padding: 0.7rem 0.9rem; }
+
+.banner {
+  padding: 0.7rem 0.9rem;
+  background: var(--ok-bg);
+  color: var(--ok);
+  font-weight: 650;
+}
+
+.message, .summary { background: var(--warn-bg); color: var(--warn); }
+
+label { display: block; font-weight: 600; margin-bottom: 0.35rem; }
+
+textarea {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 0.95rem;
+}
+
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.7rem; }
+
+button {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 0;
+  border-radius: 0.4rem;
+  padding: 0.45rem 0.8rem;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+button:focus-visible, a:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.grid-wrap { overflow-x: auto; margin-top: 0.8rem; }
+
+.grid {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.88rem;
+  background: var(--paper);
+}
+
+.grid th, .grid td {
+  border: 1px solid var(--line);
+  padding: 0.28rem 0.5rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.grid th { background: var(--bg); }
+
+.null {
+  display: inline-block;
+  padding: 0.02rem 0.35rem;
+  border-radius: 0.25rem;
+  background: var(--null-bg);
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+}
+
+.meta, .muted, .empty { color: var(--muted); }
+
+.solution {
+  overflow-x: auto;
+  padding: 0.8rem 1rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  font-family: var(--mono);
+}
+
+.CodeMirror {
+  height: auto;
+  min-height: 8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  font-family: var(--mono);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.CodeMirror-gutters { background: var(--bg); border-right: 1px solid var(--line); }
+
+@media (max-width: 40rem) {
+  .schema-list li, .lesson-list a { grid-template-columns: 1fr; }
+  .top { flex-direction: column; align-items: flex-start; }
+}

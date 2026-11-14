@@ -411,8 +411,10 @@ def test_version_mismatch_rebuilds(tmp_path, monkeypatch) -> None:
     assert sandbox.exists()
 
 
-def test_cli_shows_build_progress(lab_home, capsys) -> None:
+def test_cli_shows_build_progress(lab_home, capsys, monkeypatch) -> None:
     assert os.environ["SCLAB_HOME"] == str(lab_home)
+    monkeypatch.setattr("sclab.cli.webbrowser.open", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("sclab.cli.uvicorn.run", lambda *_args, **_kwargs: None)
     main()
     captured = capsys.readouterr()
     assert "Building the lab database (first run only)..." in captured.out + captured.err
