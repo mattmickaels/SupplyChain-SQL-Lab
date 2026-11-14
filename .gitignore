@@ -13,3 +13,8 @@ state/
 .worktrees/
 .lavish/
 .superpowers/
+
+*.duckdb
+*.duckdb.wal
+.venv/
+__pycache__/

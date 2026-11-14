@@ -1,7 +1,9 @@
 # SupplyChain-SQL-Lab
 
-Local ERP-style SQL learning lab for a semiconductor-equipment supply chain, built to close a friend's SQL and data gaps for a technical program manager role
+Local ERP-style SQL learning lab for a semiconductor-equipment supply chain, built to close a friend's SQL and data gaps for a technical program manager role.
 
-## Use
+## Setup
 
-Describe how to run or use this project.
+Install uv from https://docs.astral.sh/uv/.
+Clone this repository.
+From the repository root, run `uv run sclab`.
