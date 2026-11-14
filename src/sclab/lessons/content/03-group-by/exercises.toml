@@ -24,33 +24,32 @@ names_matter = true
 excel_tip = "This is a pivot with material type on the rows and a count of materials in the values."
 
 [[exercise]]
-id = "group-open-qty-by-customer"
-title = "Open quantity by customer"
+id = "group-open-qty-by-material"
+title = "Open quantity by material"
 prompt_md = """
-The quantity is on sales_order_item and the customer number is on sales_order.
-Join them and keep lines whose status is Open.
-Return customer_no and total_qty, the sum of qty.
-Order by total_qty descending, then customer_no.
-Some customers share the same total, so the customer number has to break the tie.
+Add up the open sales order quantity for each material_no.
+Use sales_order_item only, and keep lines whose status is Open.
+Return material_no and total_qty, the sum of qty.
+Order by total_qty descending, then material_no.
+Some materials share the same total, so the material number has to break the tie.
 """
 hints = [
-  "Add up open line quantity once per customer.",
-  "Join on so_no, filter status = 'Open', then GROUP BY customer_no and SUM(qty).",
-  "SELECT h.customer_no, SUM(i.qty) AS total_qty FROM sales_order_item AS i JOIN sales_order AS h ON h.so_no = i.so_no WHERE i.status = 'Open' GROUP BY h.customer_no ORDER BY total_qty DESC, h.customer_no",
+  "Add up open line quantity once per material.",
+  "Filter status = 'Open', then GROUP BY material_no and SUM(qty).",
+  "SELECT material_no, SUM(qty) AS total_qty FROM sales_order_item WHERE status = 'Open' GROUP BY material_no ORDER BY total_qty DESC, material_no",
 ]
 reference_sql = [
   """
-SELECT h.customer_no, sum(i.qty) AS total_qty
-FROM sales_order_item AS i
-JOIN sales_order AS h ON h.so_no = i.so_no
-WHERE i.status = 'Open'
-GROUP BY h.customer_no
-ORDER BY total_qty DESC, h.customer_no
+SELECT material_no, sum(qty) AS total_qty
+FROM sales_order_item
+WHERE status = 'Open'
+GROUP BY material_no
+ORDER BY total_qty DESC, material_no
 """,
 ]
 order_matters = true
 names_matter = true
-excel_tip = "Filter the sheet to Open, then pivot quantity by customer."
+excel_tip = "Filter the sheet to Open, then pivot quantity by material."
 
 [[exercise]]
 id = "group-suppliers-by-country"

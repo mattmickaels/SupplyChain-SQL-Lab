@@ -94,7 +94,8 @@ WHERE i.po_no = 'PO-0043687' AND i.line_no = 1
 order_qty stays 18.
 received_qty is 18.
 
-Write the test as confirmed_delivery_date >= requested_delivery_date + INTERVAL 56 DAY, because that sum is still a date on both DuckDB and Databricks.
+Write the test as confirmed_delivery_date >= requested_delivery_date + INTERVAL 56 DAY, because that sum is a date-time (timestamp) on both DuckDB and Databricks.
+A date-time still compares correctly with a date.
 Date minus date is not used here, because those engines do not return the same kind of value.
 
 Line 1 of PO-0012389 was requested for 18 January 2027 and confirmed for 15 March 2027.

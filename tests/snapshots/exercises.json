@@ -31,9 +31,9 @@
     "md5": "53d99b093ecc9c3c5277bdb15c718c53",
     "row_count": 3
   },
-  "group-open-qty-by-customer": {
-    "md5": "31cf8d14eb1531887a2aca83ff60252e",
-    "row_count": 25
+  "group-open-qty-by-material": {
+    "md5": "066b62288cbe9beb8a94278d0e158ea0",
+    "row_count": 275
   },
   "group-suppliers-by-country": {
     "md5": "f4469d391f508763de3e150eacc6157d",
