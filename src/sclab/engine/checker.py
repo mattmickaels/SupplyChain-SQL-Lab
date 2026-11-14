@@ -46,15 +46,24 @@ def _column_signature(rows: list[tuple], index: int) -> tuple:
 def _align_by_name(actual: list[str], expected: list[str]) -> list[int] | None:
     actual_keys = [name.casefold() for name in actual]
     expected_keys = [name.casefold() for name in expected]
-    if set(actual_keys) != set(expected_keys) or len(set(actual_keys)) != len(actual_keys):
+    if Counter(actual_keys) != Counter(expected_keys):
         return None
-    index_by_name = {name: index for index, name in enumerate(actual_keys)}
-    return [index_by_name[name] for name in expected_keys]
+    indexes_by_name = defaultdict(list)
+    for index, name in reversed(list(enumerate(actual_keys))):
+        indexes_by_name[name].append(index)
+    return [indexes_by_name[name].pop() for name in expected_keys]
 
 
-def _value_mappings(actual_rows: list[tuple], expected_rows: list[tuple], width: int):
-    actual_sigs = [_column_signature(actual_rows, index) for index in range(width)]
-    expected_sigs = [_column_signature(expected_rows, index) for index in range(width)]
+def _value_mappings(actual: QueryResult, expected: QueryResult, names_matter: bool):
+    width = len(expected.columns)
+    actual_sigs = [
+        (_column_signature(actual.rows, index), name.casefold() if names_matter else None)
+        for index, name in enumerate(actual.columns)
+    ]
+    expected_sigs = [
+        (_column_signature(expected.rows, index), name.casefold() if names_matter else None)
+        for index, name in enumerate(expected.columns)
+    ]
     if Counter(actual_sigs) != Counter(expected_sigs):
         return
     actual_groups: dict[tuple, list[int]] = defaultdict(list)
@@ -104,23 +113,30 @@ def _aligned_rows(
     expected: QueryResult,
     order_matters: bool,
     columns_in_order: bool,
+    names_matter: bool,
 ) -> list[tuple]:
     if columns_in_order:
         return list(actual.rows)
 
     def candidates():
-        yield list(range(len(expected.columns)))
+        if not names_matter or [name.casefold() for name in actual.columns] == [
+            name.casefold() for name in expected.columns
+        ]:
+            yield list(range(len(expected.columns)))
         mapping = _align_by_name(actual.columns, expected.columns)
         if mapping is not None:
             yield mapping
-        yield from _value_mappings(actual.rows, expected.rows, len(expected.columns))
+        yield from _value_mappings(actual, expected, names_matter)
 
     # One budget includes identity, name alignment, and lazy value alignments.
+    first = None
     for candidate in itertools.islice(candidates(), _MAX_COLUMN_PERMUTATIONS):
         projected = _project(actual.rows, candidate)
+        if first is None:
+            first = projected
         if _rows_equal(projected, expected.rows, order_matters):
             return projected
-    return list(actual.rows)
+    return first if names_matter and first is not None else list(actual.rows)
 
 
 def _unmatched(rows: list[tuple], other: list[tuple]) -> tuple[list[tuple], int]:
@@ -171,13 +187,12 @@ def compare(
             expected_count=expected_count,
             actual_count=actual_count,
         )
-    aligned_rows = _aligned_rows(actual, expected, order_matters, columns_in_order)
     actual_names = [name.casefold() for name in actual.columns]
     expected_names = [name.casefold() for name in expected.columns]
     names_match = (
         actual_names == expected_names
         if columns_in_order
-        else set(actual_names) == set(expected_names)
+        else Counter(actual_names) == Counter(expected_names)
     )
     if names_matter and not names_match:
         expected_names = ", ".join(expected.columns)
@@ -191,6 +206,7 @@ def compare(
             actual_count=actual_count,
         )
 
+    aligned_rows = _aligned_rows(actual, expected, order_matters, columns_in_order, names_matter)
     missing_rows, missing_total = _unmatched(expected.rows, aligned_rows)
     extra_rows, extra_total = _unmatched(aligned_rows, expected.rows)
     order_wrong = order_matters and [_row_key(row) for row in aligned_rows] != [

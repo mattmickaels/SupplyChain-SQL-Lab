@@ -225,7 +225,33 @@ def test_names_matter_ignores_name_order_when_columns_not_in_order() -> None:
     expected = result(["a", "b"], [(1, 2)])
     actual = result(["B", "A"], [(2, 1)])
     assert compare(actual, expected, names_matter=True).passed is True
-    assert compare(result(["B", "A"], [(1, 2)]), expected, names_matter=True).passed is True
+    assert compare(result(["B", "A"], [(1, 2)]), expected, names_matter=True).passed is False
+
+
+def test_names_matter_reordered_columns_with_correct_values_pass() -> None:
+    expected = result(["a", "b"], [(1, 2)])
+    actual = result(["B", "A"], [(2, 1)])
+    assert compare(actual, expected, names_matter=True).passed is True
+
+
+def test_duplicate_names_counted() -> None:
+    expected = result(["a", "a", "b"], [(1, 2, 3)])
+    actual = result(["A", "B", "b"], [(1, 2, 3)])
+    outcome = compare(actual, expected, names_matter=True)
+    assert outcome.passed is False
+    assert outcome.summary == "Expected columns a, a, b, got A, B, b."
+
+
+def test_names_matter_value_search_preserves_name_associations() -> None:
+    expected = result(["a", "b"], [(1, 2)])
+    actual = result(["A", "B"], [(2, 1)])
+    assert compare(actual, expected, names_matter=True).passed is False
+
+
+def test_names_matter_duplicate_names_can_permute_within_name_group() -> None:
+    expected = result(["a", "a", "b"], [(1, 2, "X"), (2, 1, "Y")])
+    actual = result(["B", "A", "a"], [("X", 2, 1), ("Y", 1, 2)])
+    assert compare(actual, expected, names_matter=True).passed is True
 
 
 def test_names_matter_and_columns_in_order_fail_on_name_swap() -> None:
