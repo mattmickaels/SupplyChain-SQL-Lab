@@ -173,7 +173,7 @@ def test_monthly_volumes_and_status(lab_conn) -> None:
         ORDER BY 1
         """
     ).df()
-    expected = pd.date_range("2021-11-01", "2028-04-01", freq="MS")
+    expected = pd.date_range("2021-11-01", "2026-10-01", freq="MS")
     assert list(pd.to_datetime(tools["month_start"])) == list(expected)
     assert list(pd.to_datetime(spares["month_start"])) == list(expected)
     assert tools["n"].between(25, 45).all()
@@ -199,7 +199,7 @@ def test_monthly_volumes_and_status(lab_conn) -> None:
     assert items.loc[~shipped, "shipped_date"].isna().all()
     assert (pd.to_datetime(items.loc[shipped, "shipped_date"]).dt.date <= AS_OF_DATE).all()
     future = items[pd.to_datetime(items["order_date"]).dt.date > AS_OF_DATE]
-    assert set(future["status"]) == {"Open"}
+    assert future.empty
 
 
 def test_forecast_and_supply(lab_conn) -> None:

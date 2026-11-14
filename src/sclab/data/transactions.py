@@ -6,7 +6,7 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
-from sclab.constants import AS_OF_DATE, FORECAST_END
+from sclab.constants import AS_OF_DATE
 from sclab.data.mrp import plan_purchases
 from sclab.data.story import (
     CORVANE_SUPPLIER_NO,
@@ -22,11 +22,12 @@ AS_OF_TS = pd.Timestamp(AS_OF_DATE)
 SLIP_TS = pd.Timestamp(SLIP_START)
 EARLY_END = pd.Timestamp(date(2026, 1, 1))
 HISTORY_MONTH = pd.Timestamp(date(2021, 11, 1))
-LOT_DAYS = 90
+LOT_DAYS = 100
+RF_BUFFER_DAYS = 49
 RECEIPT_BUFFER_DAYS = 7
 COMPONENT_LOCATION = "RM01"
 TOOL_LOCATION = "FG01"
-BUILD_DAYS = 14
+BUILD_DAYS = {"DEP": 56, "ETC": 70, "CMP": 84, "INS": 42}
 PROMISE_GAP = 7
 HOME_PLANT = {"DEP": "AU01", "ETC": "SC01", "CMP": "SG01", "INS": "AU01"}
 
@@ -101,11 +102,13 @@ def _order_lines(rng, master: dict[str, pd.DataFrame], plant_of: pd.Series) -> p
     etch_ids = tools.loc[tools["family_code"] == "ETC", "material_no"].to_numpy()
     family_of = tools.set_index("material_no")["family_code"]
     customers = np.sort(master["customer"]["customer_no"].to_numpy())
-    months = pd.date_range(HISTORY_MONTH, FORECAST_END, freq="MS")
+    months = pd.date_range(HISTORY_MONTH, AS_OF_TS - pd.Timedelta(days=1), freq="MS")
     counts, halcyon_n = _month_counts(months)
     normal = _normal_tool_lines(rng, months, counts, halcyon_n, tool_ids, etch_ids, customers)
-    overload = _overload_tool_lines(rng, master, etch_ids, customers)
-    tools_frame = pd.concat([normal, overload], ignore_index=True)
+    normal["promised_date"] = normal["order_date"] + pd.to_timedelta(
+        rng.integers(90, 366, size=len(normal)), unit="D"
+    )
+    tools_frame = _schedule_overload(normal, master, etch_ids)
     tools_frame["family_code"] = tools_frame["material_no"].map(family_of)
     tools_frame["plant_code"] = tools_frame["family_code"].map(HOME_PLANT)
     missing_bay = tools_frame["bay_id"].isna()
@@ -114,9 +117,9 @@ def _order_lines(rng, master: dict[str, pd.DataFrame], plant_of: pd.Series) -> p
         master["build_bay"],
     )
     spares = _spare_lines(rng, plant_of, customers)
+    spares["promised_date"] = spares["order_date"] + pd.Timedelta(days=21)
     lines = pd.concat([tools_frame, spares], ignore_index=True)
     lines["order_date"] = pd.to_datetime(lines["order_date"])
-    lines["promised_date"] = lines["order_date"] + pd.Timedelta(days=BUILD_DAYS + PROMISE_GAP)
     lines["requested_date"] = lines["promised_date"]
     return lines
 
@@ -129,11 +132,6 @@ def _month_counts(months: pd.DatetimeIndex) -> tuple[np.ndarray, np.ndarray]:
     halcyon = np.zeros(len(months), dtype=int)
     halcyon[(months.year == 2025) & months.month.isin([7, 8, 9, 10])] = 4
     halcyon[(months.year == 2026) & months.month.isin([7, 8, 9, 10])] = 8
-    overload = ((months.year == 2026) & (months.month == 12)) | (
-        (months.year == 2027) & (months.month < 3)
-    )
-    counts[overload] = 0
-    halcyon[overload] = 0
     return counts, halcyon
 
 
@@ -197,22 +195,31 @@ def _overload_dates(weekly_slots: int) -> list[date]:
     return dates
 
 
-def _overload_tool_lines(rng, master, etch_ids, customers) -> pd.DataFrame:
+def _schedule_overload(normal, master, etch_ids) -> pd.DataFrame:
+    """Schedule existing bookings into the overloaded bay without inventing orders."""
+    frame = normal.copy()
     slots = int(master["build_bay"].set_index("bay_id").loc[OVERLOADED_BAY, "weekly_slots"])
-    dates = _overload_dates(slots)
-    total = len(dates)
-    return pd.DataFrame(
-        {
-            "order_date": pd.to_datetime(dates),
-            "customer_no": rng.choice(customers, size=total),
-            "material_no": etch_ids[np.arange(total) % len(etch_ids)],
-            "qty": np.ones(total, dtype=int),
-            "unit_price": rng.integers(500_000, 1_500_000, size=total),
-            "protected": False,
-            "bay_id": OVERLOADED_BAY,
-            "kind": "tool",
-        }
-    )
+    available = set(frame.index[~frame["protected"]])
+    for number, start in enumerate(_overload_dates(slots)):
+        promised = pd.Timestamp(start) + pd.Timedelta(days=BUILD_DAYS["ETC"])
+        eligible = frame.index[
+            frame.index.isin(available)
+            & frame["order_date"].between(
+                promised - pd.Timedelta(days=365), promised - pd.Timedelta(days=90)
+            )
+        ]
+        if len(eligible) == 0:
+            raise ValueError("Insufficient booked orders for the bay schedule")
+        # Prefer recent bookings so older historical deliveries stay historical.
+        chosen = int(eligible[-1])
+        available.remove(chosen)
+        frame.loc[chosen, ["material_no", "promised_date", "bay_id", "protected"]] = [
+            etch_ids[number % len(etch_ids)],
+            promised,
+            OVERLOADED_BAY,
+            True,
+        ]
+    return frame
 
 
 def _assign_bays(frame: pd.DataFrame, bays: pd.DataFrame) -> pd.Series:
@@ -230,7 +237,7 @@ def _assign_bays(frame: pd.DataFrame, bays: pd.DataFrame) -> pd.Series:
 
 
 def _spare_lines(rng, plant_of: pd.Series, customers: np.ndarray) -> pd.DataFrame:
-    months = pd.date_range(HISTORY_MONTH, FORECAST_END, freq="MS")
+    months = pd.date_range(HISTORY_MONTH, AS_OF_TS - pd.Timedelta(days=1), freq="MS")
     counts = rng.integers(300, 601, size=len(months))
     month_of_row = np.repeat(np.arange(len(months)), counts)
     total = len(month_of_row)
@@ -279,8 +286,10 @@ def _apply_status(rng: np.random.Generator, lines: pd.DataFrame) -> pd.DataFrame
 
 def _production_orders(lines: pd.DataFrame) -> pd.DataFrame:
     tools = lines[(lines["kind"] == "tool") & (lines["status"] != "Cancelled")].copy()
-    tools["planned_start"] = tools["order_date"]
-    tools["planned_finish"] = tools["order_date"] + pd.Timedelta(days=BUILD_DAYS)
+    tools["planned_start"] = tools["promised_date"] - pd.to_timedelta(
+        tools["family_code"].map(BUILD_DAYS), unit="D"
+    )
+    tools["planned_finish"] = tools["promised_date"] - pd.Timedelta(days=PROMISE_GAP)
     finished = tools["planned_finish"] <= AS_OF_TS
     started = tools["planned_start"] <= AS_OF_TS
     tools["prod_status"] = np.where(finished, "Completed", np.where(started, "Released", "Planned"))
@@ -376,6 +385,9 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
         .sort_values(["material_no", "supplier_no"])
         .drop_duplicates("material_no")
     )
+    rf_materials = set(
+        master["material"].loc[master["material"]["description"].eq("RF generator"), "material_no"]
+    )
     planning = master["material_plant"].merge(primary, on="material_no")
     planning = planning.set_index(["material_no", "plant_code"])
     daily = demand.groupby(["material_no", "plant_code", "need_date"], as_index=False)["qty"].sum()
@@ -396,9 +408,11 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
             ]
             buffer = (
                 SLIP_DAYS + RECEIPT_BUFFER_DAYS
-                if historical and supplier == CORVANE_SUPPLIER_NO
+                if supplier == CORVANE_SUPPLIER_NO
                 else RECEIPT_BUFFER_DAYS
             )
+            if not historical and material in rf_materials:
+                buffer = RF_BUFFER_DAYS
             receipts = plan_purchases(dated, stock, safety, lead, buffer, LOT_DAYS)
             for receipt in receipts:
                 rows.append(
@@ -409,7 +423,7 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
                         "unit_price": parameters["unit_price"],
                         "qty": receipt.qty,
                         "requested": receipt.requested_date,
-                        "order_date": receipt.order_date,
+                        "order_date": min(receipt.order_date, AS_OF_DATE),
                         "need_date": receipt.requested_date + timedelta(days=buffer),
                         "historical": historical,
                     }
@@ -467,9 +481,13 @@ def _set_on_time(rng, grouped: pd.DataFrame) -> pd.DataFrame:
             continue
         _mark_rate(on_time, closed_np & (codes == code), target, band=True)
     corvane = frame["supplier_no"].eq(CORVANE_SUPPLIER_NO).to_numpy() & closed_np
-    receipt = frame["need_date"]
+    receipt = frame["confirmed"]
     _mark_rate(on_time, corvane & receipt.lt(EARLY_END).to_numpy(), 0.95, band=False)
-    late_window = corvane & receipt.ge(SLIP_TS).to_numpy() & receipt.le(AS_OF_TS).to_numpy()
+    late_window = (
+        corvane
+        & (receipt + pd.Timedelta(days=RECEIPT_BUFFER_DAYS)).ge(SLIP_TS).to_numpy()
+        & receipt.le(AS_OF_TS).to_numpy()
+    )
     _mark_rate(on_time, late_window, 0.30, band=False)
     middle = corvane & ~(receipt.lt(EARLY_END).to_numpy() | late_window)
     _mark_rate(on_time, middle, 0.85, band=False)
