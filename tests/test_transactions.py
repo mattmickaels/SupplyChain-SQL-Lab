@@ -9,6 +9,66 @@ from sclab.constants import AS_OF_DATE, SEED
 from sclab.data.transactions import _backlog_order_dates, _purchase_orders
 
 
+def test_supply_receipt_variation(lab_conn):
+    rows = lab_conn.execute("""
+        SELECT i.*, COALESCE(SUM(g.qty), 0) received,
+               MIN(g.receipt_date) first_receipt, MAX(g.receipt_date) last_receipt,
+               COUNT(g.gr_no) receipts
+        FROM purchase_order_item i LEFT JOIN goods_receipt g USING (po_no, line_no)
+        GROUP BY ALL
+    """).df()
+    today = pd.Timestamp(AS_OF_DATE)
+    future = rows[rows.confirmed_delivery_date >= today]
+    assert 0.10 <= ((future.received > 0) & (future.received < future.order_qty)).mean() <= 0.20
+    past = rows[rows.confirmed_delivery_date < today]
+    assert 0.02 <= (past.received < past.order_qty).mean() <= 0.04
+    assert (rows.confirmed_delivery_date == today).sum() >= 20
+    multi = rows[rows.receipts > 1]
+    assert len(multi) > 0
+    assert (multi.last_receipt - multi.first_receipt).dt.days.between(1, 21).all()
+    assert (
+        lab_conn.execute("""
+        SELECT COUNT(*) FROM goods_receipt g JOIN purchase_order h USING (po_no)
+        WHERE g.receipt_date < h.order_date OR g.receipt_date > DATE '2026-11-01'
+    """).fetchone()[0]
+        == 0
+    )
+
+
+def test_history_boundary_and_material_creation(lab_conn):
+    for name, column in (
+        ("purchase_order", "order_date"),
+        ("goods_receipt", "receipt_date"),
+        ("stock_movement", "posting_date"),
+    ):
+        assert (
+            lab_conn.execute(
+                f"SELECT COUNT(*) FROM {name} WHERE {column} < DATE '2021-11-01'"
+            ).fetchone()[0]
+            == 0
+        )
+    assert (
+        lab_conn.execute("""
+        SELECT COUNT(*) FROM stock_movement
+        WHERE movement_type = '561' AND posting_date = DATE '2021-11-01'
+    """).fetchone()[0]
+        > 0
+    )
+    assert (
+        lab_conn.execute("""
+        WITH uses AS (
+            SELECT material_no, posting_date AS used_on FROM stock_movement
+            UNION ALL SELECT i.material_no, h.order_date
+            FROM purchase_order_item i JOIN purchase_order h USING (po_no)
+            UNION ALL SELECT i.material_no, h.order_date
+            FROM sales_order_item i JOIN sales_order h USING (so_no)
+        ) SELECT COUNT(*) FROM uses u JOIN material m USING (material_no)
+          WHERE m.created_on > u.used_on
+    """).fetchone()[0]
+        == 0
+    )
+
+
 def test_backlog_purchases_follow_bookings_and_keep_lead_time():
     master = {
         "material": pd.DataFrame({"material_no": ["part"], "description": ["Fitting"]}),

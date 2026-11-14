@@ -274,7 +274,7 @@ def test_forecast_and_supply(lab_conn) -> None:
     receipt_check = lab_conn.execute(
         """
         SELECT i.order_qty,
-               i.confirmed_delivery_date > DATE '2026-11-01' AS is_open,
+               COALESCE(SUM(g.qty), 0) < i.order_qty AS is_open,
                COUNT(g.gr_no) AS n_receipts,
                COALESCE(SUM(g.qty), 0) AS received_qty
         FROM purchase_order_item AS i
@@ -344,8 +344,8 @@ def test_inventory_matches_movements(lab_conn) -> None:
         FROM stock_movement
         """
     ).df()
-    assert set(movements["movement_type"]) <= {"101", "261", "601"}
-    assert (movements.loc[movements["movement_type"] == "101", "qty"] > 0).all()
+    assert set(movements["movement_type"]) <= {"101", "261", "561", "601"}
+    assert (movements.loc[movements["movement_type"].isin(["101", "561"]), "qty"] > 0).all()
     assert (movements.loc[movements["movement_type"].isin(["261", "601"]), "qty"] < 0).all()
     posted = movements[pd.to_datetime(movements["posting_date"]).dt.date <= AS_OF_DATE]
     sums = posted.groupby(["material_no", "plant_code", "storage_location"], as_index=False)[
@@ -550,3 +550,78 @@ def test_event_dates_preserved(lab_conn) -> None:
         WHERE COALESCE(expected.qty, 0) <> COALESCE(actual.qty, 0)
     """).fetchall()
     assert differences == []
+
+
+def test_dictionary_blanks_exist(lab_conn):
+    for name, column in (
+        ("purchase_order_item", "confirmed_delivery_date"),
+        ("sales_order_item", "promised_date"),
+        ("material_supplier", "quoted_lead_time_days"),
+    ):
+        assert (
+            lab_conn.execute(f"SELECT COUNT(*) FROM {name} WHERE {column} IS NULL").fetchone()[0]
+            > 0
+        )
+    assert (
+        lab_conn.execute(
+            "SELECT COUNT(*) FROM material_supplier WHERE quoted_lead_time_days = 0"
+        ).fetchone()[0]
+        > 0
+    )
+
+
+def test_strict_preparation_and_nullable_counts(lab_conn):
+    import numpy as np
+
+    from sclab.data.build import _prepare
+    from sclab.data.master import generate_master
+    from sclab.data.messiness import apply_messiness
+    from sclab.data.schema import table
+    from sclab.data.transactions import generate_transactions
+
+    rng = np.random.default_rng(SEED)
+    frames = generate_master(rng)
+    frames.update(generate_transactions(rng, frames))
+    frames = apply_messiness(rng, frames)
+    for spec in TABLES:
+        prepared = _prepare(frames[spec.name], spec)
+        for column in spec.columns:
+            expected = int(frames[spec.name][column.name].isna().sum())
+            assert int(prepared[column.name].isna().sum()) == expected
+            actual = lab_conn.execute(
+                f"SELECT COUNT(*) FROM {spec.name} WHERE {column.name} IS NULL"
+            ).fetchone()[0]
+            assert actual == expected, f"{spec.name}.{column.name}"
+    for name, column in (
+        ("material", "created_on"),
+        ("material_plant", "safety_stock"),
+        ("material_supplier", "unit_price"),
+    ):
+        broken = frames[name].copy()
+        broken[column] = broken[column].astype(object)
+        broken.loc[0, column] = "invalid"
+        with pytest.raises((ValueError, TypeError)):
+            _prepare(broken, table(name))
+
+
+def test_fresh_sandbox_discards_wal(lab_home, tmp_path, monkeypatch):
+    import shutil
+
+    import sclab.data.build as build
+
+    sandbox = tmp_path / "sandbox.duckdb"
+    wal = Path(str(sandbox) + ".wal")
+    wal.write_bytes(b"stale")
+    monkeypatch.setattr(build, "lab_db_path", lambda: lab_home / "lab.duckdb")
+    monkeypatch.setattr(build, "sandbox_db_path", lambda: sandbox)
+    original = shutil.copy2
+
+    def copying(source, destination):
+        assert not wal.exists()
+        original(source, destination)
+        wal.write_bytes(b"copy-sidecar")
+
+    monkeypatch.setattr(build.shutil, "copy2", copying)
+    build.ensure_database()
+    assert sandbox.exists()
+    assert not wal.exists()

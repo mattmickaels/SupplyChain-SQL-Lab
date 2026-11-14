@@ -6,7 +6,7 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
-from sclab.constants import AS_OF_DATE
+from sclab.constants import AS_OF_DATE, HISTORY_START
 from sclab.data.mrp import plan_purchases
 from sclab.data.story import (
     CORVANE_SUPPLIER_NO,
@@ -45,7 +45,9 @@ def generate_transactions(
     forecast = _forecast(master, lines)
     demand, issues = _component_demand(lines, production, leaf)
     supply = _supply(rng, master, demand)
-    movements, inventory = _stock(lines, production, supply["goods_receipt"], issues)
+    movements, inventory = _stock(
+        lines, production, supply["goods_receipt"], issues, supply["opening"]
+    )
     return {
         "sales_order": _sales_orders(lines),
         "sales_order_item": _sales_items(lines),
@@ -377,6 +379,7 @@ def _supply(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFrame]:
         "purchase_order_item": orders["items"],
         "goods_receipt": receipts,
         "quality_notification": notifications,
+        "opening": orders["opening"],
     }
 
 
@@ -454,13 +457,70 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
         lower=AS_OF_TS + pd.Timedelta(days=1)
     )
     grouped = _set_on_time(rng, grouped)
+    # Lots that would require pre-history procurement are opening inventory.
+    opening = grouped.loc[grouped["order_date"] < pd.Timestamp(HISTORY_START)].copy()
+    grouped = grouped.loc[grouped["order_date"] >= pd.Timestamp(HISTORY_START)].copy()
     # Earlier buyer release does not remove the supplier's existing delivery delay.
     grouped["order_date"] = _backlog_order_dates(
         rng, grouped["order_date"], grouped["booking_date"]
     )
     grouped["order_qty"] = grouped["qty"].round().astype(int)
+    # Some forward lots have overdue confirmations while the buyer waits for
+    # supply not yet needed by production. Existing historical supply covers history.
+    eligible = grouped.index[
+        ~grouped["historical"]
+        & ~grouped["supplier_no"].eq(CORVANE_SUPPLIER_NO)
+        & grouped["order_date"].lt(AS_OF_TS - pd.Timedelta(days=1))
+    ]
+    past_count = grouped["confirmed"].lt(AS_OF_TS).sum()
+    overdue_count = int(round(past_count * 0.03 / 0.97))
+    overdue = rng.choice(eligible, size=min(overdue_count, len(eligible)), replace=False)
+    overdue_dates = AS_OF_TS - pd.to_timedelta(rng.integers(1, 61, size=len(overdue)), unit="D")
+    grouped.loc[overdue, "confirmed"] = pd.Series(overdue_dates, index=overdue).clip(
+        lower=grouped.loc[overdue, "order_date"] + pd.Timedelta(days=1)
+    )
+    grouped.loc[overdue, "requested"] = grouped.loc[overdue, "confirmed"]
+    grouped.loc[overdue, "is_open"] = True
+    remaining = grouped.index.difference(overdue)
+    today_pool = remaining[
+        grouped.loc[remaining, "confirmed"].gt(AS_OF_TS)
+        & ~grouped.loc[remaining, "supplier_no"].eq(CORVANE_SUPPLIER_NO)
+    ]
+    due_today = today_pool[:30] if len(today_pool) >= 30 else []
+    grouped.loc[due_today, "confirmed"] = AS_OF_TS
+    grouped.loc[due_today, "requested"] = AS_OF_TS
+    grouped["partial_qty"] = 0
+    future = grouped.index[grouped["confirmed"].ge(AS_OF_TS)]
+    partial_pool = future[
+        grouped.loc[future, "order_qty"].ge(2)
+        & ~grouped.loc[future, "supplier_no"].eq(CORVANE_SUPPLIER_NO)
+        & grouped.loc[future, "order_date"].lt(AS_OF_TS)
+    ]
+    partial = rng.choice(
+        partial_pool, size=min(round(len(future) * 0.15), len(partial_pool)), replace=False
+    )
+    grouped.loc[partial, "partial_qty"] = 1
+    overdue_partial = grouped.loc[overdue].index[grouped.loc[overdue, "order_qty"].ge(2)][::4]
+    grouped.loc[overdue_partial, "partial_qty"] = 1
     grouped["uom"] = "EA"
-    grouped["net_price"] = grouped["unit_price"].round(2)
+    # Annual price agreements drift gently; secondary quotes carry their own price.
+    sources = master["material_supplier"].loc[~master["material_supplier"]["is_primary"]]
+    # Use qualified, active vendors for occasional spot buys, rather than making
+    # a supplier's entire delivery record a single opportunistic shipment.
+    activity = grouped.loc[~grouped["is_open"], "supplier_no"].value_counts()
+    sources = sources.loc[sources["supplier_no"].isin(activity.index[activity >= 20])]
+    secondary = sources.drop_duplicates("material_no").set_index("material_no")
+    secondary_buy = grouped["material_no"].isin(secondary.index) & (rng.random(len(grouped)) < 0.08)
+    grouped.loc[secondary_buy, "supplier_no"] = grouped.loc[secondary_buy, "material_no"].map(
+        secondary["supplier_no"]
+    )
+    if secondary_buy.any():
+        grouped.loc[secondary_buy, "unit_price"] = grouped.loc[secondary_buy, "material_no"].map(
+            secondary["unit_price"]
+        )
+    grouped["net_price"] = (
+        grouped["unit_price"] * (1 + 0.018 * (grouped["order_date"].dt.year - 2021))
+    ).round(2)
     header_key = (
         grouped["supplier_no"].astype(str)
         + "|"
@@ -479,7 +539,7 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
     items = grouped.rename(
         columns={"requested": "requested_delivery_date", "confirmed": "confirmed_delivery_date"}
     )
-    return {"headers": headers, "items": items, "lines": grouped}
+    return {"headers": headers, "items": items, "lines": grouped, "opening": opening}
 
 
 def _backlog_order_dates(
@@ -564,9 +624,8 @@ def _mark_rate(on_time: np.ndarray, mask: np.ndarray, rate: float, *, band: bool
 
 def _goods_receipts(lines: pd.DataFrame) -> pd.DataFrame:
     closed = lines.loc[~lines["is_open"]].reset_index(drop=True)
-    supplier_ordinal = pd.factorize(closed["supplier_no"], sort=True)[0]
-    min_qty = closed.groupby("supplier_no")["order_qty"].transform("min").to_numpy()
-    n_rec = np.where(min_qty >= 3, 1 + (supplier_ordinal % 3), 1)
+    ordinal = np.arange(len(closed))
+    n_rec = 1 + ordinal % 3
     n_rec = np.where(closed["supplier_no"].eq(CORVANE_SUPPLIER_NO).to_numpy(), 1, n_rec)
     n_rec = np.minimum(n_rec, closed["order_qty"].to_numpy())
     repeated = np.repeat(np.arange(len(closed)), n_rec)
@@ -576,6 +635,45 @@ def _goods_receipts(lines: pd.DataFrame) -> pd.DataFrame:
     split = line_qty // parts + (part < (line_qty % parts)).astype(int)
     receipts = closed.iloc[repeated].copy()
     receipts["qty"] = split
+    # Split deliveries arrive on separate days before the final receipt.
+    spacing = np.where(receipts["on_time"].to_numpy(), 1 + ordinal[repeated] % 10, 3)
+    available_days = (receipts["receipt_date"] - receipts["order_date"]).dt.days.to_numpy()
+    spacing = np.minimum(spacing, available_days // np.maximum(parts - 1, 1))
+    receipts["receipt_date"] = receipts["receipt_date"] - pd.to_timedelta(
+        (parts - part - 1) * spacing, unit="D"
+    )
+    receipts["receipt_date"] = receipts["receipt_date"].clip(lower=pd.Timestamp(HISTORY_START))
+    partial = lines.loc[lines["partial_qty"].gt(0)].copy()
+    partial["qty"] = partial["partial_qty"]
+    partial["receipt_date"] = AS_OF_TS - pd.Timedelta(days=1)
+    partial["on_time"] = partial["receipt_date"].le(partial["confirmed"])
+    receipts = pd.concat([receipts, partial], ignore_index=True)
+    # Receipt-weighted service levels remain meaningful even for small specialist
+    # suppliers and secondary buys, whose split quantities vary by PO line.
+    for supplier, indexes in receipts.groupby("supplier_no", sort=True).groups.items():
+        if supplier == CORVANE_SUPPLIER_NO:
+            continue
+        group = receipts.loc[indexes]
+        rate = group["receipt_date"].le(group["confirmed"]).mean()
+        if 0.70 <= rate <= 0.98:
+            continue
+        target = 0.78 + (int(supplier[2:]) % 13) / 100
+        late_count = len(group) - int(round(target * len(group)))
+        eligible = group.index[
+            ~group["is_open"] & group["confirmed"].le(AS_OF_TS - pd.Timedelta(days=7))
+        ]
+        late_at = eligible[:late_count]
+        closed_at = group.index[~group["is_open"]]
+        positions = group.groupby(["po_no", "line_no"]).cumcount()
+        receipts.loc[closed_at, "receipt_date"] = receipts.loc[
+            closed_at, "confirmed"
+        ] - pd.to_timedelta(positions.loc[closed_at] * 3, unit="D")
+        receipts.loc[late_at, "receipt_date"] = receipts.loc[
+            late_at, "confirmed"
+        ] + pd.to_timedelta(1 + positions.loc[late_at] * 3, unit="D")
+        receipts.loc[indexes, "on_time"] = receipts.loc[indexes, "receipt_date"].le(
+            receipts.loc[indexes, "confirmed"]
+        )
     receipts["storage_location"] = COMPONENT_LOCATION
     receipts = receipts.sort_values(["receipt_date", "po_no", "line_no"]).reset_index(drop=True)
     receipts["gr_no"] = _row_ids(len(receipts), "GR-", 7)
@@ -615,6 +713,7 @@ def _stock(
     production,
     receipts,
     issues,
+    opening,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     receipt_moves = pd.DataFrame(
         {
@@ -649,7 +748,11 @@ def _stock(
             "posting_date": pd.to_datetime(finished["actual_finish"]).to_numpy(),
         }
     )
-    movements = pd.concat([receipt_moves, issues, shipments, made], ignore_index=True)
+    initial = opening[["material_no", "plant_code", "qty"]].copy()
+    initial["storage_location"] = COMPONENT_LOCATION
+    initial["movement_type"] = "561"
+    initial["posting_date"] = pd.Timestamp(HISTORY_START)
+    movements = pd.concat([initial, receipt_moves, issues, shipments, made], ignore_index=True)
     movements["posting_date"] = pd.to_datetime(movements["posting_date"])
     movements = movements.sort_values(
         ["posting_date", "movement_type", "material_no", "plant_code"]

@@ -241,3 +241,62 @@ def test_no_real_company_names(frames: dict[str, pd.DataFrame]) -> None:
     for banned in DENYLIST:
         hits = names[names.str.contains(banned, case=False, regex=False)]
         assert hits.empty, banned
+
+
+def test_realistic_tool_boms(lab_conn):
+    rows = lab_conn.execute("""
+        SELECT t.material_no, t.description, t.family_code, m.family_code,
+               m.description, b.qty_per
+        FROM material t JOIN bom_item b ON t.material_no = b.parent_material_no
+        JOIN material m ON m.material_no = b.component_material_no
+        WHERE t.material_type = 'TOOL'
+    """).fetchall()
+    counts = {}
+    for tool, _description, family, module_family, _module, qty in rows:
+        if module_family is not None:
+            assert family == module_family
+            counts[tool] = counts.get(tool, 0) + qty
+        else:
+            assert module_family is None
+    for tool, description, *_ in rows:
+        assert counts[tool] == int(description.split(", ")[-1].split("-")[0])
+    assert (
+        lab_conn.execute("""
+        SELECT COUNT(*) FROM material WHERE description LIKE '%Process fitting%'
+          OR description LIKE '%Valve stack subassembly%'
+    """).fetchone()[0]
+        == 0
+    )
+    assert (
+        lab_conn.execute("""
+        SELECT COUNT(*) FROM material WHERE description = 'Spare RF generator kit'
+          AND NOT is_long_lead
+    """).fetchone()[0]
+        == 1
+    )
+
+
+def test_realistic_sources_and_prices(lab_conn):
+    assert (
+        lab_conn.execute("""
+        SELECT COUNT(*) FROM material_supplier s JOIN material m USING (material_no)
+        WHERE supplier_no = 'V-10017'
+          AND description NOT IN ('RF generator', 'RF match network')
+    """).fetchone()[0]
+        == 0
+    )
+    countries = dict(
+        lab_conn.execute("SELECT country, COUNT(*) FROM supplier GROUP BY country").fetchall()
+    )
+    assert min(countries[c] for c in ("US", "JP", "DE", "TW")) > max(
+        countries[c] for c in ("IL", "NL", "CN")
+    )
+    assert (
+        lab_conn.execute("""
+        SELECT AVG(CASE WHEN prices > 1 THEN 1.0 ELSE 0 END) FROM (
+            SELECT material_no, COUNT(DISTINCT net_price) prices
+            FROM purchase_order_item GROUP BY material_no HAVING COUNT(*) >= 10
+        )
+    """).fetchone()[0]
+        >= 0.30
+    )

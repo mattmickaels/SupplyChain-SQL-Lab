@@ -21,6 +21,42 @@ FAMILIES = (
     ("INS", "Inspection"),
 )
 COUNTRIES = ("US", "JP", "DE", "KR", "TW", "SG", "NL", "CN", "IL")
+SPECIALTIES = (
+    "RF Systems",
+    "Vacuum Systems",
+    "Wafer Robotics",
+    "Thermal Systems",
+    "Quartz Ceramics",
+    "Gas Delivery",
+    "Process Controls",
+    "Vacuum Pumps",
+    "Precision Assemblies",
+    "Sealing Products",
+    "Electronics",
+    "Flow Controls",
+)
+PARTS = (
+    "Valve manifold",
+    "Mass flow controller",
+    "Pressure gauge",
+    "Wafer lift assembly",
+    "Edge ring",
+    "Showerhead",
+    "ESC chuck",
+    "RF match network",
+    "Throttle valve",
+    "O-ring kit",
+    "Harness",
+    "PCB assembly",
+    "Fastener kit",
+)
+PLATFORM_MODULES = (
+    "Factory interface module",
+    "Transfer chamber module",
+    "Wafer robot module",
+    "Gas delivery module",
+    "Controls rack module",
+)
 LONG_LEAD_OTHER = (
     "dry vacuum pump",
     "wafer handling robot",
@@ -201,7 +237,9 @@ def _component_description(index: int) -> str:
         return "RF generator"
     if index < N_LONG_LEAD:
         return LONG_LEAD_OTHER[(index - N_RF) % len(LONG_LEAD_OTHER)]
-    return f"Process fitting {index + 1}"
+    if index == N_LONG_LEAD:
+        return "Spare RF generator kit"
+    return f"{PARTS[(index - N_LONG_LEAD - 1) % len(PARTS)]}, variant {index + 1}"
 
 
 def _segment(customer_no: str) -> str:
@@ -239,32 +277,39 @@ def _materials(rng, tool_ids, module_ids, sub_ids, comp_ids) -> list[dict]:
                 "family_code": code,
                 "base_uom": "EA",
                 "is_long_lead": False,
-                "created_on": _day(rng),
+                "created_on": HISTORY_START - timedelta(days=1),
             }
         )
     for index, material_no in enumerate(module_ids):
-        _code, family_name = FAMILIES[index % 4]
+        # Each tool owns one chamber design and four platform designs.
+        chamber = index < N_PRIMARY_MODULES and index % 5 == 0
+        family_index = index // 50
+        family_name = FAMILIES[family_index][1] if chamber else None
         rows.append(
             {
                 "material_no": material_no,
-                "description": f"{family_name} chamber module",
+                "description": (
+                    f"{family_name} chamber module"
+                    if chamber
+                    else PLATFORM_MODULES[index % len(PLATFORM_MODULES)]
+                ),
                 "material_type": "MODULE",
-                "family_code": FAMILIES[index % 4][0],
+                "family_code": FAMILIES[family_index][0] if chamber else None,
                 "base_uom": "EA",
                 "is_long_lead": False,
-                "created_on": _day(rng),
+                "created_on": HISTORY_START - timedelta(days=1),
             }
         )
     for index, material_no in enumerate(sub_ids):
         rows.append(
             {
                 "material_no": material_no,
-                "description": f"Valve stack subassembly {index + 1}",
+                "description": f"{PARTS[index % len(PARTS)]} subassembly, variant {index + 1}",
                 "material_type": "SUBASSY",
                 "family_code": None,
                 "base_uom": "EA",
                 "is_long_lead": False,
-                "created_on": _day(rng),
+                "created_on": HISTORY_START - timedelta(days=1),
             }
         )
     for index, material_no in enumerate(comp_ids):
@@ -276,7 +321,7 @@ def _materials(rng, tool_ids, module_ids, sub_ids, comp_ids) -> list[dict]:
                 "family_code": None,
                 "base_uom": "EA",
                 "is_long_lead": index < N_LONG_LEAD,
-                "created_on": _day(rng),
+                "created_on": HISTORY_START - timedelta(days=1),
             }
         )
     return rows
@@ -304,12 +349,20 @@ def _suppliers(rng, supplier_ids: list[str]) -> list[dict]:
         if supplier_no == CORVANE_SUPPLIER_NO:
             name = "Corvane RF Systems"
         else:
-            name = _pair_name(index)
+            name = (
+                f"{_ADJECTIVES[index % len(_ADJECTIVES)]} {SPECIALTIES[index % len(SPECIALTIES)]}"
+            )
         rows.append(
             {
                 "supplier_no": supplier_no,
                 "name": _safe_name(name),
-                "country": COUNTRIES[index % len(COUNTRIES)],
+                "country": COUNTRIES[index % 9]
+                if index < 9
+                else str(
+                    rng.choice(
+                        COUNTRIES, p=[0.30, 0.18, 0.16, 0.08, 0.15, 0.06, 0.025, 0.025, 0.02]
+                    )
+                ),
                 "created_on": _day(rng),
             }
         )
@@ -318,20 +371,36 @@ def _suppliers(rng, supplier_ids: list[str]) -> list[dict]:
 
 def _pick_suppliers(rng, pool: np.ndarray, count: int) -> list[str]:
     picked = rng.choice(pool, size=count, replace=False)
-    return sorted(str(item) for item in picked)
+    return [str(item) for item in picked]
 
 
 def _sources(rng, comp_ids: list[str], supplier_ids: list[str]) -> list[dict]:
-    pool = np.array(supplier_ids)
+    pool = np.array([s for s in supplier_ids if s != CORVANE_SUPPLIER_NO])
     rows = []
     for index, material_no in enumerate(comp_ids):
         long_lead = index < N_LONG_LEAD
         if index < N_RF:
             chosen = [CORVANE_SUPPLIER_NO]
         elif long_lead:
-            chosen = _pick_suppliers(rng, pool, 2)
+            specialty = 1 + (index - N_RF) % len(LONG_LEAD_OTHER)
+            specialists = np.array([s for s in pool if (int(s[2:]) - 10001) % 12 == specialty])
+            chosen = _pick_suppliers(rng, specialists, 2)
         else:
-            chosen = _pick_suppliers(rng, pool, int(rng.integers(1, 4)))
+            part = PARTS[(index - N_LONG_LEAD - 1) % len(PARTS)]
+            specialty = (
+                0
+                if part == "RF match network" and index != N_LONG_LEAD
+                else 9
+                if part == "O-ring kit"
+                else 10
+                if part in ("Harness", "PCB assembly")
+                else 11
+                if part
+                in ("Valve manifold", "Mass flow controller", "Pressure gauge", "Throttle valve")
+                else 8
+            )
+            specialists = np.array([s for s in pool if (int(s[2:]) - 10001) % 12 == specialty])
+            chosen = _pick_suppliers(rng, specialists, int(rng.integers(1, 4)))
         for position, supplier_no in enumerate(chosen):
             rows.append(
                 {
@@ -353,8 +422,9 @@ def _customers(rng) -> list[dict]:
             name = "Halcyon Memory"
             segment = "Memory"
         else:
-            name = _pair_name(200 + index)
             segment = _segment(customer_no)
+            suffix = {"Foundry": "Foundry", "Memory": "Memory", "Logic": "Semiconductors"}[segment]
+            name = _safe_name(f"{_ADJECTIVES[(index + 5) % len(_ADJECTIVES)]} {suffix}")
         rows.append(
             {
                 "customer_no": customer_no,
@@ -422,7 +492,13 @@ def _bom_rows(rng, edges: list[tuple[str, str]]) -> list[dict]:
         {
             "parent_material_no": parent,
             "component_material_no": component,
-            "qty_per": float(int(rng.integers(1, 5))),
+            "qty_per": (
+                float(2 + ((int(parent[2:]) - 1) % 5))
+                if int(parent[2:]) <= N_TOOLS and (int(component[2:]) - N_TOOLS - 1) % 5 == 0
+                else 1.0
+                if int(parent[2:]) <= N_TOOLS
+                else float(int(rng.integers(1, 5)))
+            ),
         }
         for parent, component in edges
     ]

@@ -822,7 +822,7 @@ TABLES: tuple[Table, ...] = (
                 "movement_type",
                 "VARCHAR",
                 "Movement type. 101 is a receipt, 261 is an issue to production, "
-                "and 601 is a shipment.",
+                "561 is an initial stock entry at history start, and 601 is a shipment.",
                 sap_field="MSEG-BWART",
                 nullable=False,
             ),

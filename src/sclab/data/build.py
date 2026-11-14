@@ -90,7 +90,9 @@ def ensure_database(progress: Callable[[str, float], None] | None = None) -> Pat
         _notify(progress, "Lab database is ready.", 1.0)
     sandbox = sandbox_db_path()
     if (not sandbox.exists()) or sandbox.stat().st_mtime < lab.stat().st_mtime:
+        _delete_sidecar(sandbox)
         shutil.copy2(lab, sandbox)
+        _delete_sidecar(sandbox)
     return lab
 
 
@@ -132,17 +134,19 @@ def _prepare(frame: pd.DataFrame, spec) -> pd.DataFrame:
     prepared = frame.loc[:, columns].copy()
     for column in spec.columns:
         if column.sql_type == "INTEGER":
-            prepared[column.name] = pd.to_numeric(prepared[column.name], errors="coerce").astype(
+            prepared[column.name] = pd.to_numeric(prepared[column.name], errors="raise").astype(
                 "Int64"
             )
         elif column.sql_type == "DATE":
-            prepared[column.name] = pd.to_datetime(prepared[column.name], errors="coerce")
+            prepared[column.name] = pd.to_datetime(
+                prepared[column.name], format="ISO8601", errors="raise"
+            )
         elif column.sql_type == "VARCHAR":
             prepared[column.name] = (
                 prepared[column.name].astype(object).where(prepared[column.name].notna(), None)
             )
         elif column.sql_type.startswith("DECIMAL"):
-            prepared[column.name] = pd.to_numeric(prepared[column.name], errors="coerce")
+            prepared[column.name] = pd.to_numeric(prepared[column.name], errors="raise")
     return prepared.sort_values(list(spec.primary_key), kind="mergesort").reset_index(drop=True)
 
 
