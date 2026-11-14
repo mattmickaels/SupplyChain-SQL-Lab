@@ -178,6 +178,7 @@ def test_bom_has_no_cycles_and_depth_4_to_6(frames: dict[str, pd.DataFrame]) -> 
     assert non_tools <= set(bom["component_material_no"])
     assert bom["component_material_no"].value_counts().max() > 1
 
+    types = materials.set_index("material_no")["material_type"]
     gray: set[str] = set()
     done: dict[str, tuple[int, int]] = {}
 
@@ -197,10 +198,16 @@ def test_bom_has_no_cycles_and_depth_4_to_6(frames: dict[str, pd.DataFrame]) -> 
         done[node] = span
         return span
 
+    # Every node, including parts no tool reaches.
+    for node in sorted(set(children) | set(bom["component_material_no"])):
+        walk(node)
+
     tools = materials.loc[materials["material_type"] == "TOOL", "material_no"]
     for tool_no in tools:
         low, high = walk(tool_no)
         assert 4 <= low <= high <= 6
+        module_children = [kid for kid in children.get(tool_no, []) if types[kid] == "MODULE"]
+        assert 3 <= len(module_children) <= 6
 
 
 def test_every_rf_generator_single_sourced_from_corvane(
