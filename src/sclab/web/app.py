@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markdown_it import MarkdownIt
 from markupsafe import Markup
+from starlette.concurrency import run_in_threadpool
 
 from sclab.constants import AS_OF_DATE, COMPANY_NAME
 from sclab.data.schema import TABLES
@@ -30,7 +31,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
     lessons = load_lessons(content_dir, include_sample=include_sample)
     exercises = {item.id: item for lesson in lessons for item in lesson.exercises}
     templates = Jinja2Templates(directory=_WEB_DIR / "templates")
-    app = FastAPI(title=COMPANY_NAME)
+    app = FastAPI(title=COMPANY_NAME, docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
     def store() -> ProgressStore:
@@ -108,7 +109,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         sql = fields.get("sql", "")
         target = fields.get("target", "lesson")
         try:
-            result = run_query(sql, target=target)  # type: ignore[arg-type]
+            result = await run_in_threadpool(run_query, sql, target)
             context = {"error": None, "result": result, "note": _result_note(result)}
         except QueryError as exc:
             context = {"error": exc.message, "result": None, "note": ""}
@@ -121,7 +122,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         error = None
         outcome = None
         try:
-            outcome = check_answer(exercise, sql)
+            outcome = await run_in_threadpool(check_answer, exercise, sql)
             passed = outcome.passed
         except QueryError as exc:
             error = exc.message
@@ -152,13 +153,14 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
     def api_solution(exercise_id: str):
         exercise = _require_exercise(exercises, exercise_id)
         if store().status(exercise_id) == "new":
-            return HTMLResponse("Check your answer first.", status_code=403)
+            message = "Try a Check first, then the solution unlocks."
+            return HTMLResponse(f'<p class="message">{message}</p>')
         sql = html.escape(exercise.reference_sql[0])
         return HTMLResponse(f'<pre class="solution"><code>{sql}</code></pre>')
 
     @app.post("/api/sandbox/reset")
-    def api_reset():
-        reset_sandbox()
+    async def api_reset():
+        await run_in_threadpool(reset_sandbox)
         return HTMLResponse('<p class="banner">Practice database reset.</p>')
 
     return app

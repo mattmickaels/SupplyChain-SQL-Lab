@@ -1,5 +1,7 @@
 import socket
 import sys
+import threading
+import time
 import webbrowser
 
 import uvicorn
@@ -27,6 +29,19 @@ def pick_port(start: int = _PORT_START, end: int = _PORT_END) -> int:
     raise OSError(f"No free port from {start} to {end}.")
 
 
+def _wait_until_listening(host: str, port: int, timeout_s: float = 15.0) -> None:
+    """Poll until a TCP connection to host:port succeeds."""
+    deadline = time.perf_counter() + timeout_s
+    while True:
+        try:
+            with socket.create_connection((host, port), timeout=0.2):
+                return
+        except OSError:
+            if time.perf_counter() >= deadline:
+                raise TimeoutError(f"Server did not listen on {host}:{port}.") from None
+            time.sleep(0.1)
+
+
 def main() -> None:
     console = Console(file=sys.stdout, force_terminal=True)
     with Progress(
@@ -45,5 +60,12 @@ def main() -> None:
     port = pick_port()
     url = f"http://{_HOST}:{port}"
     print(url)
+    server = threading.Thread(
+        target=uvicorn.run,
+        kwargs={"app": create_app(), "host": _HOST, "port": port},
+        daemon=True,
+    )
+    server.start()
+    _wait_until_listening(_HOST, port)
     webbrowser.open(url)
-    uvicorn.run(create_app(), host=_HOST, port=port)
+    server.join()

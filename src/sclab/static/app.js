@@ -30,6 +30,9 @@
         matchBrackets: true,
       });
       el.editor = editor;
+      editor.on("change", function () {
+        editor.save();
+      });
       editor.setOption("extraKeys", {
         "Ctrl-Enter": function () {
           runEditor(el);

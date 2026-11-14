@@ -2,18 +2,25 @@
 
 import re
 import socket
+import threading
+import time
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from sclab.cli import pick_port
+from sclab.cli import main, pick_port
+from sclab.engine.query import run_query as real_run_query
 from sclab.lessons.progress import ProgressStore
 from sclab.paths import progress_path
 from sclab.web.app import create_app
 
 _URL = re.compile(r"https?://")
-_TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "src" / "sclab" / "web" / "templates"
+_ROOT = Path(__file__).resolve().parents[1]
+_TEMPLATE_DIR = _ROOT / "src" / "sclab" / "web" / "templates"
+_APP_JS = _ROOT / "src" / "sclab" / "static" / "app.js"
+_SCRIPT = "<script>alert(1)</script>"
+_ESCAPED_SCRIPT = "&lt;script&gt;alert(1)&lt;/script&gt;"
 
 
 @pytest.fixture
@@ -68,7 +75,9 @@ def test_check_records_progress(client) -> None:
 
 def test_solution_hidden_before_first_attempt(client) -> None:
     hidden = client.get("/api/solution/sample-count")
-    assert hidden.status_code == 403
+    assert hidden.status_code == 200
+    assert "Try a Check first, then the solution unlocks." in hidden.text
+    assert "SELECT count(*) AS plant_count FROM plant" not in hidden.text
     attempted = client.post("/api/check/sample-count", data={"sql": "SELECT 1"})
     assert attempted.status_code == 200
     shown = client.get("/api/solution/sample-count")
@@ -107,6 +116,9 @@ def test_no_external_urls_in_templates(client) -> None:
         page = client.get(route)
         assert page.status_code == 200
         assert _URL.search(page.text) is None, route
+    for route in ("/docs", "/redoc", "/openapi.json"):
+        page = client.get(route)
+        assert page.status_code == 404, route
 
 
 def test_pick_port_skips_busy_port() -> None:
@@ -117,3 +129,85 @@ def test_pick_port_skips_busy_port() -> None:
         assert pick_port() == 8766
     finally:
         held.close()
+
+
+def test_app_js_syncs_editor_on_change() -> None:
+    source = _APP_JS.read_text(encoding="utf-8")
+    matched = re.search(
+        r"""\.on\(\s*["']change["']\s*,\s*(?:function\s*\([^)]*\)|\([^)]*\)\s*=>)[\s\S]{0,80}?\.save\(\)""",
+        source,
+    )
+    assert matched is not None
+
+
+def test_slow_query_does_not_block_other_requests(lab_home, monkeypatch) -> None:
+    def limited(sql: str, target: str = "lesson", max_rows: int = 1000, timeout_s: float = 3.0):
+        return real_run_query(sql, target=target, max_rows=max_rows, timeout_s=3.0)
+
+    monkeypatch.setattr("sclab.web.app.run_query", limited)
+    # count(*) of two ranges returns immediately, so the cross join is summed instead.
+    sql = "SELECT sum(a.range) FROM range(1000000) a, range(3000) b"
+    box: dict = {}
+    # One portal, so both requests share an event loop. A fresh TestClient does not.
+    with TestClient(create_app(include_sample=True)) as client:
+
+        def post() -> None:
+            box["response"] = client.post("/api/run", data={"sql": sql, "target": "lesson"})
+
+        worker = threading.Thread(target=post)
+        worker.start()
+        time.sleep(0.2)
+        assert worker.is_alive()
+        started = time.perf_counter()
+        home = client.get("/")
+        elapsed = time.perf_counter() - started
+        assert home.status_code == 200
+        assert elapsed < 1
+        assert worker.is_alive()
+        worker.join(timeout=10)
+        assert not worker.is_alive()
+        assert box["response"].status_code == 200
+
+
+def test_browser_opens_after_server_ready(lab_home, monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_run(*_args, **kwargs):
+        calls.append("server")
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind((kwargs["host"], kwargs["port"]))
+        sock.listen(1)
+        sock.settimeout(5)
+        try:
+            conn, _addr = sock.accept()
+            conn.close()
+        finally:
+            sock.close()
+
+    def fake_open(_url):
+        calls.append("browser")
+
+    monkeypatch.setattr("sclab.cli.uvicorn.run", fake_run)
+    monkeypatch.setattr("sclab.cli.webbrowser.open", fake_open)
+    main()
+    assert calls == ["server", "browser"]
+
+
+def test_result_grid_escapes_script_literal(client) -> None:
+    response = client.post(
+        "/api/run",
+        data={"sql": f"SELECT '{_SCRIPT}' AS note", "target": "lesson"},
+    )
+    assert response.status_code == 200
+    assert _ESCAPED_SCRIPT in response.text
+    assert "<script>" not in response.text
+
+
+def test_error_panel_escapes_script_literal(client) -> None:
+    response = client.post(
+        "/api/run",
+        data={"sql": f"SELECT '{_SCRIPT}' FROM missing_table", "target": "lesson"},
+    )
+    assert response.status_code == 200
+    assert _ESCAPED_SCRIPT in response.text
+    assert "<script>" not in response.text
