@@ -64,6 +64,16 @@ def test_invalid_progress_fields_are_quarantined(tmp_path: Path) -> None:
     assert corrupt[0].read_text(encoding="utf-8") == original
 
 
+def test_second_store_sees_first_store_pass(tmp_path: Path) -> None:
+    path = tmp_path / "progress.json"
+    first = ProgressStore(path)
+    second = ProgressStore(path)
+    first.record_attempt("plants", "SELECT plant_code FROM plant", True)
+    assert second.status("plants") == "passed"
+    assert second.last_sql("plants") == "SELECT plant_code FROM plant"
+    assert second.summary() == {"attempted": 0, "passed": 1}
+
+
 def test_two_stores_keep_interleaved_attempts(tmp_path: Path) -> None:
     path = tmp_path / "progress.json"
     first = ProgressStore(path)

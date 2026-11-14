@@ -44,31 +44,37 @@ class ProgressStore:
             self._save()
 
     def status(self, exercise_id: str) -> Literal["new", "attempted", "passed"]:
-        entry = self._data["exercises"].get(exercise_id)
-        if entry is None:
-            return "new"
-        if entry.get("passed") is True:
-            return "passed"
-        return "attempted"
+        with _lock_for(self.path):
+            self._data = self._load()
+            entry = self._data["exercises"].get(exercise_id)
+            if entry is None:
+                return "new"
+            if entry.get("passed") is True:
+                return "passed"
+            return "attempted"
 
     def last_sql(self, exercise_id: str) -> str | None:
-        entry = self._data["exercises"].get(exercise_id)
-        if not isinstance(entry, dict):
-            return None
-        sql = entry.get("sql")
-        if not isinstance(sql, str):
-            return None
-        return sql
+        with _lock_for(self.path):
+            self._data = self._load()
+            entry = self._data["exercises"].get(exercise_id)
+            if not isinstance(entry, dict):
+                return None
+            sql = entry.get("sql")
+            if not isinstance(sql, str):
+                return None
+            return sql
 
     def summary(self) -> dict[str, int]:
-        attempted = 0
-        passed = 0
-        for entry in self._data["exercises"].values():
-            if isinstance(entry, dict) and entry.get("passed") is True:
-                passed += 1
-            else:
-                attempted += 1
-        return {"attempted": attempted, "passed": passed}
+        with _lock_for(self.path):
+            self._data = self._load()
+            attempted = 0
+            passed = 0
+            for entry in self._data["exercises"].values():
+                if isinstance(entry, dict) and entry.get("passed") is True:
+                    passed += 1
+                else:
+                    attempted += 1
+            return {"attempted": attempted, "passed": passed}
 
     def _load(self) -> dict:
         if not self.path.exists():
