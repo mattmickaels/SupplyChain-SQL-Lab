@@ -59,6 +59,7 @@ def test_lesson_db_is_read_only() -> None:
     assert remaining.rows[0][0] == 3
 
 
+@pytest.mark.parametrize("target", ["lesson", "sandbox"])
 @pytest.mark.parametrize(
     "sql",
     [
@@ -68,23 +69,46 @@ def test_lesson_db_is_read_only() -> None:
         "INSTALL httpfs",
     ],
 )
-def test_external_access_blocked(sql: str) -> None:
+def test_external_access_blocked(target: str, sql: str) -> None:
     with pytest.raises(QueryError):
-        run_query(sql)
+        run_query(sql, target=target)
+
+
+@pytest.mark.parametrize("target", ["lesson", "sandbox"])
+def test_configuration_locked(target: str) -> None:
+    with pytest.raises(QueryError):
+        run_query("SET enable_external_access = true", target=target)
+
+
+@pytest.mark.parametrize("target", ["lesson", "sandbox"])
+def test_external_access_setting_is_off(target: str) -> None:
+    setting = run_query("SELECT current_setting('enable_external_access')", target=target)
+    assert setting.rows[0][0] is False
 
 
 def test_huge_result_truncated(lab_conn) -> None:
     total = lab_conn.execute("SELECT count(*) FROM stock_movement").fetchone()[0]
+    assert total > 1_000
     result = run_query("SELECT * FROM stock_movement")
+    assert len(result.rows) == 1_000
+    assert result.truncated is True
     assert result.total_rows == total
-    assert len(result.rows) == min(total, MAX_ROWS)
-    assert result.truncated is (total > MAX_ROWS)
-    assert len(result.columns) > 0
 
-    capped = run_query("SELECT range FROM range(1001)")
-    assert len(capped.rows) == MAX_ROWS
-    assert capped.truncated is True
-    assert capped.total_rows == 1001
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT range FROM range(1001); /* done */",
+        "SELECT range FROM range(1001) /* -- text */",
+        "SELECT range FROM range(1001) -- done",
+        "SELECT '-- ; --' AS label FROM range(1001)",
+    ],
+)
+def test_capped_count_keeps_comments_and_literals(sql: str) -> None:
+    result = run_query(sql)
+    assert len(result.rows) == MAX_ROWS
+    assert result.truncated is True
+    assert result.total_rows == 1001
 
 
 def test_runaway_query_interrupted() -> None:

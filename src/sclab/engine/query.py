@@ -133,21 +133,35 @@ def _collect(connection, statement, max_rows: int):
 
 
 def _count_sql(sql: str) -> str:
-    return f"SELECT count(*) FROM ({_statement_body(sql)})"
+    body = _without_trailing_semicolon(sql.strip())
+    return f"SELECT count(*) FROM ({body}\n) AS t"
 
 
-def _statement_body(sql: str) -> str:
-    text = sql.strip()
+def _without_trailing_semicolon(sql: str) -> str:
+    """Drop a terminator semicolon, leaving comments in place."""
+    text = sql
+    suffix: list[str] = []
     while True:
-        previous = text
-        text = _without_trailing_line_comment(text).rstrip()
-        while text.endswith(";"):
+        if text.endswith("*/"):
+            start = text.rfind("/*")
+            if start == -1:
+                break
+            suffix.append(text[start:])
+            text = text[:start].rstrip()
+            continue
+        comment_at = _trailing_line_comment(text)
+        if comment_at is not None:
+            suffix.append(text[comment_at:])
+            text = text[:comment_at].rstrip()
+            continue
+        if text.endswith(";"):
             text = text[:-1].rstrip()
-        if text == previous:
-            return text
+            continue
+        break
+    return text + "".join(reversed(suffix))
 
 
-def _without_trailing_line_comment(sql: str) -> str:
+def _trailing_line_comment(sql: str) -> int | None:
     in_single = False
     in_double = False
     index = 0
@@ -162,11 +176,11 @@ def _without_trailing_line_comment(sql: str) -> str:
             in_double = not in_double
         elif not in_single and not in_double and sql.startswith("--", index):
             if "\n" not in sql[index:]:
-                return sql[:index]
+                return index
             index = sql.find("\n", index) + 1
             continue
         index += 1
-    return sql
+    return None
 
 
 def _remove_wal(path: Path) -> None:
