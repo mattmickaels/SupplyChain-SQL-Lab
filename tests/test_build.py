@@ -2,6 +2,7 @@
 
 import os
 from datetime import date
+from pathlib import Path
 
 import duckdb
 import pandas as pd
@@ -125,18 +126,28 @@ def test_messiness_present(lab_conn) -> None:
     # 25 customers cannot land on exactly 1%. One row is the nearest non-zero count.
     assert trailing == max(1, round(0.01 * len(countries)))
 
-    keys = {
-        "material": "material_no",
-        "customer": "customer_no",
-        "supplier": "supplier_no",
-        "sales_order": "so_no",
-        "purchase_order": "po_no",
-        "production_order": "prod_order_no",
-    }
-    for name, column in keys.items():
-        series = lab_conn.execute(f"SELECT {column} FROM {name}").df()[column].astype(str)
-        assert series.str.fullmatch(r"\S+").all(), name
-        assert not series.str.endswith(" ").any(), name
+
+def test_key_columns_clean(lab_conn) -> None:
+    for item in TABLES:
+        foreign = {column for column, _table, _ref in item.foreign_keys}
+        by_name = {column.name: column for column in item.columns}
+        for name in (*item.primary_key, *sorted(foreign)):
+            column = by_name[name]
+            allow_null = name in foreign and column.nullable
+            if not allow_null:
+                nulls = lab_conn.execute(
+                    f"SELECT COUNT(*) FROM {item.name} WHERE {name} IS NULL"
+                ).fetchone()[0]
+                assert nulls == 0, f"{item.name}.{name}"
+            dirty = lab_conn.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM {item.name}
+                WHERE {name} IS NOT NULL
+                  AND CAST({name} AS VARCHAR) <> TRIM(CAST({name} AS VARCHAR))
+                """
+            ).fetchone()[0]
+            assert dirty == 0, f"{item.name}.{name}"
 
 
 def test_monthly_volumes_and_status(lab_conn) -> None:
@@ -278,6 +289,59 @@ def test_forecast_and_supply(lab_conn) -> None:
     assert (opened["received_qty"] < opened["order_qty"]).all()
 
 
+def test_running_inventory_never_negative(lab_conn) -> None:
+    lowest = lab_conn.execute(
+        """
+        SELECT MIN(balance)
+        FROM (
+            SELECT SUM(qty) OVER (
+                PARTITION BY material_no, plant_code, storage_location
+                ORDER BY posting_date, movement_no
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+            ) AS balance
+            FROM stock_movement
+        )
+        """
+    ).fetchone()[0]
+    assert int(lowest) >= 0
+
+
+def test_purchasing_nets_against_stock(lab_conn) -> None:
+    # History is November 2021 through October 2026, which is 60 months.
+    sample = lab_conn.execute(
+        """
+        WITH usage AS (
+            SELECT material_no,
+                   plant_code,
+                   SUM(CASE WHEN movement_type IN ('261', '601') THEN -qty ELSE 0 END) AS used,
+                   SUM(CASE WHEN movement_type = '101' THEN qty ELSE 0 END) AS received
+            FROM stock_movement
+            WHERE storage_location = 'RM01'
+            GROUP BY material_no, plant_code
+        )
+        SELECT u.used,
+               u.received,
+               COALESCE(i.qty_on_hand, 0) AS ending,
+               p.safety_stock
+        FROM usage AS u
+        LEFT JOIN inventory AS i
+          ON i.material_no = u.material_no
+         AND i.plant_code = u.plant_code
+         AND i.storage_location = 'RM01'
+        JOIN material_plant AS p
+          ON p.material_no = u.material_no
+         AND p.plant_code = u.plant_code
+        WHERE u.used > 0
+        ORDER BY u.used DESC
+        LIMIT 20
+        """
+    ).df()
+    assert len(sample) == 20
+    covered = sample["used"] + sample["ending"] + sample["safety_stock"]
+    assert (sample["received"] <= covered).all()
+    assert (sample["ending"] <= 3 * sample["used"] / 60).all()
+
+
 def test_inventory_matches_movements(lab_conn) -> None:
     movements = lab_conn.execute(
         """
@@ -368,6 +432,22 @@ def test_deterministic_fingerprint(tmp_path) -> None:
     finally:
         left_conn.close()
         right_conn.close()
+
+
+def test_failed_build_keeps_existing_database(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "lab.duckdb"
+    build_database(path)
+    original = path.read_bytes()
+
+    def explode(_rng, _master):
+        raise RuntimeError("build failed on purpose")
+
+    monkeypatch.setattr("sclab.data.build.generate_transactions", explode)
+    with pytest.raises(RuntimeError, match="build failed on purpose"):
+        build_database(path)
+    assert path.read_bytes() == original
+    assert not path.with_suffix(".tmp").exists()
+    assert not Path(str(path.with_suffix(".tmp")) + ".wal").exists()
 
 
 def test_build_under_time_budget(tmp_path) -> None:

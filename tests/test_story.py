@@ -85,7 +85,10 @@ def test_halcyon_spike(lab_conn) -> None:
 
     prior_start = SPIKE_START.replace(year=SPIKE_START.year - 1)
     prior_end = AS_OF_DATE.replace(year=AS_OF_DATE.year - 1)
-    assert etch_qty(SPIKE_START, AS_OF_DATE) >= 1.5 * etch_qty(prior_start, prior_end)
+    # Both windows count every non-cancelled Etch tool order line.
+    prior_qty = etch_qty(prior_start, prior_end)
+    assert prior_qty > 0
+    assert etch_qty(SPIKE_START, AS_OF_DATE) >= 1.5 * prior_qty
 
 
 def test_bay_overload(lab_conn) -> None:
@@ -166,8 +169,12 @@ def test_at_risk_orders_exist(lab_conn) -> None:
         SELECT i.material_no, i.confirmed_delivery_date
         FROM purchase_order_item AS i
         JOIN purchase_order AS h ON h.po_no = i.po_no
+        LEFT JOIN goods_receipt AS g
+          ON g.po_no = i.po_no AND g.line_no = i.line_no
         WHERE h.supplier_no = ?
-          AND i.confirmed_delivery_date > ?
+          AND h.order_date <= ?
+        GROUP BY i.po_no, i.line_no, i.material_no, i.order_qty, i.confirmed_delivery_date
+        HAVING COALESCE(SUM(g.qty), 0) < i.order_qty
         """,
         [CORVANE_SUPPLIER_NO, AS_OF_DATE],
     ).df()

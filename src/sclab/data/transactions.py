@@ -42,7 +42,7 @@ def generate_transactions(
     forecast = _forecast(master, lines)
     demand, issues = _component_demand(lines, production, leaf)
     supply = _supply(rng, master, demand)
-    movements, inventory = _stock(lines, production, supply["goods_receipt"], issues)
+    movements, inventory = _stock(lines, production, supply["goods_receipt"], issues, demand)
     return {
         "sales_order": _sales_orders(lines),
         "sales_order_item": _sales_items(lines),
@@ -337,17 +337,20 @@ def _component_demand(lines, production, leaf) -> tuple[pd.DataFrame, pd.DataFra
             "need_date": _before_as_of(spares["promised_date"]).to_numpy(),
         }
     )
+    production_demand["use"] = "issue"
+    spare_demand["use"] = "ship"
     demand = pd.concat([production_demand, spare_demand], ignore_index=True)
     demand["need_date"] = pd.to_datetime(demand["need_date"])
-    due = production_demand["need_date"] <= AS_OF_TS
+    demand = _assign_cover(demand)
+    due_issue = demand["use"].eq("issue") & demand["need_date"].le(AS_OF_TS)
     issues = pd.DataFrame(
         {
-            "material_no": production_demand.loc[due, "material_no"].to_numpy(),
-            "plant_code": production_demand.loc[due, "plant_code"].to_numpy(),
+            "material_no": demand.loc[due_issue, "material_no"].to_numpy(),
+            "plant_code": demand.loc[due_issue, "plant_code"].to_numpy(),
             "storage_location": COMPONENT_LOCATION,
             "movement_type": "261",
-            "qty": -production_demand.loc[due, "qty"].to_numpy(),
-            "posting_date": production_demand.loc[due, "need_date"].to_numpy(),
+            "qty": -demand.loc[due_issue, "qty"].to_numpy(),
+            "posting_date": demand.loc[due_issue, "cover_date"].to_numpy(),
         }
     )
     return demand, issues
@@ -365,21 +368,36 @@ def _supply(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFrame]:
     }
 
 
-def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFrame]:
-    stamp = pd.to_datetime(demand["need_date"])
+def _assign_cover(demand: pd.DataFrame) -> pd.DataFrame:
+    """Date each bucket's stock movements on the last day that bucket is consumed."""
+    frame = demand.copy()
+    stamp = pd.to_datetime(frame["need_date"])
     month_index = (stamp.dt.year - 2021) * 12 + (stamp.dt.month - 11)
     due = stamp <= AS_OF_TS
-    demand = demand.copy()
-    demand["bucket"] = np.where(
+    frame["bucket"] = np.where(
         due,
         month_index // BUCKET_MONTHS,
         1000 + (month_index - 60) // BUCKET_MONTHS,
     )
-    demand["segment"] = np.where(due, 0, 1)
+    frame["segment"] = np.where(due, 0, 1)
+    frame["cover_date"] = frame.groupby(["material_no", "plant_code", "segment", "bucket"])[
+        "need_date"
+    ].transform("max")
+    return frame
+
+
+def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    if "cover_date" not in demand.columns:
+        demand = _assign_cover(demand)
     grouped = demand.groupby(
         ["material_no", "plant_code", "segment", "bucket"], as_index=False
-    ).agg(qty=("qty", "sum"), requested=("need_date", "min"), receipt_date=("need_date", "max"))
-    grouped = _add_safety_stock(grouped, master["material_plant"])
+    ).agg(
+        qty=("qty", "sum"),
+        requested=("need_date", "min"),
+        receipt_date=("cover_date", "first"),
+    )
+    grouped = _net_requirements(grouped, master["material_plant"])
+    grouped["pinned_order_date"] = pd.NaT
     grouped = pd.concat([grouped, _at_risk_lines(master)], ignore_index=True)
     primary = (
         master["material_supplier"]
@@ -397,10 +415,16 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
     grouped["order_date"] = grouped["requested"] - pd.to_timedelta(
         grouped["planned_lead_time_days"].astype(int), unit="D"
     )
+    pinned = grouped["pinned_order_date"].notna()
+    grouped.loc[pinned, "order_date"] = pd.to_datetime(grouped.loc[pinned, "pinned_order_date"])
     slip = grouped["supplier_no"].eq(CORVANE_SUPPLIER_NO) & grouped["order_date"].ge(SLIP_TS)
     grouped["confirmed"] = grouped["requested"]
     grouped.loc[slip, "confirmed"] = grouped.loc[slip, "requested"] + pd.Timedelta(days=SLIP_DAYS)
     grouped = _set_on_time(rng, grouped, slip)
+    # Leave one unit open when a slipped line is confirmed after the as-of date
+    # but its demand was already consumed. The rest is received on the cover date.
+    short = grouped["is_open"] & grouped["receipt_date"].le(AS_OF_TS)
+    grouped.loc[short, "qty"] = grouped.loc[short, "qty"] + 1
     grouped["order_qty"] = grouped["qty"].round().astype(int)
     grouped["uom"] = "EA"
     grouped["net_price"] = grouped["unit_price"].round(2)
@@ -425,19 +449,47 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
     return {"headers": headers, "items": items, "lines": grouped}
 
 
-def _add_safety_stock(grouped: pd.DataFrame, planning: pd.DataFrame) -> pd.DataFrame:
-    due = grouped[grouped["segment"] == 0]
-    earliest = due.groupby(["material_no", "plant_code"], as_index=False)["bucket"].min()
-    earliest = earliest.rename(columns={"bucket": "earliest_bucket"})
-    frame = grouped.merge(earliest, on=["material_no", "plant_code"], how="left")
-    frame = frame.merge(
+def _net_requirements(grouped: pd.DataFrame, planning: pd.DataFrame) -> pd.DataFrame:
+    """Buy only what projected stock cannot cover, and refill safety stock when it is short."""
+    frame = grouped.merge(
         planning[["material_no", "plant_code", "safety_stock"]],
         on=["material_no", "plant_code"],
         how="left",
     )
-    add = frame["segment"].eq(0) & frame["bucket"].eq(frame["earliest_bucket"])
-    frame.loc[add, "qty"] = frame.loc[add, "qty"] + frame.loc[add, "safety_stock"].fillna(0)
-    return frame.drop(columns=["earliest_bucket", "safety_stock"])
+    frame["safety_stock"] = frame["safety_stock"].fillna(0).astype(int)
+    frame = frame.sort_values(
+        ["material_no", "plant_code", "segment", "bucket", "requested"]
+    ).reset_index(drop=True)
+    gross = frame["qty"].to_numpy(dtype=np.int64)
+    safety = frame["safety_stock"].to_numpy(dtype=np.int64)
+    pair = frame["material_no"].astype(str) + "\0" + frame["plant_code"].astype(str)
+    codes = pd.factorize(pair, sort=False)[0]
+    buy = np.empty(len(frame), dtype=np.int64)
+    on_hand = 0
+    previous = -1
+    for index, code in enumerate(codes):
+        if code != previous:
+            on_hand = 0
+            previous = int(code)
+        projected = on_hand - int(gross[index])
+        target = int(safety[index])
+        needed = target - projected if projected < target else 0
+        buy[index] = needed
+        on_hand = projected + needed
+    frame["qty"] = buy
+    kept = frame.loc[
+        frame["qty"] > 0,
+        [
+            "material_no",
+            "plant_code",
+            "segment",
+            "bucket",
+            "qty",
+            "requested",
+            "receipt_date",
+        ],
+    ]
+    return kept.reset_index(drop=True)
 
 
 def _at_risk_lines(master: dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -452,6 +504,7 @@ def _at_risk_lines(master: dict[str, pd.DataFrame]) -> pd.DataFrame:
             "qty": 1,
             "requested": requested,
             "receipt_date": requested,
+            "pinned_order_date": AS_OF_TS,
         }
     )
 
@@ -505,6 +558,9 @@ def _mark_rate(on_time: np.ndarray, mask: np.ndarray, rate: float, *, band: bool
 
 def _goods_receipts(lines: pd.DataFrame) -> pd.DataFrame:
     closed = lines.loc[~lines["is_open"]].reset_index(drop=True)
+    partial = lines.loc[lines["is_open"] & lines["receipt_date"].le(AS_OF_TS)].reset_index(
+        drop=True
+    )
     supplier_ordinal = pd.factorize(closed["supplier_no"], sort=True)[0]
     min_qty = closed.groupby("supplier_no")["order_qty"].transform("min").to_numpy()
     n_rec = np.where(min_qty >= 3, 1 + (supplier_ordinal % 3), 1)
@@ -517,6 +573,10 @@ def _goods_receipts(lines: pd.DataFrame) -> pd.DataFrame:
     split = line_qty // parts + (part < (line_qty % parts)).astype(int)
     receipts = closed.iloc[repeated].copy()
     receipts["qty"] = split
+    if len(partial) > 0:
+        partial = partial.copy()
+        partial["qty"] = partial["order_qty"] - 1
+        receipts = pd.concat([receipts, partial], ignore_index=True)
     receipts["storage_location"] = COMPONENT_LOCATION
     receipts = receipts.sort_values(["receipt_date", "po_no", "line_no"]).reset_index(drop=True)
     receipts["gr_no"] = _row_ids(len(receipts), "GR-", 7)
@@ -551,7 +611,13 @@ def _quality_notifications(receipts: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
-def _stock(lines, production, receipts, issues) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _stock(
+    lines,
+    production,
+    receipts,
+    issues,
+    demand: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     receipt_moves = pd.DataFrame(
         {
             "material_no": receipts["material_no"].to_numpy(),
@@ -562,7 +628,15 @@ def _stock(lines, production, receipts, issues) -> tuple[pd.DataFrame, pd.DataFr
             "posting_date": pd.to_datetime(receipts["receipt_date"]).to_numpy(),
         }
     )
-    shipped = lines[lines["status"] == "Shipped"]
+    shipped = lines[lines["status"] == "Shipped"].copy()
+    cover = demand.groupby(["material_no", "plant_code", "need_date"], as_index=False)[
+        "cover_date"
+    ].max()
+    shipped["need_date"] = _before_as_of(shipped["shipped_date"])
+    shipped = shipped.merge(cover, on=["material_no", "plant_code", "need_date"], how="left")
+    posting = shipped["cover_date"].where(
+        shipped["cover_date"].notna(), pd.to_datetime(shipped["shipped_date"])
+    )
     location = np.where(shipped["kind"].eq("tool"), TOOL_LOCATION, COMPONENT_LOCATION)
     shipments = pd.DataFrame(
         {
@@ -571,7 +645,7 @@ def _stock(lines, production, receipts, issues) -> tuple[pd.DataFrame, pd.DataFr
             "storage_location": location,
             "movement_type": "601",
             "qty": -shipped["qty"].to_numpy(),
-            "posting_date": pd.to_datetime(shipped["shipped_date"]).to_numpy(),
+            "posting_date": posting.to_numpy(),
         }
     )
     finished = production[production["prod_status"] == "Completed"]
