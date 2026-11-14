@@ -11,6 +11,8 @@ The generated data is not changed unless the Task 1 probes prove a lesson cannot
 
 **Tech Stack:** Stage 1 stack plus `openpyxl` (Excel writing).
 
+**Status:** approved by Matt, 2026-11-14.
+
 **Spec:** `docs/superpowers/specs/2026-11-14-supply-chain-sql-lab-design.md`
 **Builds on:** `docs/superpowers/plans/2026-11-14-stage-1-data-editor-lessons-1-4.md` and the code it produced.
 Before dispatching each task, the orchestrator checks the stage 1 interfaces named below against the merged code and corrects the brief if a name or signature moved during stage 1.
