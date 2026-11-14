@@ -207,7 +207,7 @@ def test_bom_has_no_cycles_and_depth_4_to_6(frames: dict[str, pd.DataFrame]) -> 
         low, high = walk(tool_no)
         assert 4 <= low <= high <= 6
         module_children = [kid for kid in children.get(tool_no, []) if types[kid] == "MODULE"]
-        assert 3 <= len(module_children) <= 6
+        assert 3 <= len(module_children) <= 7
 
 
 def test_every_rf_generator_single_sourced_from_corvane(
@@ -300,3 +300,99 @@ def test_realistic_sources_and_prices(lab_conn):
     """).fetchone()[0]
         >= 0.30
     )
+
+
+def test_round2_corvane_categories_and_unique_suppliers(lab_conn):
+    categories = lab_conn.execute("""
+        SELECT m.description, s.is_primary FROM material_supplier s
+        JOIN material m USING (material_no) WHERE s.supplier_no = 'V-10017'
+    """).fetchall()
+    assert {description for description, _ in categories} == {"RF generator", "RF match network"}
+    assert any(description == "RF match network" and primary for description, primary in categories)
+    purchased = lab_conn.execute("""
+        SELECT DISTINCT m.description FROM purchase_order h
+        JOIN purchase_order_item i USING (po_no) JOIN material m USING (material_no)
+        WHERE h.supplier_no = 'V-10017'
+    """).fetchall()
+    assert {description for (description,) in purchased} == {"RF generator", "RF match network"}
+    assert lab_conn.execute("SELECT COUNT(*), COUNT(DISTINCT name) FROM supplier").fetchone() == (
+        150,
+        150,
+    )
+
+
+def test_round2_functional_bom_paths(lab_conn):
+    edges = lab_conn.execute("""
+        SELECT p.material_type, p.description, c.material_type, c.description
+        FROM bom_item b JOIN material p ON p.material_no = b.parent_material_no
+        JOIN material c ON c.material_no = b.component_material_no
+    """).fetchall()
+    allowed_types = {"TOOL": "MODULE", "MODULE": "SUBASSY", "SUBASSY": "COMPONENT"}
+    chamber = {
+        "Showerhead",
+        "ESC chuck",
+        "Wafer lift assembly",
+        "RF match network",
+        "Throttle valve",
+        "Liner and edge ring kit",
+        "Gas distribution",
+        "Chamber heater",
+        "RF electrode",
+        "Polishing platen",
+        "Carrier head",
+        "Slurry delivery",
+        "Pressure control",
+        "Pad conditioner",
+        "Optical head",
+        "Wafer stage",
+        "Illumination",
+        "Image acquisition",
+        "Vacuum chuck",
+    }
+    platform = {
+        "Factory interface module": {"Load port", "Wafer aligner"},
+        "Transfer chamber module": {"Vacuum manifold", "Isolation valve"},
+        "Wafer robot module": {"Robot drive", "Robot arm"},
+        "Gas delivery module": {"Valve manifold", "Mass flow controller"},
+        "Controls rack module": {"PCB assembly", "Harness"},
+        "Vacuum pumping module": {"Dry pump", "Turbo pump"},
+    }
+    purchased_parts = {
+        "RF match network": (
+            "RF generator",
+            "Spare RF generator kit",
+            "RF match network",
+            "Variable capacitor",
+            "RF coaxial cable",
+        ),
+        "Valve manifold": ("gas box", "Valve manifold block", "Pneumatic valve"),
+        "Mass flow controller": ("Mass flow sensor", "Proportional flow valve"),
+        "PCB assembly": ("process controller", "Control PCB assembly", "Power supply board"),
+        "Harness": ("Cable harness", "Harness connector"),
+    }
+    for parent_type, parent, child_type, child in edges:
+        assert child_type == allowed_types[parent_type], (parent, child)
+        if parent_type == "MODULE":
+            function = child.split(" subassembly,")[0]
+            assert function in (platform[parent] if parent in platform else chamber), (
+                parent,
+                child,
+            )
+        elif parent_type == "SUBASSY":
+            function = parent.split(" subassembly,")[0]
+            if function in purchased_parts:
+                assert child.startswith(purchased_parts[function]), (parent, child)
+    paths = lab_conn.execute("""
+        SELECT t.description, m.description, s.description, c.description
+        FROM material t JOIN bom_item a ON a.parent_material_no=t.material_no
+        JOIN material m ON m.material_no=a.component_material_no
+        JOIN bom_item b ON b.parent_material_no=m.material_no
+        JOIN material s ON s.material_no=b.component_material_no
+        JOIN bom_item d ON d.parent_material_no=s.material_no
+        JOIN material c ON c.material_no=d.component_material_no
+        WHERE t.family_code='ETC' AND t.material_type='TOOL'
+          AND m.description='Etch chamber module'
+          AND s.description LIKE 'RF match network subassembly,%'
+          AND c.description='RF match network'
+    """).fetchall()
+    assert paths

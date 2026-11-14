@@ -504,7 +504,12 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
     grouped.loc[overdue_partial, "partial_qty"] = 1
     grouped["uom"] = "EA"
     # Annual price agreements drift gently; secondary quotes carry their own price.
-    sources = master["material_supplier"].loc[~master["material_supplier"]["is_primary"]]
+    sources = master["material_supplier"].loc[
+        ~master["material_supplier"]["is_primary"]
+        & master["material_supplier"]["supplier_no"].ne(CORVANE_SUPPLIER_NO)
+    ]
+    # Corvane match-network commitments use its buffered primary procurement
+    # plan; a spot buy must not introduce its slip after the lot was planned.
     # Use qualified, active vendors for occasional spot buys, rather than making
     # a supplier's entire delivery record a single opportunistic shipment.
     activity = grouped.loc[~grouped["is_open"], "supplier_no"].value_counts()

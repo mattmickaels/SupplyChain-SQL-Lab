@@ -35,27 +35,98 @@ SPECIALTIES = (
     "Electronics",
     "Flow Controls",
 )
-PARTS = (
-    "Valve manifold",
-    "Mass flow controller",
-    "Pressure gauge",
-    "Wafer lift assembly",
-    "Edge ring",
-    "Showerhead",
-    "ESC chuck",
-    "RF match network",
-    "Throttle valve",
-    "O-ring kit",
-    "Harness",
-    "PCB assembly",
-    "Fastener kit",
-)
 PLATFORM_MODULES = (
     "Factory interface module",
     "Transfer chamber module",
     "Wafer robot module",
     "Gas delivery module",
     "Controls rack module",
+    "Vacuum pumping module",
+)
+CHAMBER_FUNCTIONS = {
+    "DEP": (
+        "Gas distribution",
+        "Chamber heater",
+        "Wafer lift assembly",
+        "RF electrode",
+        "Throttle valve",
+        "Liner and edge ring kit",
+    ),
+    "ETC": (
+        "Showerhead",
+        "ESC chuck",
+        "Wafer lift assembly",
+        "RF match network",
+        "Throttle valve",
+        "Liner and edge ring kit",
+    ),
+    "CMP": (
+        "Polishing platen",
+        "Carrier head",
+        "Slurry delivery",
+        "Wafer lift assembly",
+        "Pressure control",
+        "Pad conditioner",
+    ),
+    "INS": (
+        "Optical head",
+        "Wafer stage",
+        "Illumination",
+        "Image acquisition",
+        "Vacuum chuck",
+        "Wafer lift assembly",
+    ),
+}
+PLATFORM_FUNCTIONS = {
+    "Factory interface module": ("Load port", "Wafer aligner"),
+    "Transfer chamber module": ("Vacuum manifold", "Isolation valve"),
+    "Wafer robot module": ("Robot drive", "Robot arm"),
+    "Gas delivery module": ("Valve manifold", "Mass flow controller"),
+    "Controls rack module": ("PCB assembly", "Harness"),
+    "Vacuum pumping module": ("Dry pump", "Turbo pump"),
+}
+# A purchased component belongs to a specific functional subassembly.
+COMPONENT_RECIPES = {
+    "Gas distribution": ("Gas distribution plate", "Gas inlet fitting"),
+    "Chamber heater": ("Heater element", "Thermocouple"),
+    "Wafer lift assembly": ("Lift pin", "Lift actuator"),
+    "RF electrode": ("RF electrode plate", "Electrode insulator"),
+    "Throttle valve": ("Throttle valve body", "Throttle valve seal"),
+    "Liner and edge ring kit": ("Edge ring", "Liner retaining clip"),
+    "Showerhead": ("Showerhead faceplate", "Showerhead seal"),
+    "ESC chuck": ("ESC ceramic puck", "Chuck electrode"),
+    "RF match network": ("RF match network", "Variable capacitor", "RF coaxial cable"),
+    "Polishing platen": ("Platen bearing", "Platen drive belt"),
+    "Carrier head": ("Carrier membrane", "Carrier retaining ring"),
+    "Slurry delivery": ("Slurry dispense nozzle", "Slurry filter"),
+    "Pressure control": ("Pressure transducer", "Pressure regulator"),
+    "Pad conditioner": ("Conditioner disk", "Conditioner spindle"),
+    "Optical head": ("Objective lens", "Optical mount"),
+    "Wafer stage": ("Stage encoder", "Linear stage bearing"),
+    "Illumination": ("Illumination source", "Beam splitter"),
+    "Image acquisition": ("Camera sensor", "Image acquisition board"),
+    "Vacuum chuck": ("Vacuum chuck plate", "Chuck O-ring kit"),
+    "Load port": ("FOUP door latch", "Load port sensor"),
+    "Wafer aligner": ("Aligner spindle", "Wafer edge sensor"),
+    "Vacuum manifold": ("Vacuum manifold block", "Vacuum pressure gauge"),
+    "Isolation valve": ("Isolation valve gate", "Isolation valve O-ring kit"),
+    "Robot drive": ("Robot servo motor", "Robot drive encoder"),
+    "Robot arm": ("Wafer end effector", "Robot arm bearing"),
+    "Valve manifold": ("Valve manifold block", "Pneumatic valve"),
+    "Mass flow controller": ("Mass flow sensor", "Proportional flow valve"),
+    "PCB assembly": ("Control PCB assembly", "Power supply board"),
+    "Harness": ("Cable harness", "Harness connector"),
+    "Dry pump": ("Dry pump seal kit", "Pump exhaust fitting"),
+    "Turbo pump": ("Turbo pump bearing kit", "Turbo pump controller"),
+}
+LONG_LEAD_FUNCTIONS = (
+    "Dry pump",
+    "Robot arm",
+    "Chamber heater",
+    "Liner and edge ring kit",
+    "Valve manifold",
+    "PCB assembly",
+    "Turbo pump",
 )
 LONG_LEAD_OTHER = (
     "dry vacuum pump",
@@ -67,10 +138,8 @@ LONG_LEAD_OTHER = (
     "turbo pump",
 )
 N_TOOLS = 40
-N_MODULES = 300
-N_PRIMARY_MODULES = 200
+N_MODULES = 280
 N_SUBASSEMBLIES = 1000
-N_PARENT_SUBS = 800
 N_COMPONENTS = 4000
 N_LONG_LEAD = 240
 N_RF = 12
@@ -119,28 +188,6 @@ _ADJECTIVES = (
     "Gilder",
     "Hearth",
 )
-_NOUNS = (
-    "Alloy",
-    "Bearing",
-    "Circuit",
-    "Dynamics",
-    "Forge",
-    "Gauge",
-    "Holdings",
-    "Intake",
-    "Junction",
-    "Kinetics",
-    "Metrics",
-    "Optics",
-    "Parts",
-    "Relay",
-    "Systems",
-    "Devices",
-    "Works",
-    "Sensors",
-    "Valves",
-    "Controls",
-)
 _BANNED = (
     "applied",
     "tsmc",
@@ -168,25 +215,11 @@ def generate_master(rng: np.random.Generator) -> dict[str, pd.DataFrame]:
     sub_ids = [_material_no(i) for i in range(sub_start, sub_start + N_SUBASSEMBLIES)]
     comp_start = sub_start + N_SUBASSEMBLIES
     comp_ids = [_material_no(i) for i in range(comp_start, comp_start + N_COMPONENTS)]
-    primary_modules = module_ids[:N_PRIMARY_MODULES]
-    child_modules = module_ids[N_PRIMARY_MODULES:]
-    parent_subs = sub_ids[:N_PARENT_SUBS]
-    child_subs = sub_ids[N_PARENT_SUBS:]
     supplier_ids = [f"V-{10001 + i:05d}" for i in range(N_SUPPLIERS)]
-
-    module_subs = _assign_subassemblies(module_ids, parent_subs)
-    sub_components = _assign_components(parent_subs + child_subs, comp_ids)
-    edges = _bom_edges(
-        tool_ids,
-        primary_modules,
-        child_modules,
-        parent_subs,
-        child_subs,
-        module_subs,
-        sub_components,
-    )
-
-    materials = _materials(rng, tool_ids, module_ids, sub_ids, comp_ids)
+    module_subs, sub_functions = _assign_subassemblies(module_ids, sub_ids)
+    sub_components = _assign_components(sub_functions, comp_ids)
+    edges = _bom_edges(tool_ids, module_ids, module_subs, sub_components)
+    materials = _materials(rng, tool_ids, module_ids, sub_ids, comp_ids, sub_functions)
     return {
         "plant": _plants(),
         "product_family": _families(),
@@ -226,10 +259,14 @@ def _safe_name(name: str) -> str:
     return name
 
 
-def _pair_name(index: int) -> str:
-    adjective = _ADJECTIVES[index % len(_ADJECTIVES)]
-    noun = _NOUNS[(index // len(_ADJECTIVES)) % len(_NOUNS)]
-    return _safe_name(f"{adjective} {noun}")
+def _component_function(index: int) -> str:
+    if index < N_RF:
+        return "RF match network"
+    if index < N_LONG_LEAD:
+        return LONG_LEAD_FUNCTIONS[(index - N_RF) % len(LONG_LEAD_FUNCTIONS)]
+    if index == N_LONG_LEAD:
+        return "RF match network"
+    return tuple(COMPONENT_RECIPES)[(index - N_LONG_LEAD - 1) % len(COMPONENT_RECIPES)]
 
 
 def _component_description(index: int) -> str:
@@ -239,7 +276,21 @@ def _component_description(index: int) -> str:
         return LONG_LEAD_OTHER[(index - N_RF) % len(LONG_LEAD_OTHER)]
     if index == N_LONG_LEAD:
         return "Spare RF generator kit"
-    return f"{PARTS[(index - N_LONG_LEAD - 1) % len(PARTS)]}, variant {index + 1}"
+    function = _component_function(index)
+    recipes = COMPONENT_RECIPES[function]
+    variant = (index - N_LONG_LEAD - 1) // len(COMPONENT_RECIPES)
+    name = recipes[variant % len(recipes)]
+    if name == "RF match network":
+        return name
+    return f"{name}, variant {variant + 1}"
+
+
+def _module_function(index: int) -> tuple[str | None, str]:
+    tool_index, slot = divmod(index, 7)
+    if slot == 0:
+        code, name = FAMILIES[tool_index // 10]
+        return code, f"{name} chamber module"
+    return None, PLATFORM_MODULES[slot - 1]
 
 
 def _segment(customer_no: str) -> str:
@@ -264,7 +315,7 @@ def _families() -> pd.DataFrame:
     return _frame("product_family", rows)
 
 
-def _materials(rng, tool_ids, module_ids, sub_ids, comp_ids) -> list[dict]:
+def _materials(rng, tool_ids, module_ids, sub_ids, comp_ids, sub_functions) -> list[dict]:
     rows: list[dict] = []
     for index, material_no in enumerate(tool_ids):
         code, family_name = FAMILIES[index // 10]
@@ -281,20 +332,13 @@ def _materials(rng, tool_ids, module_ids, sub_ids, comp_ids) -> list[dict]:
             }
         )
     for index, material_no in enumerate(module_ids):
-        # Each tool owns one chamber design and four platform designs.
-        chamber = index < N_PRIMARY_MODULES and index % 5 == 0
-        family_index = index // 50
-        family_name = FAMILIES[family_index][1] if chamber else None
+        family_code, description = _module_function(index)
         rows.append(
             {
                 "material_no": material_no,
-                "description": (
-                    f"{family_name} chamber module"
-                    if chamber
-                    else PLATFORM_MODULES[index % len(PLATFORM_MODULES)]
-                ),
+                "description": description,
                 "material_type": "MODULE",
-                "family_code": FAMILIES[family_index][0] if chamber else None,
+                "family_code": family_code,
                 "base_uom": "EA",
                 "is_long_lead": False,
                 "created_on": HISTORY_START - timedelta(days=1),
@@ -304,7 +348,7 @@ def _materials(rng, tool_ids, module_ids, sub_ids, comp_ids) -> list[dict]:
         rows.append(
             {
                 "material_no": material_no,
-                "description": f"{PARTS[index % len(PARTS)]} subassembly, variant {index + 1}",
+                "description": f"{sub_functions[material_no]} subassembly, variant {index + 1}",
                 "material_type": "SUBASSY",
                 "family_code": None,
                 "base_uom": "EA",
@@ -350,7 +394,7 @@ def _suppliers(rng, supplier_ids: list[str]) -> list[dict]:
             name = "Corvane RF Systems"
         else:
             name = (
-                f"{_ADJECTIVES[index % len(_ADJECTIVES)]} {SPECIALTIES[index % len(SPECIALTIES)]}"
+                f"{_ADJECTIVES[index // len(SPECIALTIES)]} {SPECIALTIES[index % len(SPECIALTIES)]}"
             )
         rows.append(
             {
@@ -386,21 +430,45 @@ def _sources(rng, comp_ids: list[str], supplier_ids: list[str]) -> list[dict]:
             specialists = np.array([s for s in pool if (int(s[2:]) - 10001) % 12 == specialty])
             chosen = _pick_suppliers(rng, specialists, 2)
         else:
-            part = PARTS[(index - N_LONG_LEAD - 1) % len(PARTS)]
+            function = _component_function(index)
             specialty = (
                 0
-                if part == "RF match network" and index != N_LONG_LEAD
-                else 9
-                if part == "O-ring kit"
+                if function in ("RF match network", "RF electrode")
                 else 10
-                if part in ("Harness", "PCB assembly")
+                if function in ("PCB assembly", "Harness", "Image acquisition", "Illumination")
                 else 11
-                if part
-                in ("Valve manifold", "Mass flow controller", "Pressure gauge", "Throttle valve")
+                if function
+                in (
+                    "Valve manifold",
+                    "Mass flow controller",
+                    "Pressure control",
+                    "Throttle valve",
+                    "Slurry delivery",
+                )
+                else 1
+                if function in ("Vacuum manifold", "Isolation valve", "Vacuum chuck")
+                else 2
+                if function
+                in ("Robot arm", "Robot drive", "Load port", "Wafer aligner", "Wafer stage")
+                else 3
+                if function == "Chamber heater"
+                else 4
+                if function in ("Liner and edge ring kit", "ESC chuck", "Showerhead")
+                else 5
+                if function == "Gas distribution"
+                else 7
+                if function in ("Dry pump", "Turbo pump")
                 else 8
             )
             specialists = np.array([s for s in pool if (int(s[2:]) - 10001) % 12 == specialty])
             chosen = _pick_suppliers(rng, specialists, int(rng.integers(1, 4)))
+            if _component_description(index) == "RF match network":
+                # Preserve a second qualified RF specialist for every match unit.
+                chosen = (
+                    [CORVANE_SUPPLIER_NO, chosen[0]]
+                    if ((index - N_LONG_LEAD - 1) // len(COMPONENT_RECIPES)) % 2 == 0
+                    else [chosen[0], CORVANE_SUPPLIER_NO]
+                )
         for position, supplier_no in enumerate(chosen):
             rows.append(
                 {
@@ -437,53 +505,48 @@ def _customers(rng) -> list[dict]:
     return rows
 
 
-def _assign_subassemblies(module_ids: list[str], parent_subs: list[str]) -> dict[str, list[str]]:
-    assigned = {module_id: [] for module_id in module_ids}
-    for index, sub_id in enumerate(parent_subs):
-        if index < 600:
-            owner = module_ids[index % len(module_ids)]
-        else:
-            owner = module_ids[index - 600]
-        assigned[owner].append(sub_id)
-    for index in range(40):
-        extra = module_ids[(index + 11) % len(module_ids)]
-        assigned[extra].append(parent_subs[index])
+def _assign_subassemblies(module_ids, sub_ids):
+    assigned = {module: [] for module in module_ids}
+    functions = {}
+    owners = []
+    for index, module in enumerate(module_ids):
+        family, description = _module_function(index)
+        recipe = CHAMBER_FUNCTIONS[family] if family else PLATFORM_FUNCTIONS[description]
+        owners.extend((module, function) for function in recipe)
+    # Every module gets its complete functional recipe before adding variants.
+    for index, sub in enumerate(sub_ids):
+        module, function = owners[index % len(owners)]
+        assigned[module].append(sub)
+        functions[sub] = function
+    return assigned, functions
+
+
+def _assign_components(sub_functions, comp_ids):
+    assigned = {sub: [] for sub in sub_functions}
+    by_function = {}
+    for sub, function in sub_functions.items():
+        by_function.setdefault(function, []).append(sub)
+    counts = {}
+    for index, component in enumerate(comp_ids):
+        function = _component_function(index)
+        choices = by_function[function]
+        position = counts.get(function, 0)
+        assigned[choices[position % len(choices)]].append(component)
+        counts[function] = position + 1
+        # Reuse qualified standard parts only within compatible assemblies.
+        if N_RF <= index < N_LONG_LEAD and len(choices) > 1:
+            assigned[choices[(position + 1) % len(choices)]].append(component)
     return assigned
 
 
-def _assign_components(sub_ids: list[str], comp_ids: list[str]) -> dict[str, list[str]]:
-    assigned = {sub_id: [] for sub_id in sub_ids}
-    for index, comp_id in enumerate(comp_ids):
-        assigned[sub_ids[index % len(sub_ids)]].append(comp_id)
-    for index, comp_id in enumerate(comp_ids[:60]):
-        for step in range(8):
-            target = sub_ids[(index * 8 + step + 23) % len(sub_ids)]
-            if comp_id not in assigned[target]:
-                assigned[target].append(comp_id)
-    return assigned
-
-
-def _bom_edges(
-    tool_ids,
-    primary_modules,
-    child_modules,
-    parent_subs,
-    child_subs,
-    module_subs,
-    sub_components,
-) -> list[tuple[str, str]]:
-    edges: list[tuple[str, str]] = []
-    for index, tool_id in enumerate(tool_ids):
-        for module_id in primary_modules[index * 5 : (index + 1) * 5]:
-            edges.append((tool_id, module_id))
-    for index, module_id in enumerate(child_modules):
-        edges.append((primary_modules[index % len(primary_modules)], module_id))
-    for module_id, sub_ids in module_subs.items():
-        edges.extend((module_id, sub_id) for sub_id in sub_ids)
-    for index, sub_id in enumerate(child_subs):
-        edges.append((parent_subs[index], sub_id))
-    for sub_id, comp_ids in sub_components.items():
-        edges.extend((sub_id, comp_id) for comp_id in comp_ids)
+def _bom_edges(tool_ids, module_ids, module_subs, sub_components):
+    edges = []
+    for index, tool in enumerate(tool_ids):
+        edges.extend((tool, module) for module in module_ids[index * 7 : (index + 1) * 7])
+    for module, subs in module_subs.items():
+        edges.extend((module, sub) for sub in subs)
+    for sub, components in sub_components.items():
+        edges.extend((sub, component) for component in components)
     return edges
 
 
@@ -494,7 +557,7 @@ def _bom_rows(rng, edges: list[tuple[str, str]]) -> list[dict]:
             "component_material_no": component,
             "qty_per": (
                 float(2 + ((int(parent[2:]) - 1) % 5))
-                if int(parent[2:]) <= N_TOOLS and (int(component[2:]) - N_TOOLS - 1) % 5 == 0
+                if int(parent[2:]) <= N_TOOLS and (int(component[2:]) - N_TOOLS - 1) % 7 == 0
                 else 1.0
                 if int(parent[2:]) <= N_TOOLS
                 else float(int(rng.integers(1, 5)))
