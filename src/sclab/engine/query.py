@@ -14,7 +14,7 @@ from sclab.paths import lab_db_path, sandbox_db_path
 MAX_ROWS = 1000
 TIMEOUT_S = 15.0
 _TIMEOUT_MESSAGE = "Query stopped after 15 seconds. Check your JOIN conditions."
-_FETCH_BATCH = 1000
+_FETCH_BATCH = 10_000
 _SAFETY = {
     "enable_external_access": False,
     "autoinstall_known_extensions": False,
@@ -39,7 +39,7 @@ def run_query(
     timeout_s: float = TIMEOUT_S,
 ) -> QueryResult:
     """Run one statement and return at most max_rows rows."""
-    statements = _statements(sql)
+    _statements(sql)
     if target not in ("lesson", "sandbox"):
         raise QueryError("Choose the lesson database or the practice database.")
     started = time.perf_counter()
@@ -59,9 +59,12 @@ def run_query(
 
     timer = threading.Timer(timeout_s, on_timeout)
     timer.daemon = True
+    deadline = time.perf_counter() + timeout_s
     timer.start()
     try:
-        columns, rows, total_rows, truncated = _collect(connection, statements[0], max_rows)
+        columns, rows, total_rows, truncated = _collect(connection, sql, max_rows, deadline)
+        if interrupted or time.perf_counter() >= deadline:
+            raise QueryError(_TIMEOUT_MESSAGE)
         return QueryResult(
             columns=columns,
             rows=rows,
@@ -111,76 +114,28 @@ def _connect(target: str):
     return duckdb.connect(str(sandbox_db_path()), read_only=False, config=_SAFETY)
 
 
-def _collect(connection, statement, max_rows: int):
-    pending = connection.execute(statement)
+def _collect(connection, sql: str, max_rows: int, deadline: float):
+    pending = connection.execute(sql)
     columns = [column[0] for column in pending.description] if pending.description else []
     rows: list[tuple] = []
     remaining = max_rows
     while remaining > 0:
+        if time.perf_counter() >= deadline:
+            raise QueryError(_TIMEOUT_MESSAGE)
         batch = pending.fetchmany(min(_FETCH_BATCH, remaining))
         if not batch:
             break
         rows.extend(tuple(row) for row in batch)
         remaining -= len(batch)
-    truncated = remaining == 0 and bool(pending.fetchmany(1))
     total_rows = len(rows)
-    if truncated and statement.type == duckdb.StatementType.SELECT:
-        # execute() returns the same connection. A second query replaces the
-        # open result, so the count runs without reading the rest of the rows.
-        counted = connection.execute(_count_sql(statement.query)).fetchone()
-        total_rows = int(counted[0])
-    return columns, rows, total_rows, truncated
-
-
-def _count_sql(sql: str) -> str:
-    body = _without_trailing_semicolon(sql.strip())
-    return f"SELECT count(*) FROM ({body}\n) AS t"
-
-
-def _without_trailing_semicolon(sql: str) -> str:
-    """Drop a terminator semicolon, leaving comments in place."""
-    text = sql
-    suffix: list[str] = []
     while True:
-        if text.endswith("*/"):
-            start = text.rfind("/*")
-            if start == -1:
-                break
-            suffix.append(text[start:])
-            text = text[:start].rstrip()
-            continue
-        comment_at = _trailing_line_comment(text)
-        if comment_at is not None:
-            suffix.append(text[comment_at:])
-            text = text[:comment_at].rstrip()
-            continue
-        if text.endswith(";"):
-            text = text[:-1].rstrip()
-            continue
-        break
-    return text + "".join(reversed(suffix))
-
-
-def _trailing_line_comment(sql: str) -> int | None:
-    in_single = False
-    in_double = False
-    index = 0
-    while index < len(sql):
-        char = sql[index]
-        if char == "'" and not in_double:
-            if in_single and index + 1 < len(sql) and sql[index + 1] == "'":
-                index += 2
-                continue
-            in_single = not in_single
-        elif char == '"' and not in_single:
-            in_double = not in_double
-        elif not in_single and not in_double and sql.startswith("--", index):
-            if "\n" not in sql[index:]:
-                return index
-            index = sql.find("\n", index) + 1
-            continue
-        index += 1
-    return None
+        if time.perf_counter() >= deadline:
+            raise QueryError(_TIMEOUT_MESSAGE)
+        batch = pending.fetchmany(_FETCH_BATCH)
+        if not batch:
+            break
+        total_rows += len(batch)
+    return columns, rows, total_rows, total_rows > max_rows
 
 
 def _remove_wal(path: Path) -> None:

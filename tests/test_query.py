@@ -1,9 +1,12 @@
 """Safe query runner: one statement, read-only lesson database, row cap, timeout."""
 
+import threading
 import time
 
+import duckdb
 import pytest
 
+from sclab.engine import query
 from sclab.engine.query import MAX_ROWS, QueryError, reset_sandbox, run_query
 
 _TIMEOUT_MESSAGE = "Query stopped after 15 seconds. Check your JOIN conditions."
@@ -100,8 +103,10 @@ def test_huge_result_truncated(lab_conn) -> None:
     [
         "SELECT range FROM range(1001); /* done */",
         "SELECT range FROM range(1001) /* -- text */",
+        "SELECT range FROM range(1001) /* -- note */;",
+        "SELECT range FROM range(1001) /* outer /* inner */ still outer */",
         "SELECT range FROM range(1001) -- done",
-        "SELECT '-- ; --' AS label FROM range(1001)",
+        "SELECT range, '-- ; --' AS label FROM range(1001)",
     ],
 )
 def test_capped_count_keeps_comments_and_literals(sql: str) -> None:
@@ -109,6 +114,67 @@ def test_capped_count_keeps_comments_and_literals(sql: str) -> None:
     assert len(result.rows) == MAX_ROWS
     assert result.truncated is True
     assert result.total_rows == 1001
+
+
+def test_engine_never_rewrites_sql() -> None:
+    for helper in ("_count_sql", "_without_trailing_semicolon", "_trailing_line_comment"):
+        assert not hasattr(query, helper)
+
+
+def test_capped_result_executes_original_sql_once(monkeypatch) -> None:
+    sql = "SELECT range FROM range(25001) /* -- note */;"
+    executed = []
+    connection = duckdb.connect(":memory:")
+
+    class Connection:
+        def execute(self, text):
+            executed.append(text)
+            return connection.execute(text)
+
+        def interrupt(self):
+            connection.interrupt()
+
+        def close(self):
+            connection.close()
+
+    monkeypatch.setattr(query, "_connect", lambda target: Connection())
+    result = run_query(sql)
+    assert executed == [sql]
+    assert result.rows == [(number,) for number in range(MAX_ROWS)]
+    assert result.total_rows == 25001
+    assert result.truncated is True
+
+
+def test_timeout_covers_counting_buffered_rows(monkeypatch) -> None:
+    interrupted = threading.Event()
+
+    class BufferedConnection:
+        description = [("range",)]
+        fetches = 0
+
+        def execute(self, sql):
+            return self
+
+        def fetchmany(self, size):
+            self.fetches += 1
+            if self.fetches == 1:
+                return [(0,)]
+            assert interrupted.wait(2), "The timeout did not interrupt the connection."
+            return [(1,)]
+
+        def interrupt(self):
+            interrupted.set()
+
+        def close(self):
+            pass
+
+    connection = BufferedConnection()
+    monkeypatch.setattr(query, "_connect", lambda target: connection)
+    started = time.perf_counter()
+    with pytest.raises(QueryError, match=_TIMEOUT_MESSAGE):
+        run_query("SELECT range FROM range(1001)", max_rows=1, timeout_s=0.05)
+    assert connection.fetches == 2
+    assert time.perf_counter() - started < 5
 
 
 def test_runaway_query_interrupted() -> None:
