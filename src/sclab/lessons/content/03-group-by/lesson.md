@@ -8,24 +8,70 @@ You then count, sum, or average inside that group.
 A pivot table in Excel does the same job.
 The group is the row label, and the aggregate is the value.
 
-The plant table is small enough to see the whole result.
-Two plants are in the US and one is in SG.
+This query counts plants by country.
 
 ```sql
-SELECT country, count(*) AS plant_count
+SELECT country, COUNT(*) AS plant_count
 FROM plant
 GROUP BY country
 ORDER BY country
 ```
 
+Two rows come back.
+SG has 1 plant.
+US has 2 plants.
+
 WHERE filters rows before the groups are built.
 HAVING filters the groups after the aggregate.
-A cutoff such as "more than one supplier" belongs in HAVING, not WHERE.
 
-count(*) counts every row in the group, including rows where a column is NULL.
-count(planned_lead_time_days) skips the NULL rows.
-Those two counts differ when the lead time was never filled in.
-On the material plant table, each plant has more than a hundred missing lead times.
+This query keeps only countries with more than one plant.
+
+```sql
+SELECT country, COUNT(*) AS plant_count
+FROM plant
+GROUP BY country
+HAVING COUNT(*) > 1
+ORDER BY country
+```
+
+SG drops out, because its count is 1.
+The only remaining row is US with 2 plants.
+
+SUM adds a number down the group.
+Open quantity for Halcyon Memory, customer C-2003, is 47.
+
+```sql
+SELECT h.customer_no, SUM(i.qty) AS total_qty
+FROM sales_order_item AS i
+JOIN sales_order AS h ON h.so_no = i.so_no
+WHERE h.customer_no = 'C-2003'
+  AND i.status = 'Open'
+GROUP BY h.customer_no
+```
+
+AVG averages a number inside the group.
+ROUND keeps a fixed number of decimal places.
+Supplier V-10001 has an average quoted lead time of 55.4 days.
+
+```sql
+SELECT supplier_no, ROUND(AVG(quoted_lead_time_days), 1) AS avg_lead_time_days
+FROM material_supplier
+WHERE supplier_no = 'V-10001'
+GROUP BY supplier_no
+```
+
+COUNT(*) counts every row in the group, including rows where a column is NULL.
+COUNT(planned_lead_time_days) skips the NULL rows.
+At plant AU01, 165 rows have no planned lead time and 5175 rows have one.
+
+```sql
+SELECT plant_code,
+       COUNT(*) - COUNT(planned_lead_time_days) AS missing_lead_time,
+       COUNT(planned_lead_time_days) AS filled_lead_time
+FROM material_plant
+WHERE plant_code = 'AU01'
+GROUP BY plant_code
+```
 
 Check yourself.
 Name the column you group by before you write the aggregate.

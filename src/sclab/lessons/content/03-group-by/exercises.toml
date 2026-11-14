@@ -7,9 +7,9 @@ Return material_type and material_count.
 Order by material_type.
 """
 hints = [
-  "Group the material table by material_type.",
-  "count(*) is the number of materials in the group.",
-  "Name the count material_count and order by material_type.",
+  "Each material type becomes one row, and the value is how many materials it has.",
+  "GROUP BY material_type, and use COUNT(*) for the number of rows.",
+  "SELECT material_type, COUNT(*) AS material_count FROM material GROUP BY material_type ORDER BY material_type",
 ]
 reference_sql = [
   """
@@ -34,9 +34,9 @@ Order by total_qty descending, then customer_no.
 Some customers share the same total, so the customer number has to break the tie.
 """
 hints = [
-  "Join sales_order_item to sales_order on so_no.",
-  "Keep status = 'Open', then group by customer_no.",
-  "Sum qty as total_qty and order by that sum descending, then customer_no.",
+  "Add up open line quantity once per customer.",
+  "Join on so_no, filter status = 'Open', then GROUP BY customer_no and SUM(qty).",
+  "SELECT h.customer_no, SUM(i.qty) AS total_qty FROM sales_order_item AS i JOIN sales_order AS h ON h.so_no = i.so_no WHERE i.status = 'Open' GROUP BY h.customer_no ORDER BY total_qty DESC, h.customer_no",
 ]
 reference_sql = [
   """
@@ -62,9 +62,9 @@ Order by supplier_count descending, then country.
 Several countries have the same count, so the country name has to break the tie.
 """
 hints = [
-  "Start from the supplier table.",
-  "Group by country and count the rows.",
-  "Name the count supplier_count and order by it descending, then country.",
+  "Each country becomes one row, and the value is how many suppliers it has.",
+  "GROUP BY country and COUNT(*) the supplier rows.",
+  "SELECT country, COUNT(*) AS supplier_count FROM supplier GROUP BY country ORDER BY supplier_count DESC, country",
 ]
 reference_sql = [
   """
@@ -88,9 +88,9 @@ Return supplier_no and avg_lead_time_days.
 Order by supplier_no.
 """
 hints = [
-  "Group material_supplier by supplier_no.",
-  "avg ignores nothing here, because every quote has a lead time.",
-  "round(avg(quoted_lead_time_days), 1) and name it avg_lead_time_days.",
+  "Average the quoted lead time once per supplier, then keep one decimal place.",
+  "GROUP BY supplier_no and use ROUND(AVG(quoted_lead_time_days), 1).",
+  "SELECT supplier_no, ROUND(AVG(quoted_lead_time_days), 1) AS avg_lead_time_days FROM material_supplier GROUP BY supplier_no ORDER BY supplier_no",
 ]
 reference_sql = [
   """
@@ -114,9 +114,9 @@ Order by material_no.
 The cutoff belongs in HAVING, because it tests the group.
 """
 hints = [
-  "Group material_supplier by material_no.",
-  "count(*) is the number of suppliers for that material.",
-  "HAVING count(*) > 1 keeps the materials you want.",
+  "Keep materials whose supplier list has more than one row.",
+  "GROUP BY material_no, then HAVING COUNT(*) > 1.",
+  "SELECT material_no, COUNT(*) AS supplier_count FROM material_supplier GROUP BY material_no HAVING COUNT(*) > 1 ORDER BY material_no",
 ]
 reference_sql = [
   """
@@ -143,9 +143,9 @@ Requested dates also fall in 2021, and the open backlog reaches into 2027.
 Leave both of those years out of this count.
 """
 hints = [
-  "EXTRACT(YEAR FROM requested_date) is the year.",
-  "Filter that year with WHERE, before the groups are built.",
-  "Group by the same year expression and count the lines.",
+  "The year of requested_date is the group, and 2021 and 2027 stay out.",
+  "Filter EXTRACT(YEAR FROM requested_date) BETWEEN 2022 AND 2026, then group by that year.",
+  "SELECT EXTRACT(YEAR FROM requested_date) AS order_year, COUNT(*) AS line_count FROM sales_order_item WHERE EXTRACT(YEAR FROM requested_date) BETWEEN 2022 AND 2026 GROUP BY EXTRACT(YEAR FROM requested_date) ORDER BY order_year",
 ]
 reference_sql = [
   """
@@ -174,9 +174,9 @@ count(planned_lead_time_days) skips NULL.
 count(*) does not.
 """
 hints = [
-  "Group material_plant by plant_code.",
-  "count(planned_lead_time_days) is the filled count.",
-  "count(*) minus that filled count is the missing count.",
+  "COUNT of the lead time column skips NULL, and COUNT(*) does not.",
+  "GROUP BY plant_code, and subtract COUNT(planned_lead_time_days) from COUNT(*).",
+  "SELECT plant_code, COUNT(*) - COUNT(planned_lead_time_days) AS missing_lead_time, COUNT(planned_lead_time_days) AS filled_lead_time FROM material_plant GROUP BY plant_code ORDER BY plant_code",
 ]
 reference_sql = [
   """
