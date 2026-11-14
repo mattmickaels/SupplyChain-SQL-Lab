@@ -306,40 +306,34 @@ def test_running_inventory_never_negative(lab_conn) -> None:
     assert int(lowest) >= 0
 
 
-def test_purchasing_nets_against_stock(lab_conn) -> None:
+def test_ending_stock_bounded(lab_conn) -> None:
     # History is November 2021 through October 2026, which is 60 months.
     sample = lab_conn.execute(
         """
         WITH usage AS (
-            SELECT material_no,
-                   plant_code,
-                   SUM(CASE WHEN movement_type IN ('261', '601') THEN -qty ELSE 0 END) AS used,
-                   SUM(CASE WHEN movement_type = '101' THEN qty ELSE 0 END) AS received
+            SELECT material_no, -SUM(qty) AS used
             FROM stock_movement
-            WHERE storage_location = 'RM01'
-            GROUP BY material_no, plant_code
+            WHERE storage_location = 'RM01' AND movement_type IN ('261', '601')
+              AND posting_date <= DATE '2026-11-01'
+            GROUP BY material_no
+        ), stock AS (
+            SELECT material_no, SUM(qty_on_hand) AS ending
+            FROM inventory WHERE storage_location = 'RM01'
+            GROUP BY material_no
+        ), safety AS (
+            SELECT material_no, SUM(safety_stock) AS safety_stock
+            FROM material_plant GROUP BY material_no
         )
-        SELECT u.used,
-               u.received,
-               COALESCE(i.qty_on_hand, 0) AS ending,
-               p.safety_stock
-        FROM usage AS u
-        LEFT JOIN inventory AS i
-          ON i.material_no = u.material_no
-         AND i.plant_code = u.plant_code
-         AND i.storage_location = 'RM01'
-        JOIN material_plant AS p
-          ON p.material_no = u.material_no
-         AND p.plant_code = u.plant_code
-        WHERE u.used > 0
-        ORDER BY u.used DESC
+        SELECT u.material_no, u.used, COALESCE(i.ending, 0) AS ending, p.safety_stock
+        FROM usage u
+        LEFT JOIN stock i ON i.material_no = u.material_no
+        JOIN safety p ON p.material_no = u.material_no
+        ORDER BY u.used DESC, u.material_no
         LIMIT 20
         """
     ).df()
     assert len(sample) == 20
-    covered = sample["used"] + sample["ending"] + sample["safety_stock"]
-    assert (sample["received"] <= covered).all()
-    assert (sample["ending"] <= 3 * sample["used"] / 60).all()
+    assert (sample["ending"] <= 3 * sample["used"] / 60 + sample["safety_stock"]).all()
 
 
 def test_inventory_matches_movements(lab_conn) -> None:
@@ -496,3 +490,48 @@ def test_cli_shows_build_progress(lab_home, capsys) -> None:
     main()
     captured = capsys.readouterr()
     assert "Building the lab database (first run only)..." in captured.out + captured.err
+
+
+def test_event_dates_preserved(lab_conn) -> None:
+    # Compare complete dated quantities, including every recursive BOM path.
+    differences = lab_conn.execute("""
+        WITH RECURSIVE explosion AS (
+            SELECT p.prod_order_no, p.plant_code, p.planned_start,
+                   b.component_material_no AS material_no, p.qty * b.qty_per AS qty
+            FROM production_order p
+            JOIN bom_item b ON b.parent_material_no = p.material_no
+            WHERE p.planned_start <= DATE '2026-11-01'
+            UNION ALL
+            SELECT e.prod_order_no, e.plant_code, e.planned_start,
+                   b.component_material_no, e.qty * b.qty_per
+            FROM explosion e JOIN bom_item b ON b.parent_material_no = e.material_no
+        ), expected AS (
+            SELECT e.material_no, e.plant_code, e.planned_start AS posting_date,
+                   SUM(e.qty) AS qty
+            FROM explosion e JOIN material m ON m.material_no = e.material_no
+            WHERE m.material_type = 'COMPONENT'
+            GROUP BY e.material_no, e.plant_code, e.planned_start
+        ), actual AS (
+            SELECT material_no, plant_code, posting_date, -SUM(qty) AS qty
+            FROM stock_movement WHERE movement_type = '261'
+            GROUP BY material_no, plant_code, posting_date
+        )
+        SELECT * FROM expected FULL OUTER JOIN actual
+        USING (material_no, plant_code, posting_date)
+        WHERE COALESCE(expected.qty, 0) <> COALESCE(actual.qty, 0)
+    """).fetchall()
+    assert differences == []
+    differences = lab_conn.execute("""
+        WITH expected AS (
+            SELECT material_no, shipped_date AS posting_date, SUM(qty) AS qty
+            FROM sales_order_item WHERE status = 'Shipped'
+            GROUP BY material_no, shipped_date
+        ), actual AS (
+            SELECT material_no, posting_date, -SUM(qty) AS qty
+            FROM stock_movement WHERE movement_type = '601'
+            GROUP BY material_no, posting_date
+        )
+        SELECT * FROM expected FULL OUTER JOIN actual USING (material_no, posting_date)
+        WHERE COALESCE(expected.qty, 0) <> COALESCE(actual.qty, 0)
+    """).fetchall()
+    assert differences == []

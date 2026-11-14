@@ -124,79 +124,95 @@ def test_bay_overload(lab_conn) -> None:
         assert sum(counts_for_bay) / len(counts_for_bay) <= slots[bay_id]
 
 
+AT_RISK_SQL = """
+    WITH RECURSIVE explosion AS (
+        SELECT p.prod_order_no, p.plant_code, p.planned_start,
+               b.component_material_no AS material_no, p.qty * b.qty_per AS qty
+        FROM production_order p
+        JOIN bom_item b ON b.parent_material_no = p.material_no
+        WHERE p.planned_start > DATE '2026-11-01'
+        UNION ALL
+        SELECT e.prod_order_no, e.plant_code, e.planned_start,
+               b.component_material_no, e.qty * b.qty_per
+        FROM explosion e JOIN bom_item b ON b.parent_material_no = e.material_no
+    ), requirements AS (
+        SELECT e.prod_order_no, e.plant_code, e.planned_start, e.material_no, SUM(e.qty) AS qty
+        FROM explosion e JOIN material m ON m.material_no = e.material_no
+        WHERE m.description = 'RF generator'
+        GROUP BY e.prod_order_no, e.plant_code, e.planned_start, e.material_no
+    ), outstanding AS (
+        SELECT i.material_no, h.plant_code, i.confirmed_delivery_date,
+               i.order_qty - COALESCE(SUM(g.qty), 0) AS qty
+        FROM purchase_order_item i
+        JOIN purchase_order h ON h.po_no = i.po_no
+        LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
+        WHERE h.supplier_no = 'V-10017' AND h.order_date <= DATE '2026-11-01'
+        GROUP BY i.po_no, i.line_no, i.material_no, h.plant_code,
+                 i.confirmed_delivery_date, i.order_qty
+        HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
+    )
+    SELECT COUNT(DISTINCT (p.so_no, p.so_line_no))
+    FROM requirements r
+    JOIN production_order p ON p.prod_order_no = r.prod_order_no
+    JOIN sales_order_item s ON s.so_no = p.so_no AND s.line_no = p.so_line_no
+    JOIN material m ON m.material_no = p.material_no
+    WHERE s.status = 'Open' AND m.family_code = 'ETC'
+      AND COALESCE((SELECT SUM(i.qty_on_hand) FROM inventory i
+                    WHERE i.material_no = r.material_no AND i.plant_code = r.plant_code
+                      AND i.storage_location = 'RM01'), 0)
+        + COALESCE((SELECT SUM(o.qty) FROM outstanding o
+                    WHERE o.material_no = r.material_no AND o.plant_code = r.plant_code
+                      AND o.confirmed_delivery_date <= r.planned_start), 0)
+        < (SELECT SUM(d.qty) FROM requirements d
+           WHERE d.material_no = r.material_no AND d.plant_code = r.plant_code
+             AND d.planned_start <= r.planned_start)
+"""
+
+
 def test_at_risk_orders_exist(lab_conn) -> None:
-    materials = lab_conn.execute(
-        "SELECT material_no, description, material_type, family_code FROM material"
-    ).df()
-    bom = lab_conn.execute("SELECT parent_material_no, component_material_no FROM bom_item").df()
-    children: dict[str, list[str]] = {}
-    for parent, component in zip(
-        bom["parent_material_no"],
-        bom["component_material_no"],
-        strict=True,
-    ):
-        children.setdefault(parent, []).append(component)
-    rf = set(materials.loc[materials["description"] == "RF generator", "material_no"])
-
-    def rf_under(tool_no: str) -> set[str]:
-        found: set[str] = set()
-        stack = [tool_no]
-        seen: set[str] = set()
-        while stack:
-            node = stack.pop()
-            if node in seen:
-                continue
-            seen.add(node)
-            if node in rf:
-                found.add(node)
-            stack.extend(children.get(node, ()))
-        return found
-
-    orders = lab_conn.execute(
-        """
-        SELECT i.material_no, p.planned_start
-        FROM sales_order_item AS i
-        JOIN material AS m ON m.material_no = i.material_no
-        JOIN production_order AS p
-          ON p.so_no = i.so_no AND p.so_line_no = i.line_no
-        WHERE i.status = 'Open'
-          AND m.material_type = 'TOOL'
-          AND m.family_code = 'ETC'
-        """
-    ).df()
-    open_pos = lab_conn.execute(
-        """
-        SELECT i.material_no, i.confirmed_delivery_date
-        FROM purchase_order_item AS i
-        JOIN purchase_order AS h ON h.po_no = i.po_no
-        LEFT JOIN goods_receipt AS g
-          ON g.po_no = i.po_no AND g.line_no = i.line_no
-        WHERE h.supplier_no = ?
-          AND h.order_date <= ?
-        GROUP BY i.po_no, i.line_no, i.material_no, i.order_qty, i.confirmed_delivery_date
-        HAVING COALESCE(SUM(g.qty), 0) < i.order_qty
-        """,
-        [CORVANE_SUPPLIER_NO, AS_OF_DATE],
-    ).df()
-    confirmed_by_material: dict[str, list[date]] = {}
-    for material_no, confirmed in zip(
-        open_pos["material_no"],
-        open_pos["confirmed_delivery_date"],
-        strict=True,
-    ):
-        confirmed_by_material.setdefault(material_no, []).append(pd.Timestamp(confirmed).date())
-    cache: dict[str, set[str]] = {}
-    hits = 0
-    for material_no, planned_start in zip(
-        orders["material_no"],
-        orders["planned_start"],
-        strict=True,
-    ):
-        if material_no not in cache:
-            cache[material_no] = rf_under(material_no)
-        start = pd.Timestamp(planned_start).date()
-        for component_no in cache[material_no]:
-            if any(day > start for day in confirmed_by_material.get(component_no, ())):
-                hits += 1
-                break
+    hits = lab_conn.execute(AT_RISK_SQL).fetchone()[0]
+    print(f"at_risk_lines={hits}")
     assert hits >= 5
+
+
+def test_corvane_delay_withholds_required_supply(lab_conn) -> None:
+    # Enough RF was actually ordered by the snapshot, but its promises miss need.
+    # This excludes shortages caused solely by future, not-yet-placed purchases.
+    delayed = (
+        AT_RISK_SQL
+        + """
+      AND COALESCE((SELECT SUM(i.qty_on_hand) FROM inventory i
+                    WHERE i.material_no = r.material_no AND i.plant_code = r.plant_code
+                      AND i.storage_location = 'RM01'), 0)
+        + COALESCE((SELECT SUM(o.qty) FROM outstanding o
+                    WHERE o.material_no = r.material_no AND o.plant_code = r.plant_code), 0)
+        >= (SELECT SUM(d.qty) FROM requirements d
+            WHERE d.material_no = r.material_no AND d.plant_code = r.plant_code
+              AND d.planned_start <= r.planned_start)
+      AND EXISTS (
+          SELECT 1 FROM purchase_order_item i JOIN purchase_order h ON h.po_no = i.po_no
+          WHERE h.supplier_no = 'V-10017'
+            AND h.order_date BETWEEN DATE '2026-08-01' AND DATE '2026-11-01'
+            AND i.material_no = r.material_no AND h.plant_code = r.plant_code
+            AND i.requested_delivery_date <= r.planned_start
+            AND i.confirmed_delivery_date > r.planned_start
+      )
+    """
+    )
+    hits = lab_conn.execute(delayed).fetchone()[0]
+    print(f"at_risk_from_delay={hits}")
+    assert hits >= 5
+
+
+def test_rf_snapshot_at_safety_stock(lab_conn) -> None:
+    differences = lab_conn.execute("""
+        SELECT p.material_no, p.plant_code, p.safety_stock, COALESCE(i.qty_on_hand, 0)
+        FROM material_plant p JOIN material m ON m.material_no = p.material_no
+        LEFT JOIN inventory i ON i.material_no = p.material_no
+          AND i.plant_code = p.plant_code AND i.storage_location = 'RM01'
+        WHERE m.description = 'RF generator'
+          AND EXISTS (SELECT 1 FROM stock_movement s
+                      WHERE s.material_no = p.material_no AND s.plant_code = p.plant_code)
+          AND COALESCE(i.qty_on_hand, 0) <> p.safety_stock
+    """).fetchall()
+    assert differences == []

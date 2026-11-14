@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from sclab.constants import AS_OF_DATE, FORECAST_END
+from sclab.data.mrp import plan_purchases
 from sclab.data.story import (
     CORVANE_SUPPLIER_NO,
     HALCYON_CUSTOMER_NO,
@@ -21,7 +22,8 @@ AS_OF_TS = pd.Timestamp(AS_OF_DATE)
 SLIP_TS = pd.Timestamp(SLIP_START)
 EARLY_END = pd.Timestamp(date(2026, 1, 1))
 HISTORY_MONTH = pd.Timestamp(date(2021, 11, 1))
-BUCKET_MONTHS = 4
+LOT_DAYS = 90
+RECEIPT_BUFFER_DAYS = 7
 COMPONENT_LOCATION = "RM01"
 TOOL_LOCATION = "FG01"
 BUILD_DAYS = 14
@@ -42,7 +44,7 @@ def generate_transactions(
     forecast = _forecast(master, lines)
     demand, issues = _component_demand(lines, production, leaf)
     supply = _supply(rng, master, demand)
-    movements, inventory = _stock(lines, production, supply["goods_receipt"], issues, demand)
+    movements, inventory = _stock(lines, production, supply["goods_receipt"], issues)
     return {
         "sales_order": _sales_orders(lines),
         "sales_order_item": _sales_items(lines),
@@ -325,7 +327,7 @@ def _component_demand(lines, production, leaf) -> tuple[pd.DataFrame, pd.DataFra
             "material_no": issued["component_no"].to_numpy(),
             "plant_code": issued["plant_code"].to_numpy(),
             "qty": component_qty.to_numpy(),
-            "need_date": _before_as_of(issued["planned_start"]).to_numpy(),
+            "need_date": issued["planned_start"].to_numpy(),
         }
     )
     spares = lines[(lines["kind"] == "spare") & (lines["status"] != "Cancelled")]
@@ -334,14 +336,13 @@ def _component_demand(lines, production, leaf) -> tuple[pd.DataFrame, pd.DataFra
             "material_no": spares["material_no"].to_numpy(),
             "plant_code": spares["plant_code"].to_numpy(),
             "qty": spares["qty"].to_numpy(),
-            "need_date": _before_as_of(spares["promised_date"]).to_numpy(),
+            "need_date": spares["shipped_date"].fillna(spares["promised_date"]).to_numpy(),
         }
     )
     production_demand["use"] = "issue"
     spare_demand["use"] = "ship"
     demand = pd.concat([production_demand, spare_demand], ignore_index=True)
     demand["need_date"] = pd.to_datetime(demand["need_date"])
-    demand = _assign_cover(demand)
     due_issue = demand["use"].eq("issue") & demand["need_date"].le(AS_OF_TS)
     issues = pd.DataFrame(
         {
@@ -350,7 +351,7 @@ def _component_demand(lines, production, leaf) -> tuple[pd.DataFrame, pd.DataFra
             "storage_location": COMPONENT_LOCATION,
             "movement_type": "261",
             "qty": -demand.loc[due_issue, "qty"].to_numpy(),
-            "posting_date": demand.loc[due_issue, "cover_date"].to_numpy(),
+            "posting_date": demand.loc[due_issue, "need_date"].to_numpy(),
         }
     )
     return demand, issues
@@ -368,63 +369,65 @@ def _supply(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFrame]:
     }
 
 
-def _assign_cover(demand: pd.DataFrame) -> pd.DataFrame:
-    """Date each bucket's stock movements on the last day that bucket is consumed."""
-    frame = demand.copy()
-    stamp = pd.to_datetime(frame["need_date"])
-    month_index = (stamp.dt.year - 2021) * 12 + (stamp.dt.month - 11)
-    due = stamp <= AS_OF_TS
-    frame["bucket"] = np.where(
-        due,
-        month_index // BUCKET_MONTHS,
-        1000 + (month_index - 60) // BUCKET_MONTHS,
-    )
-    frame["segment"] = np.where(due, 0, 1)
-    frame["cover_date"] = frame.groupby(["material_no", "plant_code", "segment", "bucket"])[
-        "need_date"
-    ].transform("max")
-    return frame
-
-
 def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFrame]:
-    if "cover_date" not in demand.columns:
-        demand = _assign_cover(demand)
-    grouped = demand.groupby(
-        ["material_no", "plant_code", "segment", "bucket"], as_index=False
-    ).agg(
-        qty=("qty", "sum"),
-        requested=("need_date", "min"),
-        receipt_date=("cover_date", "first"),
-    )
-    grouped = _net_requirements(grouped, master["material_plant"])
-    grouped["pinned_order_date"] = pd.NaT
-    grouped = pd.concat([grouped, _at_risk_lines(master)], ignore_index=True)
     primary = (
         master["material_supplier"]
         .loc[master["material_supplier"]["is_primary"]]
         .sort_values(["material_no", "supplier_no"])
         .drop_duplicates("material_no")
     )
-    lead = master["material_plant"][["material_no", "plant_code", "planned_lead_time_days"]]
-    grouped = grouped.merge(
-        primary[["material_no", "supplier_no", "unit_price"]], on="material_no", how="left"
-    )
-    grouped = grouped.merge(lead, on=["material_no", "plant_code"], how="left")
-    grouped["requested"] = pd.to_datetime(grouped["requested"])
-    grouped["receipt_date"] = pd.to_datetime(grouped["receipt_date"])
-    grouped["order_date"] = grouped["requested"] - pd.to_timedelta(
-        grouped["planned_lead_time_days"].astype(int), unit="D"
-    )
-    pinned = grouped["pinned_order_date"].notna()
-    grouped.loc[pinned, "order_date"] = pd.to_datetime(grouped.loc[pinned, "pinned_order_date"])
+    planning = master["material_plant"].merge(primary, on="material_no")
+    planning = planning.set_index(["material_no", "plant_code"])
+    daily = demand.groupby(["material_no", "plant_code", "need_date"], as_index=False)["qty"].sum()
+    rows = []
+    for (material, plant), needs in daily.groupby(["material_no", "plant_code"], sort=True):
+        parameters = planning.loc[(material, plant)]
+        safety = int(parameters["safety_stock"])
+        lead = int(parameters["planned_lead_time_days"])
+        supplier = parameters["supplier_no"]
+        stock = 0
+        # Close history at the snapshot before planning the forward horizon.
+        # This avoids buying forward RF demand into the snapshot's safety stock.
+        for historical in (True, False):
+            segment = needs[needs["need_date"].le(AS_OF_TS).eq(historical)]
+            dated = [
+                (day.date(), int(qty))
+                for day, qty in segment[["need_date", "qty"]].itertuples(index=False, name=None)
+            ]
+            buffer = (
+                SLIP_DAYS + RECEIPT_BUFFER_DAYS
+                if historical and supplier == CORVANE_SUPPLIER_NO
+                else RECEIPT_BUFFER_DAYS
+            )
+            receipts = plan_purchases(dated, stock, safety, lead, buffer, LOT_DAYS)
+            for receipt in receipts:
+                rows.append(
+                    {
+                        "material_no": material,
+                        "plant_code": plant,
+                        "supplier_no": supplier,
+                        "unit_price": parameters["unit_price"],
+                        "qty": receipt.qty,
+                        "requested": receipt.requested_date,
+                        "order_date": receipt.order_date,
+                        "need_date": receipt.requested_date + timedelta(days=buffer),
+                        "historical": historical,
+                    }
+                )
+            stock += sum(r.qty for r in receipts) - sum(q for _, q in dated)
+    grouped = pd.DataFrame(rows)
+    for column in ("requested", "order_date", "need_date"):
+        grouped[column] = pd.to_datetime(grouped[column])
     slip = grouped["supplier_no"].eq(CORVANE_SUPPLIER_NO) & grouped["order_date"].ge(SLIP_TS)
     grouped["confirmed"] = grouped["requested"]
-    grouped.loc[slip, "confirmed"] = grouped.loc[slip, "requested"] + pd.Timedelta(days=SLIP_DAYS)
-    grouped = _set_on_time(rng, grouped, slip)
-    # Leave one unit open when a slipped line is confirmed after the as-of date
-    # but its demand was already consumed. The rest is received on the cover date.
-    short = grouped["is_open"] & grouped["receipt_date"].le(AS_OF_TS)
-    grouped.loc[short, "qty"] = grouped.loc[short, "qty"] + 1
+    grouped.loc[slip, "confirmed"] += pd.Timedelta(days=SLIP_DAYS)
+    # Forward requirements remain outstanding at the snapshot; confirmations
+    # can use the remaining buffer after it, without moving any business event.
+    forward = ~grouped["historical"]
+    grouped.loc[forward, "confirmed"] = grouped.loc[forward, "confirmed"].clip(
+        lower=AS_OF_TS + pd.Timedelta(days=1)
+    )
+    grouped = _set_on_time(rng, grouped)
     grouped["order_qty"] = grouped["qty"].round().astype(int)
     grouped["uom"] = "EA"
     grouped["net_price"] = grouped["unit_price"].round(2)
@@ -449,69 +452,10 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
     return {"headers": headers, "items": items, "lines": grouped}
 
 
-def _net_requirements(grouped: pd.DataFrame, planning: pd.DataFrame) -> pd.DataFrame:
-    """Buy only what projected stock cannot cover, and refill safety stock when it is short."""
-    frame = grouped.merge(
-        planning[["material_no", "plant_code", "safety_stock"]],
-        on=["material_no", "plant_code"],
-        how="left",
-    )
-    frame["safety_stock"] = frame["safety_stock"].fillna(0).astype(int)
-    frame = frame.sort_values(
-        ["material_no", "plant_code", "segment", "bucket", "requested"]
-    ).reset_index(drop=True)
-    gross = frame["qty"].to_numpy(dtype=np.int64)
-    safety = frame["safety_stock"].to_numpy(dtype=np.int64)
-    pair = frame["material_no"].astype(str) + "\0" + frame["plant_code"].astype(str)
-    codes = pd.factorize(pair, sort=False)[0]
-    buy = np.empty(len(frame), dtype=np.int64)
-    on_hand = 0
-    previous = -1
-    for index, code in enumerate(codes):
-        if code != previous:
-            on_hand = 0
-            previous = int(code)
-        projected = on_hand - int(gross[index])
-        target = int(safety[index])
-        needed = target - projected if projected < target else 0
-        buy[index] = needed
-        on_hand = projected + needed
-    frame["qty"] = buy
-    kept = frame.loc[
-        frame["qty"] > 0,
-        [
-            "material_no",
-            "plant_code",
-            "segment",
-            "bucket",
-            "qty",
-            "requested",
-            "receipt_date",
-        ],
-    ]
-    return kept.reset_index(drop=True)
-
-
-def _at_risk_lines(master: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    rf = master["material"].loc[master["material"]["description"].eq("RF generator"), "material_no"]
-    requested = pd.Timestamp(date(2027, 4, 6))
-    return pd.DataFrame(
-        {
-            "material_no": rf.to_numpy(),
-            "plant_code": "SC01",
-            "segment": 1,
-            "bucket": 9000,
-            "qty": 1,
-            "requested": requested,
-            "receipt_date": requested,
-            "pinned_order_date": AS_OF_TS,
-        }
-    )
-
-
-def _set_on_time(rng, grouped: pd.DataFrame, slip: pd.Series) -> pd.DataFrame:
+def _set_on_time(rng, grouped: pd.DataFrame) -> pd.DataFrame:
     frame = grouped.copy()
-    closed = frame["confirmed"] <= AS_OF_TS
+    frame["receipt_date"] = frame["confirmed"]
+    closed = frame["historical"]
     suppliers = np.sort(frame["supplier_no"].dropna().unique())
     code_of = pd.Series(np.arange(len(suppliers)), index=suppliers)
     codes = frame["supplier_no"].map(code_of).to_numpy()
@@ -523,20 +467,19 @@ def _set_on_time(rng, grouped: pd.DataFrame, slip: pd.Series) -> pd.DataFrame:
             continue
         _mark_rate(on_time, closed_np & (codes == code), target, band=True)
     corvane = frame["supplier_no"].eq(CORVANE_SUPPLIER_NO).to_numpy() & closed_np
-    receipt = frame["receipt_date"]
+    receipt = frame["need_date"]
     _mark_rate(on_time, corvane & receipt.lt(EARLY_END).to_numpy(), 0.95, band=False)
     late_window = corvane & receipt.ge(SLIP_TS).to_numpy() & receipt.le(AS_OF_TS).to_numpy()
     _mark_rate(on_time, late_window, 0.30, band=False)
     middle = corvane & ~(receipt.lt(EARLY_END).to_numpy() | late_window)
     _mark_rate(on_time, middle, 0.85, band=False)
-    adjustable = closed.to_numpy() & ~slip.to_numpy()
-    late_days = pd.Timedelta(days=7)
-    on_adjust = adjustable & on_time
-    off_adjust = adjustable & ~on_time
-    frame.loc[on_adjust, "confirmed"] = frame.loc[on_adjust, "receipt_date"]
-    frame.loc[off_adjust, "confirmed"] = frame.loc[off_adjust, "receipt_date"] - late_days
     frame["on_time"] = on_time
-    frame["is_open"] = frame["confirmed"] > AS_OF_TS
+    late = pd.to_timedelta(np.where(on_time, 0, RECEIPT_BUFFER_DAYS), unit="D")
+    frame["receipt_date"] = frame["confirmed"] + late
+    # Historical supplier delays are absorbed by the planning buffer.
+    if (frame.loc[closed, "receipt_date"] > frame.loc[closed, "need_date"]).any():
+        raise ValueError("Historical supply misses a fixed need date")
+    frame["is_open"] = frame["receipt_date"] > AS_OF_TS
     return frame
 
 
@@ -558,9 +501,6 @@ def _mark_rate(on_time: np.ndarray, mask: np.ndarray, rate: float, *, band: bool
 
 def _goods_receipts(lines: pd.DataFrame) -> pd.DataFrame:
     closed = lines.loc[~lines["is_open"]].reset_index(drop=True)
-    partial = lines.loc[lines["is_open"] & lines["receipt_date"].le(AS_OF_TS)].reset_index(
-        drop=True
-    )
     supplier_ordinal = pd.factorize(closed["supplier_no"], sort=True)[0]
     min_qty = closed.groupby("supplier_no")["order_qty"].transform("min").to_numpy()
     n_rec = np.where(min_qty >= 3, 1 + (supplier_ordinal % 3), 1)
@@ -573,10 +513,6 @@ def _goods_receipts(lines: pd.DataFrame) -> pd.DataFrame:
     split = line_qty // parts + (part < (line_qty % parts)).astype(int)
     receipts = closed.iloc[repeated].copy()
     receipts["qty"] = split
-    if len(partial) > 0:
-        partial = partial.copy()
-        partial["qty"] = partial["order_qty"] - 1
-        receipts = pd.concat([receipts, partial], ignore_index=True)
     receipts["storage_location"] = COMPONENT_LOCATION
     receipts = receipts.sort_values(["receipt_date", "po_no", "line_no"]).reset_index(drop=True)
     receipts["gr_no"] = _row_ids(len(receipts), "GR-", 7)
@@ -616,7 +552,6 @@ def _stock(
     production,
     receipts,
     issues,
-    demand: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     receipt_moves = pd.DataFrame(
         {
@@ -629,14 +564,6 @@ def _stock(
         }
     )
     shipped = lines[lines["status"] == "Shipped"].copy()
-    cover = demand.groupby(["material_no", "plant_code", "need_date"], as_index=False)[
-        "cover_date"
-    ].max()
-    shipped["need_date"] = _before_as_of(shipped["shipped_date"])
-    shipped = shipped.merge(cover, on=["material_no", "plant_code", "need_date"], how="left")
-    posting = shipped["cover_date"].where(
-        shipped["cover_date"].notna(), pd.to_datetime(shipped["shipped_date"])
-    )
     location = np.where(shipped["kind"].eq("tool"), TOOL_LOCATION, COMPONENT_LOCATION)
     shipments = pd.DataFrame(
         {
@@ -645,7 +572,7 @@ def _stock(
             "storage_location": location,
             "movement_type": "601",
             "qty": -shipped["qty"].to_numpy(),
-            "posting_date": posting.to_numpy(),
+            "posting_date": shipped["shipped_date"].to_numpy(),
         }
     )
     finished = production[production["prod_status"] == "Completed"]
@@ -726,12 +653,6 @@ def _production_frame(production: pd.DataFrame) -> pd.DataFrame:
         ]
     ].copy()
     return frame.rename(columns={"prod_status": "status"})
-
-
-def _before_as_of(values: pd.Series) -> pd.Series:
-    """Keep a same-day requirement in the last closed purchasing bucket."""
-    stamp = pd.to_datetime(values)
-    return stamp.mask(stamp.eq(AS_OF_TS), AS_OF_TS - pd.Timedelta(days=1))
 
 
 def _keyed_ids(keys: pd.Series, prefix: str, width: int) -> pd.Series:
