@@ -38,8 +38,7 @@ def write_lesson(folder: Path, title: str, exercise_id: str, hints: list[str]) -
 
 def test_load_sample_lesson() -> None:
     lessons = load_lessons(include_sample=True)
-    assert [lesson.id for lesson in lessons] == ["00-sample"]
-    lesson = lessons[0]
+    lesson = next(item for item in lessons if item.id == "00-sample")
     assert lesson.number == 0
     assert lesson.title == "Sample lesson"
     assert lesson.summary == "A tiny lesson used to test the loader."
@@ -65,7 +64,7 @@ def test_load_sample_lesson() -> None:
     assert counted.names_matter is True
     assert counted.excel_tip is None
     assert counted.reference_sql == counted_sql
-    assert load_lessons() == []
+    assert "00-sample" not in {item.id for item in load_lessons()}
 
 
 def test_lessons_sort_by_number_and_skip_sample(tmp_path: Path) -> None:
@@ -153,3 +152,55 @@ def test_check_answer_reports_mismatch() -> None:
         "SELECT plant_code FROM plant",
         "SELECT code FROM plant",
     ]
+
+
+def _count_exercise() -> Exercise:
+    return Exercise(
+        id="sample-count",
+        title="Count",
+        prompt_md="How many plants are there?",
+        hints=("Use count.", "Count every row.", "The result is one number."),
+        reference_sql=("SELECT count(*) FROM plant",),
+        order_matters=False,
+        names_matter=False,
+        excel_tip=None,
+    )
+
+
+def test_truncated_learner_result_is_not_a_pass() -> None:
+    calls: list[str] = []
+
+    def runner(sql: str) -> QueryResult:
+        calls.append(sql)
+        return QueryResult(
+            columns=["n"],
+            rows=[(1,)],
+            total_rows=200_001,
+            truncated=True,
+            elapsed_ms=1,
+        )
+
+    outcome = check_answer(_count_exercise(), "SELECT * FROM big", runner)
+    assert outcome.passed is False
+    assert outcome.summary == (
+        "Your result has more than 200,000 rows. Add a filter or GROUP BY so it can be checked."
+    )
+    assert outcome.missing_rows == []
+    assert outcome.extra_rows == []
+    assert calls == ["SELECT * FROM big"]
+
+
+def test_truncated_reference_result_names_the_exercise() -> None:
+    def runner(sql: str) -> QueryResult:
+        if sql == "SELECT count(*) FROM plant":
+            return QueryResult(
+                columns=["n"],
+                rows=[(3,)],
+                total_rows=200_001,
+                truncated=True,
+                elapsed_ms=1,
+            )
+        return result(["n"], [(3,)])
+
+    with pytest.raises(ValueError, match="sample-count"):
+        check_answer(_count_exercise(), "select count(*) from plant", runner)

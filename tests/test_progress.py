@@ -1,3 +1,4 @@
+import threading
 from pathlib import Path
 
 from sclab.lessons.progress import ProgressStore
@@ -49,3 +50,63 @@ def test_corrupt_progress_file_recovered(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8")
     assert store.status("sample-plants") == "attempted"
     assert corrupt[0].read_text(encoding="utf-8") == "{not json"
+
+
+def test_invalid_progress_fields_are_quarantined(tmp_path: Path) -> None:
+    path = tmp_path / "progress.json"
+    original = '{"exercises":{"x":{"passed":"false"}}}'
+    path.write_text(original, encoding="utf-8")
+    store = ProgressStore(path)
+    assert store.status("x") == "new"
+    assert store.summary() == {"attempted": 0, "passed": 0}
+    corrupt = list(tmp_path.glob("progress.corrupt-*.json"))
+    assert len(corrupt) == 1
+    assert corrupt[0].read_text(encoding="utf-8") == original
+
+
+def test_two_stores_keep_interleaved_attempts(tmp_path: Path) -> None:
+    path = tmp_path / "progress.json"
+    first = ProgressStore(path)
+    second = ProgressStore(path)
+    first.record_attempt("plants", "SELECT 1", True)
+    second.record_attempt("plants", "SELECT bad", False)
+    second.record_attempt("count", "SELECT 2", False)
+    first.record_attempt("orders", "SELECT 3", True)
+
+    saved = ProgressStore(path)
+    assert saved.status("plants") == "passed"
+    assert saved.last_sql("plants") == "SELECT bad"
+    assert saved.status("count") == "attempted"
+    assert saved.last_sql("count") == "SELECT 2"
+    assert saved.status("orders") == "passed"
+    assert saved.last_sql("orders") == "SELECT 3"
+    assert saved.summary() == {"attempted": 1, "passed": 2}
+
+
+def test_eight_threads_keep_every_attempt(tmp_path: Path) -> None:
+    path = tmp_path / "progress.json"
+    stores = [ProgressStore(path) for _ in range(8)]
+    barrier = threading.Barrier(8)
+    errors: list[BaseException] = []
+
+    def work(index: int) -> None:
+        try:
+            barrier.wait(timeout=5)
+            stores[index].record_attempt(f"ex-{index}", f"SELECT {index}", index % 2 == 0)
+            stores[index].record_attempt("shared", f"SELECT shared {index}", index == 0)
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=work, args=(index,)) for index in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+
+    saved = ProgressStore(path)
+    for index in range(8):
+        expected = "passed" if index % 2 == 0 else "attempted"
+        assert saved.status(f"ex-{index}") == expected
+        assert saved.last_sql(f"ex-{index}") == f"SELECT {index}"
+    assert saved.status("shared") == "passed"

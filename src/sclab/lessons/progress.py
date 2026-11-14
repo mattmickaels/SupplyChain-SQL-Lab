@@ -1,44 +1,70 @@
 import json
+import os
+import tempfile
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
+
+_PATH_LOCKS: dict[Path, threading.Lock] = {}
+_PATH_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for(path: Path) -> threading.Lock:
+    resolved = path.resolve()
+    with _PATH_LOCKS_GUARD:
+        lock = _PATH_LOCKS.get(resolved)
+        if lock is None:
+            lock = threading.Lock()
+            _PATH_LOCKS[resolved] = lock
+        return lock
+
+
+def _valid_entry(entry: object) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    return isinstance(entry.get("sql"), str) and isinstance(entry.get("passed"), bool)
 
 
 class ProgressStore:
     def __init__(self, path: Path) -> None:
         self.path = path
-        self._data = self._load()
+        with _lock_for(path):
+            self._data = self._load()
 
     def record_attempt(self, exercise_id: str, sql: str, passed: bool) -> None:
-        current = self._data["exercises"].get(exercise_id, {})
-        self._data["exercises"][exercise_id] = {
-            "sql": sql,
-            "passed": bool(current.get("passed", False)) or passed,
-        }
-        self._save()
+        with _lock_for(self.path):
+            self._data = self._load()
+            current = self._data["exercises"].get(exercise_id, {})
+            already_passed = isinstance(current, dict) and current.get("passed") is True
+            self._data["exercises"][exercise_id] = {
+                "sql": sql,
+                "passed": already_passed or passed,
+            }
+            self._save()
 
     def status(self, exercise_id: str) -> Literal["new", "attempted", "passed"]:
         entry = self._data["exercises"].get(exercise_id)
         if entry is None:
             return "new"
-        if entry.get("passed"):
+        if entry.get("passed") is True:
             return "passed"
         return "attempted"
 
     def last_sql(self, exercise_id: str) -> str | None:
         entry = self._data["exercises"].get(exercise_id)
-        if entry is None:
+        if not isinstance(entry, dict):
             return None
         sql = entry.get("sql")
-        if sql is None:
+        if not isinstance(sql, str):
             return None
-        return str(sql)
+        return sql
 
     def summary(self) -> dict[str, int]:
         attempted = 0
         passed = 0
         for entry in self._data["exercises"].values():
-            if entry.get("passed"):
+            if isinstance(entry, dict) and entry.get("passed") is True:
                 passed += 1
             else:
                 attempted += 1
@@ -57,7 +83,7 @@ class ProgressStore:
             self._quarantine()
             return {"exercises": {}}
         for exercise_id, entry in exercises.items():
-            if not isinstance(exercise_id, str) or not isinstance(entry, dict):
+            if not isinstance(exercise_id, str) or not _valid_entry(entry):
                 self._quarantine()
                 return {"exercises": {}}
         return {"exercises": exercises}
@@ -71,11 +97,24 @@ class ProgressStore:
         while target.exists():
             target = self.path.with_name(f"progress.corrupt-{stamp}-{suffix}.json")
             suffix += 1
-        self.path.replace(target)
+        os.replace(self.path, target)
 
     def _save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_name(self.path.name + ".tmp")
         text = json.dumps(self._data, indent=2) + "\n"
-        temporary.write_text(text, encoding="utf-8")
-        temporary.replace(self.path)
+        temporary: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                newline="\n",
+                delete=False,
+                dir=self.path.parent,
+            ) as handle:
+                handle.write(text)
+                temporary = Path(handle.name)
+            os.replace(temporary, self.path)
+        except Exception:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+            raise

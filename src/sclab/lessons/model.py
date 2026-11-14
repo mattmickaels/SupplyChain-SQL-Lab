@@ -9,6 +9,9 @@ from sclab.engine.types import QueryResult
 
 _FOLDER_NAME = re.compile(r"^(\d{2})-.+$")
 _MAX_ROWS = 200_000
+_TRUNCATED_SUMMARY = (
+    "Your result has more than 200,000 rows. Add a filter or GROUP BY so it can be checked."
+)
 
 
 @dataclass(frozen=True)
@@ -60,11 +63,23 @@ def check_answer(
             return run_query(statement, max_rows=_MAX_ROWS)
 
     actual = runner(sql)
+    if actual.truncated:
+        return CheckOutcome(
+            passed=False,
+            summary=_TRUNCATED_SUMMARY,
+            missing_rows=[],
+            extra_rows=[],
+            expected_count=0,
+            actual_count=actual.total_rows,
+        )
     first_failure: CheckOutcome | None = None
     for index, reference in enumerate(exercise.reference_sql):
+        expected = runner(reference)
+        if expected.truncated:
+            raise ValueError(f"Exercise {exercise.id} reference result has more than 200,000 rows.")
         outcome = compare(
             actual,
-            runner(reference),
+            expected,
             order_matters=exercise.order_matters,
             names_matter=exercise.names_matter,
         )
