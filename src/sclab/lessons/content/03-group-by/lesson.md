@@ -1,0 +1,89 @@
++++
+title = "Group by and having"
+summary = "Turn detail rows into one row per group, the way a pivot table does."
++++
+
+GROUP BY collapses many rows into one row per group.
+You then count, sum, or average inside that group.
+A pivot table in Excel does the same job.
+The group is the row label, and the aggregate is the value.
+
+This query counts plants by country.
+
+```sql
+SELECT country, COUNT(*) AS plant_count
+FROM plant
+GROUP BY country
+ORDER BY country
+```
+
+Two rows come back.
+SG has 1 plant.
+US has 2 plants.
+
+WHERE filters rows before the groups are built.
+HAVING filters the groups after the aggregate.
+
+This query keeps only countries with more than one plant.
+
+```sql
+SELECT country, COUNT(*) AS plant_count
+FROM plant
+GROUP BY country
+HAVING COUNT(*) > 1
+ORDER BY country
+```
+
+SG drops out, because its count is 1.
+The only remaining row is US with 2 plants.
+
+SUM adds a number down the group.
+Tool M-000011 has five direct components on bom_item.
+Their qty_per values are 3, 4, 1, 1, and 3, and those add up to 12.
+
+```sql
+SELECT SUM(qty_per) AS total_qty_per
+FROM bom_item
+WHERE parent_material_no = 'M-000011'
+```
+
+AVG averages a number inside the group.
+ROUND keeps a fixed number of decimal places.
+Supplier V-10001 has an average quoted lead time of 55.4 days.
+
+```sql
+SELECT supplier_no, ROUND(AVG(quoted_lead_time_days), 1) AS avg_lead_time_days
+FROM material_supplier
+WHERE supplier_no = 'V-10001'
+GROUP BY supplier_no
+```
+
+EXTRACT(YEAR FROM a date) pulls out the year as a number you can group by.
+M-000001 was created in 2026, and M-000011 was created in 2024.
+
+```sql
+SELECT EXTRACT(YEAR FROM created_on) AS created_year, COUNT(*) AS material_count
+FROM material
+WHERE material_no IN ('M-000001', 'M-000011')
+GROUP BY EXTRACT(YEAR FROM created_on)
+ORDER BY created_year
+```
+
+Two rows come back.
+2024 has 1 material, and 2026 has 1 material.
+
+COUNT(*) counts every row in the group, including rows where a column is NULL.
+COUNT(planned_lead_time_days) skips the NULL rows.
+At plant AU01, 165 rows have no planned lead time and 5175 rows have one.
+
+```sql
+SELECT plant_code,
+       COUNT(*) - COUNT(planned_lead_time_days) AS missing_lead_time,
+       COUNT(planned_lead_time_days) AS filled_lead_time
+FROM material_plant
+WHERE plant_code = 'AU01'
+GROUP BY plant_code
+```
+
+Check yourself.
+Name the column you group by before you write the aggregate.

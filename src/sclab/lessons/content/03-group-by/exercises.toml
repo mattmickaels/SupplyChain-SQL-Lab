@@ -1,0 +1,192 @@
+[[exercise]]
+id = "group-materials-by-type"
+title = "Materials by type"
+prompt_md = """
+Count the materials of each material_type.
+Return material_type and material_count.
+Order by material_type.
+"""
+hints = [
+  "Each material type becomes one row, and the value is how many materials it has.",
+  "GROUP BY material_type, and use COUNT(*) for the number of rows.",
+  "SELECT material_type, COUNT(*) AS material_count FROM material GROUP BY material_type ORDER BY material_type",
+]
+reference_sql = [
+  """
+SELECT material_type, count(*) AS material_count
+FROM material
+GROUP BY material_type
+ORDER BY material_type
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "This is a pivot with material type on the rows and a count of materials in the values."
+
+[[exercise]]
+id = "group-open-qty-by-material"
+title = "Open quantity by material"
+prompt_md = """
+Add up the open sales order quantity for each material_no.
+Use sales_order_item only, and keep lines whose status is Open.
+Return material_no and total_qty, the sum of qty.
+Order by total_qty descending, then material_no.
+Some materials share the same total, so the material number has to break the tie.
+"""
+hints = [
+  "Add up open line quantity once per material.",
+  "Filter status = 'Open', then GROUP BY material_no and SUM(qty).",
+  "SELECT material_no, SUM(qty) AS total_qty FROM sales_order_item WHERE status = 'Open' GROUP BY material_no ORDER BY total_qty DESC, material_no",
+]
+reference_sql = [
+  """
+SELECT material_no, sum(qty) AS total_qty
+FROM sales_order_item
+WHERE status = 'Open'
+GROUP BY material_no
+ORDER BY total_qty DESC, material_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Filter the sheet to Open, then pivot quantity by material."
+
+[[exercise]]
+id = "group-suppliers-by-country"
+title = "Suppliers by country"
+prompt_md = """
+Count the suppliers in each country.
+Return country and supplier_count.
+Order by supplier_count descending, then country.
+Several countries have the same count, so the country name has to break the tie.
+"""
+hints = [
+  "Each country becomes one row, and the value is how many suppliers it has.",
+  "GROUP BY country and COUNT(*) the supplier rows.",
+  "SELECT country, COUNT(*) AS supplier_count FROM supplier GROUP BY country ORDER BY supplier_count DESC, country",
+]
+reference_sql = [
+  """
+SELECT country, count(*) AS supplier_count
+FROM supplier
+GROUP BY country
+ORDER BY supplier_count DESC, country
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Pivot the supplier sheet with country on the rows and a count in the values, then sort the count high to low."
+
+[[exercise]]
+id = "group-avg-quoted-lead-time"
+title = "Average quoted lead time"
+prompt_md = """
+For each supplier_no on material_supplier, average quoted_lead_time_days.
+Round the average to 1 decimal place.
+Return supplier_no and avg_lead_time_days.
+Order by supplier_no.
+"""
+hints = [
+  "Average the quoted lead time once per supplier, then keep one decimal place.",
+  "GROUP BY supplier_no and use ROUND(AVG(quoted_lead_time_days), 1).",
+  "SELECT supplier_no, ROUND(AVG(quoted_lead_time_days), 1) AS avg_lead_time_days FROM material_supplier GROUP BY supplier_no ORDER BY supplier_no",
+]
+reference_sql = [
+  """
+SELECT supplier_no, round(avg(quoted_lead_time_days), 1) AS avg_lead_time_days
+FROM material_supplier
+GROUP BY supplier_no
+ORDER BY supplier_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "This is a pivot of quoted lead time by supplier, with the value set to Average."
+
+[[exercise]]
+id = "group-materials-many-suppliers"
+title = "Materials with more than one supplier"
+prompt_md = """
+Find materials on material_supplier that have more than one supplier.
+Return material_no and supplier_count.
+Order by material_no.
+The cutoff belongs in HAVING, because it tests the group.
+"""
+hints = [
+  "Keep materials whose supplier list has more than one row.",
+  "GROUP BY material_no, then HAVING COUNT(*) > 1.",
+  "SELECT material_no, COUNT(*) AS supplier_count FROM material_supplier GROUP BY material_no HAVING COUNT(*) > 1 ORDER BY material_no",
+]
+reference_sql = [
+  """
+SELECT material_no, count(*) AS supplier_count
+FROM material_supplier
+GROUP BY material_no
+HAVING count(*) > 1
+ORDER BY material_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Pivot suppliers by material, then filter the pivot to counts greater than 1."
+
+[[exercise]]
+id = "group-lines-by-order-year"
+title = "Sales lines by requested year"
+prompt_md = """
+Count sales order lines by the year of requested_date.
+Keep years 2022 through 2026.
+Return order_year and line_count.
+Order by order_year.
+Requested dates also fall in 2021, and the open backlog reaches into 2027.
+Leave both of those years out of this count.
+"""
+hints = [
+  "The year of requested_date is the group, and 2021 and 2027 stay out.",
+  "Filter EXTRACT(YEAR FROM requested_date) BETWEEN 2022 AND 2026, then group by that year.",
+  "SELECT EXTRACT(YEAR FROM requested_date) AS order_year, COUNT(*) AS line_count FROM sales_order_item WHERE EXTRACT(YEAR FROM requested_date) BETWEEN 2022 AND 2026 GROUP BY EXTRACT(YEAR FROM requested_date) ORDER BY order_year",
+]
+reference_sql = [
+  """
+SELECT EXTRACT(YEAR FROM requested_date) AS order_year,
+       count(*) AS line_count
+FROM sales_order_item
+WHERE EXTRACT(YEAR FROM requested_date) BETWEEN 2022 AND 2026
+GROUP BY EXTRACT(YEAR FROM requested_date)
+ORDER BY order_year
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Add a year column from the requested date, then pivot a count of lines by that year."
+
+[[exercise]]
+id = "group-null-lead-time"
+title = "Missing and filled lead times"
+prompt_md = """
+On material_plant, count missing and filled planned_lead_time_days for each plant_code.
+missing_lead_time is the rows where that column is NULL.
+filled_lead_time is the rows where it has a value.
+Return plant_code, missing_lead_time, and filled_lead_time.
+Order by plant_code.
+count(planned_lead_time_days) skips NULL.
+count(*) does not.
+"""
+hints = [
+  "COUNT of the lead time column skips NULL, and COUNT(*) does not.",
+  "GROUP BY plant_code, and subtract COUNT(planned_lead_time_days) from COUNT(*).",
+  "SELECT plant_code, COUNT(*) - COUNT(planned_lead_time_days) AS missing_lead_time, COUNT(planned_lead_time_days) AS filled_lead_time FROM material_plant GROUP BY plant_code ORDER BY plant_code",
+]
+reference_sql = [
+  """
+SELECT plant_code,
+       count(*) - count(planned_lead_time_days) AS missing_lead_time,
+       count(planned_lead_time_days) AS filled_lead_time
+FROM material_plant
+GROUP BY plant_code
+ORDER BY plant_code
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "A pivot counts every row, while COUNTA on the lead time column skips blank cells."

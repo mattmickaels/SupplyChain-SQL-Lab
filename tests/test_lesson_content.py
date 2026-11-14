@@ -352,6 +352,41 @@ def test_portability_round_trip_preserves_banned_constructs(sql: str) -> None:
     assert _FORBIDDEN.search(_portable_sql(sql)) is not None
 
 
+_MULTI_RECEIPT_POS = (
+    "PO-0043687",
+    "PO-0043688",
+    "PO-0043689",
+    "PO-0043690",
+    "PO-0043691",
+)
+
+
+def test_receipt_fan_out_unsafe_query_does_not_match(reference_results) -> None:
+    exercise = next(item for item in _exercises() if item.id == "join-multi-receipt-qty")
+    quoted = ", ".join(f"'{po_no}'" for po_no in _MULTI_RECEIPT_POS)
+    unsafe = f"""
+        SELECT i.po_no, i.line_no, SUM(i.order_qty) AS order_qty, SUM(g.qty) AS received_qty
+        FROM purchase_order_item AS i
+        JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
+        WHERE i.po_no IN ({quoted})
+        GROUP BY i.po_no, i.line_no
+        ORDER BY i.po_no, i.line_no
+    """
+    unsafe_result = _run(unsafe)
+    reference = reference_results[exercise.reference_sql[0]]
+    outcome = compare(
+        unsafe_result,
+        reference,
+        order_matters=exercise.order_matters,
+        names_matter=exercise.names_matter,
+    )
+    assert outcome.passed is False
+    by_line = {(row[0], row[1]): row[2] for row in unsafe_result.rows}
+    assert by_line[("PO-0043687", 1)] == 54
+    reference_qty = {(row[0], row[1]): row[2] for row in reference.rows}
+    assert reference_qty[("PO-0043687", 1)] == 18
+
+
 def test_like_matches_text_with_a_prefix() -> None:
     exercise = next(exercise for exercise in _exercises() if exercise.id == "rf-generator-search")
     assert exercise.reference_sql

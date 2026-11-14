@@ -52,6 +52,16 @@ def test_run_syntax_error_returns_message_not_500(client) -> None:
     assert "syntax error" in response.text.lower()
 
 
+def test_run_unknown_column_returns_message_not_500(client) -> None:
+    response = client.post(
+        "/api/run",
+        data={"sql": "SELECT no_such_column FROM plant", "target": "lesson"},
+    )
+    assert response.status_code == 200
+    assert "no_such_column" in response.text
+    assert "<table" not in response.text
+
+
 def test_run_truncation_label(client) -> None:
     response = client.post(
         "/api/run",

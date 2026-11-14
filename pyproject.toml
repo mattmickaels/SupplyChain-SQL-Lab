@@ -21,7 +21,7 @@ sclab = "sclab.cli:main"
 
 [dependency-groups]
 dev = [
-    "httpx",
+    "httpx2>=2.16.0",
     "pytest",
     "ruff",
 ]
@@ -35,6 +35,7 @@ packages = ["src/sclab"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = ["error::DeprecationWarning:sclab.*"]
 
 [tool.ruff]
 line-length = 100
