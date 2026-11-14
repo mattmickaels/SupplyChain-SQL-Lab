@@ -7,6 +7,16 @@ import pytest
 
 from sclab.data.build import ensure_database
 
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--update-snapshots",
+        action="store_true",
+        default=False,
+        help="Rewrite tests/snapshots/exercises.json from the lesson reference queries.",
+    )
+
+
 _READ_ONLY = {
     "enable_external_access": False,
     "autoinstall_known_extensions": False,
