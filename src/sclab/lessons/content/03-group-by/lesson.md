@@ -38,15 +38,13 @@ SG drops out, because its count is 1.
 The only remaining row is US with 2 plants.
 
 SUM adds a number down the group.
-Open quantity for Halcyon Memory, customer C-2003, is 47.
+Tool M-000011 has five direct components on bom_item.
+Their qty_per values are 3, 4, 1, 1, and 3, and those add up to 12.
 
 ```sql
-SELECT h.customer_no, SUM(i.qty) AS total_qty
-FROM sales_order_item AS i
-JOIN sales_order AS h ON h.so_no = i.so_no
-WHERE h.customer_no = 'C-2003'
-  AND i.status = 'Open'
-GROUP BY h.customer_no
+SELECT SUM(qty_per) AS total_qty_per
+FROM bom_item
+WHERE parent_material_no = 'M-000011'
 ```
 
 AVG averages a number inside the group.
@@ -59,6 +57,20 @@ FROM material_supplier
 WHERE supplier_no = 'V-10001'
 GROUP BY supplier_no
 ```
+
+EXTRACT(YEAR FROM a date) pulls out the year as a number you can group by.
+M-000001 was created in 2026, and M-000011 was created in 2024.
+
+```sql
+SELECT EXTRACT(YEAR FROM created_on) AS created_year, COUNT(*) AS material_count
+FROM material
+WHERE material_no IN ('M-000001', 'M-000011')
+GROUP BY EXTRACT(YEAR FROM created_on)
+ORDER BY created_year
+```
+
+Two rows come back.
+2024 has 1 material, and 2026 has 1 material.
 
 COUNT(*) counts every row in the group, including rows where a column is NULL.
 COUNT(planned_lead_time_days) skips the NULL rows.

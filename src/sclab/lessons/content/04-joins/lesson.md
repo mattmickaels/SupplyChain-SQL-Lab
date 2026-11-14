@@ -35,6 +35,36 @@ WHERE p.plant_code = 'SG01'
 The plant row stays.
 bay_id is NULL, because that bay does not exist.
 
+COALESCE replaces a NULL with a value you choose.
+It does not change a real bay id.
+
+```sql
+SELECT p.plant_code, COALESCE(b.bay_id, 'none') AS bay_id
+FROM plant AS p
+LEFT JOIN build_bay AS b
+  ON b.plant_code = p.plant_code
+ AND b.bay_id = 'SG01-B9'
+WHERE p.plant_code = 'SG01'
+```
+
+The same plant row now shows none instead of NULL.
+
+A derived table is a query in FROM, with an alias.
+The outer query reads it like any other table.
+
+```sql
+SELECT plant_code, bay_count
+FROM (
+    SELECT plant_code, COUNT(*) AS bay_count
+    FROM build_bay
+    GROUP BY plant_code
+) AS bay_totals
+ORDER BY plant_code
+```
+
+Three rows come back.
+AU01, SC01, and SG01 each have 5 bays.
+
 A join can multiply rows.
 Line 1 of PO-0043687 orders 18 units and has three goods receipts.
 
@@ -64,17 +94,22 @@ WHERE i.po_no = 'PO-0043687' AND i.line_no = 1
 order_qty stays 18.
 received_qty is 18.
 
-Subtracting two dates gives the number of days between them.
+Write the test as confirmed_delivery_date >= requested_delivery_date + INTERVAL 56 DAY, because that sum is still a date on both DuckDB and Databricks.
+Date minus date is not used here, because those engines do not return the same kind of value.
+
 Line 1 of PO-0012389 was requested for 18 January 2027 and confirmed for 15 March 2027.
+The confirmed date is on or after the requested date plus 56 days.
 
 ```sql
-SELECT i.confirmed_delivery_date - i.requested_delivery_date AS slip_days
+SELECT i.po_no, i.line_no
 FROM purchase_order_item AS i
-WHERE i.po_no = 'PO-0012389' AND i.line_no = 1
+WHERE i.po_no = 'PO-0012389'
+  AND i.line_no = 1
+  AND i.confirmed_delivery_date >= i.requested_delivery_date + INTERVAL 56 DAY
 ```
 
-The gap is 56 days.
-Corvane RF Systems, supplier V-10017, has open lines with a gap at least that long.
+That filter keeps the line.
+Corvane RF Systems, supplier V-10017, has open lines that pass the same test.
 Those late lines are why six open Etch tool orders are at risk in this lab.
 Lesson 9 is where you build that at-risk list.
 

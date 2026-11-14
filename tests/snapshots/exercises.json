@@ -63,12 +63,12 @@
     "md5": "f3c9469e15e087db8a3500293d61cb58",
     "row_count": 5
   },
+  "join-multi-receipt-qty": {
+    "md5": "0f516b66fa8b6d408031294dabd02bfe",
+    "row_count": 5
+  },
   "join-october-po-supplier": {
     "md5": "6410d3706b40f6c353c697ac72fbfa89",
-    "row_count": 2240
-  },
-  "join-october-received-qty": {
-    "md5": "7b543b3aaa2c513c37707eda025b0af1",
     "row_count": 2240
   },
   "join-open-rf-po-lines": {

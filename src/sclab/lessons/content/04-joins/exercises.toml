@@ -158,32 +158,34 @@ names_matter = true
 excel_tip = "Filter to RF generator, then look up the supplier name and keep lines that are not fully received."
 
 [[exercise]]
-id = "join-october-received-qty"
-title = "Received quantity for October orders"
+id = "join-multi-receipt-qty"
+title = "Received quantity when a line has several receipts"
 prompt_md = """
-For purchase order lines placed in October 2026, show how much has been received.
+Show order quantity and received quantity for these purchase order lines.
+The lines are PO-0043687, PO-0043688, PO-0043689, PO-0043690, and PO-0043691.
+Each of those lines has three goods receipts.
 Return po_no, line_no, order_qty, and received_qty.
 received_qty is the sum of goods_receipt.qty for that line, or 0 when nothing has been received.
 Order by po_no, then line_no.
 Add the receipts up before you join them, so order_qty is not repeated once per receipt.
 """
 hints = [
-  "Add up receipts by purchase line first, so the order quantity is not repeated.",
-  "SUM goods_receipt.qty in a grouped query, then LEFT JOIN it to the October lines.",
-  "SELECT i.po_no, i.line_no, i.order_qty, COALESCE(r.received_qty, 0) AS received_qty FROM purchase_order_item AS i JOIN purchase_order AS h ON h.po_no = i.po_no LEFT JOIN (SELECT po_no, line_no, SUM(qty) AS received_qty FROM goods_receipt GROUP BY po_no, line_no) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no WHERE h.order_date >= DATE '2026-10-01' AND h.order_date <= DATE '2026-10-31' ORDER BY i.po_no, i.line_no",
+  "These lines have three receipts each, so joining the receipts first would repeat order_qty.",
+  "SUM goods_receipt.qty in a derived table grouped by po_no and line_no, then LEFT JOIN it.",
+  "SELECT i.po_no, i.line_no, i.order_qty, COALESCE(r.received_qty, 0) AS received_qty FROM purchase_order_item AS i LEFT JOIN (SELECT po_no, line_no, SUM(qty) AS received_qty FROM goods_receipt GROUP BY po_no, line_no) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no WHERE i.po_no IN ('PO-0043687', 'PO-0043688', 'PO-0043689', 'PO-0043690', 'PO-0043691') ORDER BY i.po_no, i.line_no",
 ]
 reference_sql = [
   """
-SELECT i.po_no, i.line_no, i.order_qty, coalesce(r.received_qty, 0) AS received_qty
+SELECT i.po_no, i.line_no, i.order_qty, COALESCE(r.received_qty, 0) AS received_qty
 FROM purchase_order_item AS i
-JOIN purchase_order AS h ON h.po_no = i.po_no
 LEFT JOIN (
-    SELECT po_no, line_no, sum(qty) AS received_qty
+    SELECT po_no, line_no, SUM(qty) AS received_qty
     FROM goods_receipt
     GROUP BY po_no, line_no
 ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
-WHERE h.order_date >= DATE '2026-10-01'
-  AND h.order_date <= DATE '2026-10-31'
+WHERE i.po_no IN (
+    'PO-0043687', 'PO-0043688', 'PO-0043689', 'PO-0043690', 'PO-0043691'
+)
 ORDER BY i.po_no, i.line_no
 """,
 ]
@@ -262,8 +264,8 @@ These are the late component lines behind the six Etch orders you will study in 
 """
 hints = [
   "An open Corvane line is late when the confirmed date is at least 56 days after the requested date.",
-  "Sum receipts before comparing them with order_qty, and subtract the two dates.",
-  "SELECT i.po_no, i.line_no, m.description, i.requested_delivery_date, i.confirmed_delivery_date FROM purchase_order_item AS i JOIN purchase_order AS h ON h.po_no = i.po_no JOIN material AS m ON m.material_no = i.material_no LEFT JOIN (SELECT po_no, line_no, SUM(qty) AS received_qty FROM goods_receipt GROUP BY po_no, line_no) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no WHERE h.supplier_no = 'V-10017' AND h.order_date <= DATE '2026-11-01' AND COALESCE(r.received_qty, 0) < i.order_qty AND i.confirmed_delivery_date - i.requested_delivery_date >= 56 ORDER BY i.po_no, i.line_no",
+  "Sum receipts before comparing them with order_qty, and compare the confirmed date to requested_delivery_date + INTERVAL 56 DAY.",
+  "SELECT i.po_no, i.line_no, m.description, i.requested_delivery_date, i.confirmed_delivery_date FROM purchase_order_item AS i JOIN purchase_order AS h ON h.po_no = i.po_no JOIN material AS m ON m.material_no = i.material_no LEFT JOIN (SELECT po_no, line_no, SUM(qty) AS received_qty FROM goods_receipt GROUP BY po_no, line_no) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no WHERE h.supplier_no = 'V-10017' AND h.order_date <= DATE '2026-11-01' AND COALESCE(r.received_qty, 0) < i.order_qty AND i.confirmed_delivery_date >= i.requested_delivery_date + INTERVAL 56 DAY ORDER BY i.po_no, i.line_no",
 ]
 reference_sql = [
   """
@@ -280,10 +282,10 @@ LEFT JOIN (
 WHERE h.supplier_no = 'V-10017'
   AND h.order_date <= DATE '2026-11-01'
   AND coalesce(r.received_qty, 0) < i.order_qty
-  AND i.confirmed_delivery_date - i.requested_delivery_date >= 56
+  AND i.confirmed_delivery_date >= i.requested_delivery_date + INTERVAL 56 DAY
 ORDER BY i.po_no, i.line_no
 """,
 ]
 order_matters = true
 names_matter = true
-excel_tip = "Filter to supplier V-10017, subtract the two date columns, and keep gaps of 56 days or more."
+excel_tip = "Filter to supplier V-10017, and keep a confirmed date on or after the requested date plus 56 days."
