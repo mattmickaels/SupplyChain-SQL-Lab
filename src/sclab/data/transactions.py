@@ -337,6 +337,7 @@ def _component_demand(lines, production, leaf) -> tuple[pd.DataFrame, pd.DataFra
             "plant_code": issued["plant_code"].to_numpy(),
             "qty": component_qty.to_numpy(),
             "need_date": issued["planned_start"].to_numpy(),
+            "booking_date": issued["order_date"].to_numpy(),
         }
     )
     spares = lines[(lines["kind"] == "spare") & (lines["status"] != "Cancelled")]
@@ -346,6 +347,7 @@ def _component_demand(lines, production, leaf) -> tuple[pd.DataFrame, pd.DataFra
             "plant_code": spares["plant_code"].to_numpy(),
             "qty": spares["qty"].to_numpy(),
             "need_date": spares["shipped_date"].fillna(spares["promised_date"]).to_numpy(),
+            "booking_date": spares["order_date"].to_numpy(),
         }
     )
     production_demand["use"] = "issue"
@@ -390,7 +392,9 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
     )
     planning = master["material_plant"].merge(primary, on="material_no")
     planning = planning.set_index(["material_no", "plant_code"])
-    daily = demand.groupby(["material_no", "plant_code", "need_date"], as_index=False)["qty"].sum()
+    daily = demand.groupby(["material_no", "plant_code", "need_date"], as_index=False).agg(
+        qty=("qty", "sum"), booking_date=("booking_date", "min")
+    )
     rows = []
     for (material, plant), needs in daily.groupby(["material_no", "plant_code"], sort=True):
         parameters = planning.loc[(material, plant)]
@@ -415,6 +419,13 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
                 buffer = RF_BUFFER_DAYS
             receipts = plan_purchases(dated, stock, safety, lead, buffer, LOT_DAYS)
             for receipt in receipts:
+                need = receipt.requested_date + timedelta(days=buffer)
+                booking = pd.NaT
+                if receipt.order_date > AS_OF_DATE:
+                    covered = segment["need_date"].ge(pd.Timestamp(need)) & segment["need_date"].lt(
+                        pd.Timestamp(need + timedelta(days=LOT_DAYS))
+                    )
+                    booking = segment.loc[covered, "booking_date"].min()
                 rows.append(
                     {
                         "material_no": material,
@@ -423,7 +434,8 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
                         "unit_price": parameters["unit_price"],
                         "qty": receipt.qty,
                         "requested": receipt.requested_date,
-                        "order_date": min(receipt.order_date, AS_OF_DATE),
+                        "order_date": receipt.order_date,
+                        "booking_date": booking,
                         "need_date": receipt.requested_date + timedelta(days=buffer),
                         "historical": historical,
                     }
@@ -442,6 +454,10 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
         lower=AS_OF_TS + pd.Timedelta(days=1)
     )
     grouped = _set_on_time(rng, grouped)
+    # Earlier buyer release does not remove the supplier's existing delivery delay.
+    grouped["order_date"] = _backlog_order_dates(
+        rng, grouped["order_date"], grouped["booking_date"]
+    )
     grouped["order_qty"] = grouped["qty"].round().astype(int)
     grouped["uom"] = "EA"
     grouped["net_price"] = grouped["unit_price"].round(2)
@@ -464,6 +480,35 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
         columns={"requested": "requested_delivery_date", "confirmed": "confirmed_delivery_date"}
     )
     return {"headers": headers, "items": items, "lines": grouped}
+
+
+def _backlog_order_dates(
+    rng: np.random.Generator, planned: pd.Series, booked: pd.Series
+) -> pd.Series:
+    """Release future backlog purchases on working days after booking processing.
+
+    A purchase lot is initiated by the earliest customer booking it covers.
+    Processing takes 3-10 calendar days, followed by a seeded working-day release
+    before the snapshot; the earlier date only adds procurement lead-time slack.
+    """
+    actual = planned.copy()
+    future = planned.gt(AS_OF_TS)
+    if not future.any():
+        return actual
+    bookings = pd.to_datetime(booked.loc[future])
+    if bookings.isna().any():
+        raise ValueError("Backlog purchase is missing its customer booking date")
+    booking_days = bookings.to_numpy(dtype="datetime64[D]")
+    last = np.busday_offset(np.datetime64(AS_OF_DATE), 0, roll="backward")
+    max_processing = np.minimum(10, (last - booking_days).astype(int))
+    if (max_processing < 3).any():
+        raise ValueError("Backlog booking leaves no buyer processing time before the snapshot")
+    processing = rng.integers(3, max_processing + 1)
+    first = np.busday_offset(booking_days + processing, 0, roll="forward")
+    working_days = np.busday_count(first, last + np.timedelta64(1, "D"))
+    release = np.busday_offset(first, rng.integers(0, working_days))
+    actual.loc[future] = pd.to_datetime(release)
+    return actual
 
 
 def _set_on_time(rng, grouped: pd.DataFrame) -> pd.DataFrame:

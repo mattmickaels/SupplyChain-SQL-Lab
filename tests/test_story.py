@@ -308,3 +308,21 @@ def test_rf_snapshot_at_safety_stock(lab_conn) -> None:
           AND COALESCE(i.qty_on_hand, 0) <> p.safety_stock
     """).fetchall()
     assert differences == []
+
+
+def test_no_snapshot_day_purchase_surge(lab_conn) -> None:
+    daily = lab_conn.execute(
+        """
+        SELECT order_date, COUNT(*) AS orders
+        FROM purchase_order
+        WHERE order_date BETWEEN ? AND ?
+        GROUP BY order_date ORDER BY orders DESC, order_date
+    """,
+        [AS_OF_DATE - timedelta(days=180), AS_OF_DATE],
+    ).df()
+    assert not daily.empty
+    median = float(daily["orders"].median())
+    busiest = int(daily["orders"].max())
+    assert busiest <= 3 * median, daily.head().to_dict("records")
+    snapshot = daily.loc[daily["order_date"].dt.date.eq(AS_OF_DATE), "orders"]
+    assert snapshot.empty or int(snapshot.iloc[0]) < busiest
