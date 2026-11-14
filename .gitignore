@@ -1,0 +1,15 @@
+# DG-swFactory baseline
+# Client and matter data never goes in git. Runtime state and secrets stay out too.
+state/
+*.csv
+*.xlsx
+*.xls
+*.pfx
+*.key
+*.token
+*.credentials.json
+.claude/agent-memory-local/
+.lavish/
+.worktrees/
+.lavish/
+.superpowers/

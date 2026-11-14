@@ -1,0 +1,565 @@
+<title>Supply Chain Data Primer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: sticky agenda rail on the left, one reading column on the right; stacks to one column on phones.
+   Accent is cleanroom photolithography amber on cool wafer greys. */
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --ink: #16202b;
+  --muted: #566372;
+  --line: #d8dee5;
+  --accent: #a86a00;
+  --accent-soft: #fdf1d8;
+  --key: #1f5f99;
+  --key-soft: #e3eef8;
+  --bad: #b3261e;
+  --bad-soft: #fbe7e5;
+  --good: #1d7a46;
+  --good-soft: #e2f3e9;
+  --code-bg: #eef1f4;
+  --f-display: "Archivo", "Segoe UI", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f151c; --surface: #17202a; --ink: #e6ebf0; --muted: #9aa7b4; --line: #2a3542;
+    --accent: #f0b440; --accent-soft: #3a2c10; --key: #7db6ea; --key-soft: #16314a;
+    --bad: #f2938c; --bad-soft: #43201d; --good: #7fd3a1; --good-soft: #163626; --code-bg: #111a23;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f151c; --surface: #17202a; --ink: #e6ebf0; --muted: #9aa7b4; --line: #2a3542;
+  --accent: #f0b440; --accent-soft: #3a2c10; --key: #7db6ea; --key-soft: #16314a;
+  --bad: #f2938c; --bad-soft: #43201d; --good: #7fd3a1; --good-soft: #163626; --code-bg: #111a23;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--f-body); font-size: 16px; line-height: 1.6;
+}
+.wrap {
+  max-width: 1180px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+  display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px;
+}
+@media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 16px; } .rail { display: none; } }
+
+.rail { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; }
+.rail .eyebrow { margin-bottom: 12px; }
+.rail ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; counter-reset: s; }
+.rail a {
+  display: flex; gap: 10px; padding: 6px 10px; border-radius: 6px;
+  color: var(--muted); text-decoration: none; font-size: 14px; line-height: 1.35;
+}
+.rail a::before { counter-increment: s; content: counter(s, decimal-leading-zero); font-family: var(--f-mono); font-size: 12px; padding-top: 1px; }
+.rail a:hover { color: var(--ink); background: var(--surface); }
+.rail a.on { color: var(--ink); background: var(--accent-soft); }
+.rail a.on::before { color: var(--accent); }
+
+main { min-width: 0; display: flex; flex-direction: column; gap: 56px; }
+header.hero { display: flex; flex-direction: column; gap: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line); padding-bottom: 32px; }
+.eyebrow { font-family: var(--f-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(32px, 5vw, 48px); font-weight: 800; letter-spacing: -.01em; }
+h2 { font-size: clamp(24px, 3vw, 30px); font-weight: 700; }
+h3 { font-size: 18px; font-weight: 700; }
+p { margin: 0; max-width: 68ch; }
+.lede { font-size: 19px; color: var(--muted); max-width: 62ch; }
+section { display: flex; flex-direction: column; gap: 18px; scroll-margin-top: 24px; }
+.sec-head { display: flex; flex-direction: column; gap: 6px; }
+.talk {
+  border-left: 3px solid var(--accent); background: var(--accent-soft);
+  padding: 12px 16px; border-radius: 0 8px 8px 0; font-size: 15px; max-width: 72ch;
+}
+.talk strong { font-family: var(--f-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); display: block; margin-bottom: 2px; }
+code, .mono { font-family: var(--f-mono); font-size: .9em; }
+:not(pre) > code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre {
+  margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 14px 16px; overflow-x: auto; font-family: var(--f-mono); font-size: 14px; line-height: 1.55;
+}
+.kw { color: var(--key); font-weight: 500; }
+.cm { color: var(--muted); font-style: italic; }
+
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--f-mono); font-size: 12px; font-weight: 500; letter-spacing: .04em; color: var(--muted); background: var(--bg); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; }
+td.null { color: var(--bad); background: var(--bad-soft); font-family: var(--f-mono); font-size: 13px; }
+td.pk { color: var(--key); font-weight: 600; font-family: var(--f-mono); font-size: 13px; }
+td.fk { color: var(--key); font-family: var(--f-mono); font-size: 13px; }
+.cap { font-size: 13px; color: var(--muted); }
+
+/* flow diagram */
+.flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; align-items: stretch; }
+.flow .node {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px;
+  display: flex; flex-direction: column; gap: 6px; position: relative;
+}
+.flow .node + .node { margin-left: 28px; }
+.flow .node + .node::before {
+  content: "\2192"; position: absolute; left: -24px; top: 50%; transform: translateY(-50%);
+  color: var(--accent); font-size: 20px; font-family: var(--f-mono);
+}
+.flow .node b { font-family: var(--f-display); font-size: 16px; }
+.flow .node span { font-size: 13px; color: var(--muted); line-height: 1.45; }
+.flow .tag { font-family: var(--f-mono); font-size: 11px; color: var(--accent); letter-spacing: .06em; text-transform: uppercase; }
+@media (max-width: 720px) {
+  .flow { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .flow .node + .node { margin-left: 0; }
+  .flow .node + .node::before { content: "\2193"; left: 50%; top: -24px; transform: translateX(-50%); }
+}
+
+/* entity cards */
+.er { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.ent { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.ent h4 { margin: 0; padding: 8px 12px; font-family: var(--f-mono); font-size: 13px; font-weight: 500; background: var(--bg); border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px; }
+.ent h4 em { font-style: normal; color: var(--muted); }
+.ent ul { list-style: none; margin: 0; padding: 8px 12px; display: flex; flex-direction: column; gap: 3px; font-family: var(--f-mono); font-size: 13px; }
+.ent li { display: flex; gap: 8px; align-items: baseline; }
+.badge { font-size: 10px; font-weight: 600; letter-spacing: .04em; padding: 1px 5px; border-radius: 4px; flex: none; }
+.badge.pk { background: var(--key); color: var(--surface); }
+.badge.fk { background: var(--key-soft); color: var(--key); }
+
+/* two up */
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 720px) { .two { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+/* join lab */
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg button {
+  font: inherit; font-size: 14px; padding: 7px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.seg button:focus-visible, .rail a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.verdict { font-size: 15px; padding: 10px 14px; border-radius: 8px; background: var(--key-soft); max-width: 72ch; }
+
+/* steps */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; counter-reset: st; }
+.steps li { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.steps li b { font-family: var(--f-display); font-size: 15px; color: var(--ink); }
+.steps li b::before { counter-increment: st; content: counter(st) ". "; color: var(--accent); }
+@media (max-width: 860px) { .steps { grid-template-columns: minmax(0, 1fr); } }
+
+.gloss { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0 28px; margin: 0; }
+.gloss div { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.gloss dt { font-family: var(--f-display); font-weight: 700; }
+.gloss dd { margin: 2px 0 0; font-size: 14px; color: var(--muted); }
+
+tr.warn td { background: var(--accent-soft); }
+tr.short td { background: var(--bad-soft); }
+.pill { font-family: var(--f-mono); font-size: 11px; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.pill.warn { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); border: 1px solid var(--bad); }
+.pill.ok { background: var(--good-soft); color: var(--good); border: 1px solid var(--good); }
+
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 20px; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="wrap">
+  <nav class="rail" aria-label="Agenda">
+    <div class="eyebrow">Call agenda</div>
+    <ol>
+      <li><a href="#role">What the role asks for</a></li>
+      <li><a href="#journey">Where the data travels</a></li>
+      <li><a href="#tables">Tables, rows and keys</a></li>
+      <li><a href="#sap">SAP tables you already know</a></li>
+      <li><a href="#excel">Excel habits in SQL</a></li>
+      <li><a href="#anatomy">How a query reads</a></li>
+      <li><a href="#joins">Joins, hands on</a></li>
+      <li><a href="#traps">Two traps to spot</a></li>
+      <li><a href="#planning">Planning concepts</a></li>
+      <li><a href="#interview">Answering a data question</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+      <li><a href="#next">What happens next</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <div class="eyebrow">Kickoff primer &middot; about 60 minutes</div>
+      <h1>Supply Chain Data Primer</h1>
+      <p class="lede">You already know the planning work and how to read SAP reports. Today is about the layer underneath them: how the data is stored, how to ask it questions in SQL, and how to explain what you found.</p>
+      <p class="cap">Every company, part, customer and number on this page is made up for teaching. The structure matches how a semiconductor equipment maker really plans.</p>
+    </header>
+
+    <!-- 1 -->
+    <section id="role">
+      <div class="sec-head"><div class="eyebrow">01 &middot; The target</div><h2>What the role asks for</h2></div>
+      <p>The Technical Project / Program Manager posting asks for SQL twice. It wants enough to query and interpret operational data <em>on your own</em>, using tables, joins and keys. Around that it asks for the things you already do.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>The posting asks for</th><th>Where you are today</th><th>What closes the gap</th></tr></thead>
+        <tbody>
+          <tr><td>SQL and relational databases: tables, joins, keys</td><td><span class="pill bad">new</span></td><td>This call, then lessons 1-4 in the lab</td></tr>
+          <tr><td>Cleaning large, imperfect datasets</td><td><span class="pill warn">partly</span> in Excel</td><td>Lab lesson on NULLs, duplicates and units</td></tr>
+          <tr><td>Supply, demand, capacity and materials analysis</td><td><span class="pill ok">strong</span> as a user of reports</td><td>Rebuilding those reports yourself in SQL</td></tr>
+          <tr><td>Advanced Excel: pivots, lookups, scenarios</td><td><span class="pill ok">strong</span></td><td>Export query results and finish in Excel</td></tr>
+          <tr><td>S&amp;OP / IBP and planning systems such as SAP IBP</td><td><span class="pill ok">strong</span> in practice</td><td>Putting names to what you already do</td></tr>
+          <tr><td>Clear charts and executive summaries</td><td><span class="pill warn">partly</span></td><td>Interview drills: a result plus three lines</td></tr>
+        </tbody>
+      </table></div>
+      <div class="talk"><strong>Talking point</strong>The gap is narrower than it sounds. You know what the numbers mean. What's missing is getting them out of the database yourself, without waiting for someone to build the report.</div>
+    </section>
+
+    <!-- 2 -->
+    <section id="journey">
+      <div class="sec-head"><div class="eyebrow">02 &middot; The big picture</div><h2>Where the data travels</h2></div>
+      <p>SAP records every business event as it happens. Analysis doesn't run inside SAP. A copy of the data goes to an analytics platform such as Databricks, and the reports you see come from there.</p>
+      <div class="flow" role="list">
+        <div class="node" role="listitem"><span class="tag">Record</span><b>SAP</b><span>Purchase orders, sales orders, goods receipts, stock moves. One row for every event, as it happens.</span></div>
+        <div class="node" role="listitem"><span class="tag">Copy</span><b>Nightly extract</b><span>SAP tables are copied into the lakehouse unchanged. Nothing gets cleaned yet.</span></div>
+        <div class="node" role="listitem"><span class="tag">Shape</span><b>Databricks</b><span>Data engineers clean the raw copy, join tables and build business-ready tables. Analysts query them with SQL in notebooks.</span></div>
+        <div class="node" role="listitem"><span class="tag">Read</span><b>Reports and Excel</b><span>Dashboards, exports and the spreadsheets you work in every day.</span></div>
+      </div>
+      <p>Databricks teams often call those layers <strong>bronze</strong> (the raw copy), <strong>silver</strong> (cleaned and joined) and <strong>gold</strong> (ready for the business). The SQL is the same in every layer, and it's the SQL you'll practice in the lab.</p>
+      <div class="talk"><strong>Talking point</strong>When a report looks wrong, the cause is usually somewhere along this path: a bad join, a filter on the wrong date, or a field that's blank in SAP. Knowing SQL means you can trace it yourself.</div>
+    </section>
+
+    <!-- 3 -->
+    <section id="tables">
+      <div class="sec-head"><div class="eyebrow">03 &middot; Foundations</div><h2>Tables, rows and keys</h2></div>
+      <p>A database table looks like an Excel sheet with stricter rules. Each row is <strong>one thing</strong>, such as one material or one purchase order line. Each column holds <strong>one kind of value</strong>, such as a date, a quantity or a code. Nobody merges cells or adds a subtotal row halfway down.</p>
+      <div class="two">
+        <div class="panel">
+          <h3>Primary key</h3>
+          <p>The column (or set of columns) that is unique for every row. Material number in the material table. PO number plus line number in the PO line table.</p>
+          <p class="cap">Excel equivalent: the column you'd VLOOKUP on, if you could guarantee it never repeats.</p>
+        </div>
+        <div class="panel">
+          <h3>Foreign key</h3>
+          <p>A column that points at another table's primary key. A PO line stores a material number and a supplier number, not the material's description or the supplier's name.</p>
+          <p class="cap">Every join you write follows one of these pointers.</p>
+        </div>
+      </div>
+      <p>Here's the core of a planning database. Each arrow in your head runs from a <span class="badge fk">FK</span> to the <span class="badge pk">PK</span> it points at.</p>
+      <div class="er">
+        <div class="ent"><h4>material <em>one per part</em></h4><ul>
+          <li><span class="badge pk">PK</span>material_no</li><li>description</li><li>material_type</li><li>base_uom</li></ul></div>
+        <div class="ent"><h4>supplier <em>one per vendor</em></h4><ul>
+          <li><span class="badge pk">PK</span>supplier_no</li><li>name</li><li>country</li></ul></div>
+        <div class="ent"><h4>purchase_order_item <em>one per PO line</em></h4><ul>
+          <li><span class="badge pk">PK</span>po_no + line_no</li><li><span class="badge fk">FK</span>material_no</li><li><span class="badge fk">FK</span>supplier_no</li><li>order_qty</li><li>delivery_date</li></ul></div>
+        <div class="ent"><h4>bom_item <em>one per parent-child link</em></h4><ul>
+          <li><span class="badge fk">FK</span>parent_material_no</li><li><span class="badge fk">FK</span>component_material_no</li><li>qty_per</li></ul></div>
+        <div class="ent"><h4>sales_order_item <em>one per order line</em></h4><ul>
+          <li><span class="badge pk">PK</span>so_no + line_no</li><li><span class="badge fk">FK</span>customer_no</li><li><span class="badge fk">FK</span>material_no</li><li>requested_date</li></ul></div>
+        <div class="ent"><h4>inventory <em>one per part, plant, location</em></h4><ul>
+          <li><span class="badge fk">FK</span>material_no</li><li>plant</li><li>storage_location</li><li>qty_on_hand</li></ul></div>
+      </div>
+      <div class="talk"><strong>Talking point</strong>A supplier's name lives in exactly one place. That's why reports need joins, and it's also why a fix made in one place shows up everywhere.</div>
+    </section>
+
+    <!-- 4 -->
+    <section id="sap">
+      <div class="sec-head"><div class="eyebrow">04 &middot; Familiar ground</div><h2>SAP tables you already know</h2></div>
+      <p>Every SAP screen you open reads from a handful of tables underneath it. The names are terse German abbreviations, but the structure is the same as above. In the lab, every table carries its SAP name too.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>SAP table</th><th>What it holds</th><th>Screen you'd see it in</th><th>Lab table</th></tr></thead>
+        <tbody>
+          <tr><td class="pk">MARA</td><td>Material master, general data</td><td class="mono">MM03</td><td class="mono">material</td></tr>
+          <tr><td class="pk">MARC</td><td>Material per plant: MRP type, lead time, safety stock</td><td class="mono">MM03</td><td class="mono">material_plant</td></tr>
+          <tr><td class="pk">MARD</td><td>Stock by plant and storage location</td><td class="mono">MMBE</td><td class="mono">inventory</td></tr>
+          <tr><td class="pk">STKO / STPO</td><td>Bill of materials header and items</td><td class="mono">CS03</td><td class="mono">bom_item</td></tr>
+          <tr><td class="pk">LFA1</td><td>Supplier (vendor) master</td><td class="mono">BP / XK03</td><td class="mono">supplier</td></tr>
+          <tr><td class="pk">EKKO / EKPO</td><td>Purchase order header and items</td><td class="mono">ME23N</td><td class="mono">purchase_order_item</td></tr>
+          <tr><td class="pk">EKBE</td><td>PO history, including goods receipts</td><td class="mono">ME23N</td><td class="mono">goods_receipt</td></tr>
+          <tr><td class="pk">VBAK / VBAP</td><td>Sales order header and items</td><td class="mono">VA03</td><td class="mono">sales_order_item</td></tr>
+          <tr><td class="pk">KNA1</td><td>Customer master</td><td class="mono">BP / XD03</td><td class="mono">customer</td></tr>
+          <tr><td class="pk">AFKO / AFPO</td><td>Production order header and items</td><td class="mono">CO03</td><td class="mono">production_order</td></tr>
+        </tbody>
+      </table></div>
+      <p class="cap">MD04, the stock and requirements list, doesn't store anything of its own. It combines stock, POs, sales orders and production orders on the fly, which is a big join. Section 09 builds one.</p>
+    </section>
+
+    <!-- 5 -->
+    <section id="excel">
+      <div class="sec-head"><div class="eyebrow">05 &middot; The bridge</div><h2>Excel habits in SQL</h2></div>
+      <p>Most of SQL is things you already do in Excel, written as words instead of clicks. A query also reruns exactly the same way on next month's data.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>In Excel you&hellip;</th><th>In SQL you write&hellip;</th><th>Example</th></tr></thead>
+        <tbody>
+          <tr><td>Pick the columns to show</td><td class="mono">SELECT</td><td class="mono">SELECT material_no, order_qty</td></tr>
+          <tr><td>Point at a sheet</td><td class="mono">FROM</td><td class="mono">FROM purchase_order_item</td></tr>
+          <tr><td>Use a filter dropdown</td><td class="mono">WHERE</td><td class="mono">WHERE plant = 'SC01'</td></tr>
+          <tr><td>Sort A to Z</td><td class="mono">ORDER BY</td><td class="mono">ORDER BY delivery_date</td></tr>
+          <tr><td>Remove duplicates</td><td class="mono">DISTINCT</td><td class="mono">SELECT DISTINCT supplier_no</td></tr>
+          <tr><td>Build a pivot table</td><td class="mono">GROUP BY + SUM / COUNT</td><td class="mono">SUM(order_qty) &hellip; GROUP BY supplier_no</td></tr>
+          <tr><td>Filter a pivot's totals</td><td class="mono">HAVING</td><td class="mono">HAVING SUM(order_qty) &gt; 100</td></tr>
+          <tr><td>VLOOKUP / XLOOKUP</td><td class="mono">JOIN &hellip; ON</td><td class="mono">JOIN supplier s ON s.supplier_no = p.supplier_no</td></tr>
+          <tr><td>Use IF in a helper column</td><td class="mono">CASE WHEN</td><td class="mono">CASE WHEN days_late &gt; 0 THEN 'Late' ELSE 'On time' END</td></tr>
+          <tr><td>Use SUMIFS</td><td class="mono">SUM + WHERE or GROUP BY</td><td class="mono">SUM(order_qty) WHERE status = 'Open'</td></tr>
+        </tbody>
+      </table></div>
+      <div class="talk"><strong>Talking point</strong>A JOIN is a VLOOKUP that can bring back many columns at once, can match on more than one field, and doesn't break when someone inserts a column.</div>
+    </section>
+
+    <!-- 6 -->
+    <section id="anatomy">
+      <div class="sec-head"><div class="eyebrow">06 &middot; Reading SQL</div><h2>How a query reads</h2></div>
+      <p>Here's a full query that answers a real planning question: <em>which suppliers have the most open quantity on purchase orders that are already past due?</em></p>
+<pre><span class="kw">SELECT</span>   s.name,
+         <span class="kw">COUNT</span>(*)          <span class="kw">AS</span> late_lines,
+         <span class="kw">SUM</span>(p.open_qty)   <span class="kw">AS</span> late_qty
+<span class="kw">FROM</span>     purchase_order_item p
+<span class="kw">JOIN</span>     supplier s <span class="kw">ON</span> s.supplier_no = p.supplier_no   <span class="cm">-- the VLOOKUP</span>
+<span class="kw">WHERE</span>    p.open_qty &gt; 0
+  <span class="kw">AND</span>    p.delivery_date &lt; <span class="kw">CURRENT_DATE</span>                 <span class="cm">-- the filter</span>
+<span class="kw">GROUP BY</span> s.name                                         <span class="cm">-- the pivot rows</span>
+<span class="kw">HAVING</span>   <span class="kw">COUNT</span>(*) &gt;= 3                                   <span class="cm">-- only repeat offenders</span>
+<span class="kw">ORDER BY</span> late_qty <span class="kw">DESC</span>;</pre>
+      <div class="two">
+        <div class="panel"><h3>The order you write it</h3><p class="mono">SELECT &rarr; FROM &rarr; JOIN &rarr; WHERE &rarr; GROUP BY &rarr; HAVING &rarr; ORDER BY</p></div>
+        <div class="panel"><h3>The order the database runs it</h3><p class="mono">FROM &rarr; JOIN &rarr; WHERE &rarr; GROUP BY &rarr; HAVING &rarr; SELECT &rarr; ORDER BY</p></div>
+      </div>
+      <p>The second order explains most beginner errors. The database gathers the rows first, filters them, groups them, and only then picks the columns. That's why <code>WHERE</code> can't filter on a total, which is what <code>HAVING</code> is for.</p>
+    </section>
+
+    <!-- 7 -->
+    <section id="joins">
+      <div class="sec-head"><div class="eyebrow">07 &middot; Try it</div><h2>Joins, hands on</h2></div>
+      <p>Two small tables: four materials, and four open PO lines. One PO line has a typo in its material number, and one material has no PO at all. Switch between the join types and watch which rows survive.</p>
+      <div class="two">
+        <div class="panel">
+          <h3 class="mono" style="font-size:14px">material</h3>
+          <div class="scroll"><table>
+            <thead><tr><th>material_no</th><th>description</th><th class="num">lead_wks</th></tr></thead>
+            <tbody>
+              <tr><td class="pk">RFG-3000</td><td>RF generator, 13.56 MHz</td><td class="num">26</td></tr>
+              <tr><td class="pk">VP-210</td><td>Dry vacuum pump</td><td class="num">18</td></tr>
+              <tr><td class="pk">RBT-88</td><td>Wafer handling robot</td><td class="num">30</td></tr>
+              <tr><td class="pk">CER-410</td><td>Ceramic heater</td><td class="num">22</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <div class="panel">
+          <h3 class="mono" style="font-size:14px">purchase_order_item</h3>
+          <div class="scroll"><table>
+            <thead><tr><th>po / line</th><th>material_no</th><th class="num">qty</th></tr></thead>
+            <tbody>
+              <tr><td class="pk">4500012/10</td><td class="fk">RFG-3000</td><td class="num">4</td></tr>
+              <tr><td class="pk">4500012/20</td><td class="fk">VP-210</td><td class="num">6</td></tr>
+              <tr><td class="pk">4500019/10</td><td class="fk">RBT-88</td><td class="num">2</td></tr>
+              <tr><td class="pk">4500023/10</td><td class="fk">RFG-300O</td><td class="num">1</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+      <div class="seg" role="group" aria-label="Join type">
+        <button type="button" id="j-inner" data-j="inner" aria-pressed="true">INNER JOIN</button>
+        <button type="button" id="j-leftm" data-j="leftm" aria-pressed="false">LEFT JOIN, keep every material</button>
+        <button type="button" id="j-leftp" data-j="leftp" aria-pressed="false">LEFT JOIN, keep every PO line</button>
+      </div>
+      <pre id="j-sql"></pre>
+      <div class="scroll"><table>
+        <thead><tr><th>material_no</th><th>description</th><th>po / line</th><th class="num">qty</th></tr></thead>
+        <tbody id="j-out"></tbody>
+      </table></div>
+      <p class="verdict" id="j-say"></p>
+    </section>
+
+    <!-- 8 -->
+    <section id="traps">
+      <div class="sec-head"><div class="eyebrow">08 &middot; Sanity checks</div><h2>Two traps to spot</h2></div>
+      <div class="two">
+        <div class="panel">
+          <h3>Fan-out: numbers that double</h3>
+          <p>PO line 4500012/20 ordered 6 pumps and received them in two deliveries of 3. Join the PO line to its goods receipts, and the line appears <strong>twice</strong>.</p>
+          <div class="scroll"><table>
+            <thead><tr><th>po / line</th><th class="num">order_qty</th><th>receipt</th><th class="num">rec_qty</th></tr></thead>
+            <tbody>
+              <tr><td>4500012/20</td><td class="num">6</td><td>GR 1</td><td class="num">3</td></tr>
+              <tr><td>4500012/20</td><td class="num">6</td><td>GR 2</td><td class="num">3</td></tr>
+            </tbody>
+          </table></div>
+          <p><code>SUM(order_qty)</code> now says 12. The fix is to total the receipts per line first, then join. Always check: <em>did my row count just change, and should it have?</em></p>
+        </div>
+        <div class="panel">
+          <h3>NULL: blank is not zero</h3>
+          <p>A blank lead time in SAP becomes <code>NULL</code> in the database. NULL means "unknown", so it behaves differently from 0.</p>
+<pre><span class="kw">WHERE</span> lead_wks = <span class="kw">NULL</span>      <span class="cm">-- finds nothing, ever</span>
+<span class="kw">WHERE</span> lead_wks <span class="kw">IS NULL</span>     <span class="cm">-- finds the blanks</span>
+<span class="kw">AVG</span>(lead_wks)            <span class="cm">-- quietly skips blanks</span></pre>
+          <p>An average lead time that skips the missing parts can look much better than reality. Count the NULLs before you trust an average.</p>
+        </div>
+      </div>
+      <div class="talk"><strong>Talking point</strong>In an interview, saying "I'd check the row count before and after the join" signals more experience than writing a clever query.</div>
+    </section>
+
+    <!-- 9 -->
+    <section id="planning">
+      <div class="sec-head"><div class="eyebrow">09 &middot; The business layer</div><h2>Planning concepts</h2></div>
+      <p>The role sits inside Integrated Business Planning (IBP). S&amp;OP (Sales and Operations Planning) is the monthly cycle that balances demand against supply. IBP widens it with financials and a longer horizon, usually 18 to 36 months.</p>
+      <ol class="steps">
+        <li><b>Product review</b>New tools, configurations and end-of-life changes.</li>
+        <li><b>Demand review</b>Customer forecasts and fab expansion plans become one demand plan.</li>
+        <li><b>Supply review</b>Can materials, suppliers and build bays meet it? Where are the shortages?</li>
+        <li><b>Reconciliation</b>Close the gaps: pull in, push out, expedite, or add capacity.</li>
+        <li><b>Executive review</b>Decisions on the trade-offs, with the money attached.</li>
+      </ol>
+      <p>Underneath the supply review sits a calculation you've seen in MD04: <strong>projected available balance</strong>. Start from stock, subtract demand, add receipts, week by week, and flag when you drop below safety stock.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Week</th><th>Event</th><th class="num">Change</th><th class="num">Projected balance</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">W46</td><td>Stock on hand, RF generator RFG-3000</td><td class="num"></td><td class="num">3</td><td><span class="pill ok">ok</span></td></tr>
+          <tr class="warn"><td class="mono">W47</td><td>Production order for an etch tool</td><td class="num">&minus;2</td><td class="num">1</td><td><span class="pill warn">below safety stock (2)</span></td></tr>
+          <tr><td class="mono">W48</td><td>PO 4500012/10 arrives</td><td class="num">+4</td><td class="num">5</td><td><span class="pill ok">ok</span></td></tr>
+          <tr><td class="mono">W49</td><td>Production order, two deposition chambers</td><td class="num">&minus;3</td><td class="num">2</td><td><span class="pill ok">ok</span></td></tr>
+          <tr class="warn"><td class="mono">W50</td><td>Sales order spare, Northgate Foundry</td><td class="num">&minus;2</td><td class="num">0</td><td><span class="pill warn">below safety stock</span></td></tr>
+          <tr class="short"><td class="mono">W51</td><td>Production order for an etch tool</td><td class="num">&minus;1</td><td class="num">&minus;1</td><td><span class="pill bad">shortage</span></td></tr>
+        </tbody>
+      </table></div>
+      <p>With a 26-week lead time, a W51 shortage found in W46 is already too late for a normal PO. That's the kind of finding the role is expected to surface and escalate. In SQL it's a running total, which you'll build in the lab.</p>
+      <div class="talk"><strong>Talking point</strong>Equipment makers live with high mix, low volume and very long lead times. A handful of single-source parts, like RF generators and robots, can hold up a multi-million-dollar tool.</div>
+    </section>
+
+    <!-- 10 -->
+    <section id="interview">
+      <div class="sec-head"><div class="eyebrow">10 &middot; In the room</div><h2>Answering a data question</h2></div>
+      <p>Asked something like <em>"Which open customer orders are at risk because of late RF generators?"</em>, talk through these steps out loud. The method counts for as much as the query.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Step</th><th>What you say</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">1. Restate</td><td>"So I'm looking for open sales order lines whose tools need an RF generator that won't arrive in time."</td></tr>
+          <tr><td class="mono">2. Tables</td><td>"Sales order items, the bill of materials, purchase order items, and stock."</td></tr>
+          <tr><td class="mono">3. Keys</td><td>"Sales order to BOM on the tool's material number. BOM to PO lines on the component's material number."</td></tr>
+          <tr><td class="mono">4. Filters</td><td>"Open orders only, RF generator components only, PO delivery date later than the date the build needs the part."</td></tr>
+          <tr><td class="mono">5. Check</td><td>"Before I trust it, I'd compare row counts before and after each join, and look for blank delivery dates."</td></tr>
+          <tr><td class="mono">6. Summarize</td><td>"Seven orders worth about $48M are at risk, five of them from one supplier slipping eight weeks. I'd escalate that supplier first."</td></tr>
+        </tbody>
+      </table></div>
+      <p class="cap">The numbers in step 6 are an example. In the lab, the data has problems like this planted in it for you to find.</p>
+    </section>
+
+    <!-- 11 -->
+    <section id="glossary">
+      <div class="sec-head"><div class="eyebrow">11 &middot; Reference</div><h2>Glossary</h2></div>
+      <dl class="gloss">
+        <div><dt>Table, row, column</dt><dd>A sheet with strict rules: one thing per row, one kind of value per column.</dd></div>
+        <div><dt>Primary key</dt><dd>The column or columns that make each row unique.</dd></div>
+        <div><dt>Foreign key</dt><dd>A column that points at another table's primary key. Joins follow these.</dd></div>
+        <div><dt>JOIN</dt><dd>Combine rows from two tables where their keys match. INNER keeps matches only; LEFT keeps every row from the first table.</dd></div>
+        <div><dt>NULL</dt><dd>An unknown or missing value. It isn't zero and it isn't blank text.</dd></div>
+        <div><dt>Fan-out</dt><dd>When a join multiplies rows and inflates totals.</dd></div>
+        <div><dt>BOM</dt><dd>Bill of materials: what a product is built from, level by level.</dd></div>
+        <div><dt>Lead time</dt><dd>Time from placing a PO to receiving the part. Quoted and actual often differ.</dd></div>
+        <div><dt>Safety stock</dt><dd>A buffer kept on hand to absorb late suppliers or surprise demand.</dd></div>
+        <div><dt>MRP</dt><dd>Material Requirements Planning: works out what to buy and when, from demand, BOMs, stock and lead times.</dd></div>
+        <div><dt>ATP</dt><dd>Available to Promise: what can still be committed to a customer by a given date.</dd></div>
+        <div><dt>S&amp;OP / IBP</dt><dd>The monthly cycle that balances demand and supply; IBP adds financials and a longer horizon.</dd></div>
+        <div><dt>Goods receipt</dt><dd>The record that a delivery physically arrived against a PO.</dd></div>
+        <div><dt>Lakehouse layers</dt><dd>Bronze is the raw copy, silver is cleaned and joined, gold is ready for the business.</dd></div>
+      </dl>
+    </section>
+
+    <!-- 12 -->
+    <section id="next">
+      <div class="sec-head"><div class="eyebrow">12 &middot; After the call</div><h2>What happens next</h2></div>
+      <p>The lab is an app on your laptop that looks like a small ERP system for a made-up chip equipment maker. It has five years of history in a real SQL database, guided lessons that check your answers, and SAP-style screens that show the query behind them.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Stage</th><th>What you get</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">1</td><td>The data, the SQL editor, and lessons 1-4: tables, filters, pivots as GROUP BY, and joins</td></tr>
+          <tr><td class="mono">2</td><td>Lessons 5-10: dates, cleaning messy data, CTEs, planning analytics and interview drills, plus Excel export</td></tr>
+          <tr><td class="mono">3</td><td>SAP-style screens, a Databricks-style notebook, and SAP-named tables</td></tr>
+        </tbody>
+      </table></div>
+      <div class="talk"><strong>Talking point</strong>Aim for a little every day rather than a long weekend session. Short daily practice is how the syntax becomes automatic.</div>
+    </section>
+
+    <footer>Kickoff primer for the Supply Chain SQL Lab. Every company, part, customer and figure here is fictional.</footer>
+  </main>
+</div>
+
+<script>
+(function () {
+  var mats = [
+    { m: "RFG-3000", d: "RF generator, 13.56 MHz" },
+    { m: "VP-210", d: "Dry vacuum pump" },
+    { m: "RBT-88", d: "Wafer handling robot" },
+    { m: "CER-410", d: "Ceramic heater" }
+  ];
+  var pos = [
+    { p: "4500012/10", m: "RFG-3000", q: 4 },
+    { p: "4500012/20", m: "VP-210", q: 6 },
+    { p: "4500019/10", m: "RBT-88", q: 2 },
+    { p: "4500023/10", m: "RFG-300O", q: 1 }
+  ];
+  var K = function (s) { return '<span class="kw">' + s + '</span>'; };
+  var modes = {
+    inner: {
+      sql: K("SELECT") + " m.material_no, m.description, p.po_line, p.qty\n" + K("FROM") + "   material m\n" + K("INNER JOIN") + " purchase_order_item p\n       " + K("ON") + " p.material_no = m.material_no;",
+      rows: function () {
+        var r = [];
+        pos.forEach(function (p) { mats.forEach(function (m) { if (m.m === p.m) r.push([m.m, m.d, p.p, p.q]); }); });
+        return r;
+      },
+      say: "3 rows. Only matches survive. The ceramic heater has no PO, so it's gone. The PO line with the typo (RFG-300O, a letter O instead of a zero) matches nothing, so it disappears without any warning."
+    },
+    leftm: {
+      sql: K("SELECT") + " m.material_no, m.description, p.po_line, p.qty\n" + K("FROM") + "   material m\n" + K("LEFT JOIN") + " purchase_order_item p\n       " + K("ON") + " p.material_no = m.material_no;",
+      rows: function () {
+        var r = [];
+        mats.forEach(function (m) {
+          var hit = pos.filter(function (p) { return p.m === m.m; });
+          if (hit.length) hit.forEach(function (p) { r.push([m.m, m.d, p.p, p.q]); });
+          else r.push([m.m, m.d, null, null]);
+        });
+        return r;
+      },
+      say: "4 rows. Every material stays. The ceramic heater shows NULL for its PO, which answers the question \"which parts have nothing on order?\" A LEFT JOIN plus WHERE p.po_line IS NULL is how you find gaps."
+    },
+    leftp: {
+      sql: K("SELECT") + " p.material_no, m.description, p.po_line, p.qty\n" + K("FROM") + "   purchase_order_item p\n" + K("LEFT JOIN") + " material m\n       " + K("ON") + " m.material_no = p.material_no;",
+      rows: function () {
+        return pos.map(function (p) {
+          var m = mats.filter(function (x) { return x.m === p.m; })[0];
+          return [p.m, m ? m.d : null, p.p, p.q];
+        });
+      },
+      say: "4 rows. Every PO line stays. The typo line now shows up with a NULL description, which exposes the bad data. An INNER JOIN would have quietly dropped one unit from your open PO total."
+    }
+  };
+  var out = document.getElementById("j-out"), sql = document.getElementById("j-sql"), say = document.getElementById("j-say");
+  function esc(v) { return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  function render(k) {
+    var md = modes[k];
+    sql.innerHTML = md.sql;
+    out.innerHTML = md.rows().map(function (r) {
+      return "<tr>" + r.map(function (v, i) {
+        if (v === null) return '<td class="null' + (i === 3 ? ' num' : '') + '">NULL</td>';
+        return '<td' + (i === 3 ? ' class="num"' : '') + '>' + esc(v) + '</td>';
+      }).join("") + "</tr>";
+    }).join("");
+    say.textContent = md.say;
+    document.querySelectorAll(".seg button").forEach(function (b) { b.setAttribute("aria-pressed", b.dataset.j === k ? "true" : "false"); });
+  }
+  document.querySelectorAll(".seg button").forEach(function (b) { b.addEventListener("click", function () { render(b.dataset.j); }); });
+  render("inner");
+
+  var links = Array.prototype.slice.call(document.querySelectorAll(".rail a"));
+  if ("IntersectionObserver" in window) {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        if (e.isIntersecting) {
+          links.forEach(function (a) { a.classList.toggle("on", a.getAttribute("href") === "#" + e.target.id); });
+        }
+      });
+    }, { rootMargin: "-20% 0px -70% 0px" });
+    document.querySelectorAll("main section").forEach(function (s) { io.observe(s); });
+  }
+})();
+</script>
