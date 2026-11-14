@@ -3,6 +3,8 @@
 import hashlib
 import json
 import re
+from copy import deepcopy
+from functools import cache
 from pathlib import Path
 
 import duckdb
@@ -17,13 +19,6 @@ _SNAPSHOT = Path(__file__).parent / "snapshots" / "exercises.json"
 _MAX_ROWS = 200_000
 _FORBIDDEN = re.compile(
     r"GROUP\s+BY\s+ALL|\bEXCLUDE\b|\bQUALIFY\b|\bCURRENT_DATE\b|\blist_|\bstrftime\b|\bdate_diff\b",
-    re.IGNORECASE,
-)
-_ORDER_BY = re.compile(r"\bORDER\s+BY\b", re.IGNORECASE)
-_LIMIT = re.compile(r"\bLIMIT\s+(\d+)\b", re.IGNORECASE)
-_LIKE = re.compile(r"\bLIKE\b", re.IGNORECASE)
-_DIRECTION = re.compile(
-    r"\s+(?:ASC|DESC|NULLS\s+FIRST|NULLS\s+LAST)\s*$",
     re.IGNORECASE,
 )
 
@@ -50,124 +45,102 @@ def _fingerprint(result, *, order_matters: bool) -> dict[str, int | str]:
     }
 
 
-def _neutralize(sql: str) -> str:
-    """Blank comments, string literals, and nested paren text, keeping length."""
-    chars = list(sql)
-    index = 0
-    length = len(sql)
-    while index < length:
-        if sql.startswith("--", index):
-            end = sql.find("\n", index)
-            if end < 0:
-                end = length
-            for spot in range(index, end):
-                chars[spot] = " "
-            index = end
-            continue
-        if sql.startswith("/*", index):
-            end = sql.find("*/", index + 2)
-            end = length if end < 0 else end + 2
-            for spot in range(index, end):
-                chars[spot] = " "
-            index = end
-            continue
-        if sql[index] == "'":
-            start = index
-            index += 1
-            while index < length:
-                if sql.startswith("''", index):
-                    index += 2
-                    continue
-                if sql[index] == "'":
-                    index += 1
-                    break
-                index += 1
-            for spot in range(start, index):
-                chars[spot] = " "
-            continue
-        index += 1
-    depth = 0
-    for spot, char in enumerate(chars):
-        if char == "(":
-            depth += 1
-            chars[spot] = " "
-        elif char == ")":
-            if depth:
-                depth -= 1
-            chars[spot] = " "
-        elif depth:
-            chars[spot] = " "
-    return "".join(chars)
+@cache
+def _parse_sql(sql: str) -> dict:
+    """Use DuckDB's parser without binding tables or executing the query."""
+    with duckdb.connect(":memory:") as connection:
+        parsed = json.loads(connection.execute("SELECT json_serialize_sql(?)", [sql]).fetchone()[0])
+    if parsed.get("error"):
+        pytest.fail(f"{parsed.get('error_message', parsed)}\n{sql}")
+    assert len(parsed["statements"]) == 1, f"Expected one reference statement:\n{sql}"
+    return parsed
 
 
-def _top_level_order_clause(sql: str) -> str | None:
-    masked = _neutralize(sql)
-    matches = list(_ORDER_BY.finditer(masked))
-    if not matches:
-        return None
-    start = matches[-1].end()
-    limit = re.search(r"\bLIMIT\b", masked[start:], re.IGNORECASE)
-    end = start + limit.start() if limit else len(masked)
-    return masked[start:end]
+def _root_modifiers(sql: str) -> list[dict]:
+    return _parse_sql(sql)["statements"][0]["node"]["modifiers"]
+
+
+def _top_level_order_clause(sql: str) -> list[dict] | None:
+    for modifier in _root_modifiers(sql):
+        if modifier["type"] == "ORDER_MODIFIER":
+            return [order["expression"] for order in modifier["orders"]]
+    return None
 
 
 def _has_top_level_order_by(sql: str) -> bool:
     return _top_level_order_clause(sql) is not None
 
 
-def _top_level_limit(sql: str) -> re.Match[str] | None:
-    matches = list(_LIMIT.finditer(_neutralize(sql)))
-    if not matches:
-        return None
-    return matches[-1]
+def _top_level_limit(sql: str) -> dict | None:
+    for modifier in _root_modifiers(sql):
+        if modifier["type"] == "LIMIT_MODIFIER":
+            return modifier
+    return None
 
 
-def _split_order_items(clause: str) -> list[str]:
-    parts: list[str] = []
-    depth = 0
-    current: list[str] = []
-    for char in clause:
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            depth -= 1
-        if char == "," and depth == 0:
-            parts.append("".join(current).strip())
-            current = []
+def _deserialize_sql(parsed: dict) -> str:
+    with duckdb.connect(":memory:") as connection:
+        return connection.execute(
+            "SELECT json_deserialize_sql(?)", [json.dumps(parsed)]
+        ).fetchone()[0]
+
+
+def _limit_probe(sql: str) -> tuple[int, str]:
+    """Increase only the root LIMIT, retaining OFFSET and all nested modifiers."""
+    parsed = deepcopy(_parse_sql(sql))
+    for modifier in parsed["statements"][0]["node"]["modifiers"]:
+        if modifier["type"] != "LIMIT_MODIFIER":
             continue
-        current.append(char)
-    tail = "".join(current).strip()
-    if tail:
-        parts.append(tail)
-    return parts
+        expression = modifier["limit"]
+        assert modifier["limit_type"] == "ROW_COUNT", f"Expected a row-count LIMIT:\n{sql}"
+        assert expression and expression["class"] == "CONSTANT", (
+            f"Expected a constant integer LIMIT:\n{sql}"
+        )
+        literal = expression["literal"]
+        assert literal["kind"] == "INTEGER", f"Expected an integer LIMIT:\n{sql}"
+        limit = int(literal["text"])
+        assert limit > 0, f"Expected a positive LIMIT for the boundary tie check:\n{sql}"
+        literal["text"] = str(limit + 1)
+        return limit, _deserialize_sql(parsed)
+    pytest.fail(f"Expected a top-level LIMIT:\n{sql}")
 
 
-def _order_item(token: str) -> str:
-    text = token.strip()
-    while True:
-        trimmed = _DIRECTION.sub("", text).strip()
-        if trimmed == text:
-            return text
-        text = trimmed
+def _portable_sql(sql: str) -> str:
+    """Round-trip the parse tree with string values blanked; comments are absent."""
+    parsed = deepcopy(_parse_sql(sql))
+
+    def blank_strings(value):
+        if isinstance(value, dict):
+            if value.get("kind") == "STRING":
+                value["text"] = ""
+            else:
+                for child in value.values():
+                    blank_strings(child)
+        elif isinstance(value, list):
+            for child in value:
+                blank_strings(child)
+
+    blank_strings(parsed)
+    return _deserialize_sql(parsed)
 
 
 def _order_column_indexes(sql: str, columns: list[str]) -> list[int]:
-    clause = _top_level_order_clause(sql)
-    if clause is None:
+    expressions = _top_level_order_clause(sql)
+    if expressions is None:
         pytest.fail(f"LIMIT query has no top-level ORDER BY:\n{sql}")
     names = {name.casefold(): index for index, name in enumerate(columns)}
     indexes: list[int] = []
-    for part in _split_order_items(clause.strip().rstrip(";")):
-        token = _order_item(part).strip().strip('"')
-        if token.isdigit():
-            indexes.append(int(token) - 1)
-            continue
-        index = names.get(token.casefold())
-        if index is None:
-            pytest.fail(f"ORDER BY {token} is not a result column:\n{sql}")
+    for expression in expressions:
+        if expression["class"] == "CONSTANT" and expression["literal"]["kind"] == "INTEGER":
+            index = int(expression["literal"]["text"]) - 1
+        elif expression["class"] == "COLUMN_REF":
+            index = names.get(expression["column_names"][-1].casefold())
+        else:
+            pytest.fail(f"ORDER BY expression is not a result column: {expression}\n{sql}")
+        if index is None or not 0 <= index < len(columns):
+            pytest.fail(f"ORDER BY expression is not a result column: {expression}\n{sql}")
         indexes.append(index)
-    if not indexes:
-        pytest.fail(f"ORDER BY list is empty:\n{sql}")
+    assert indexes, f"ORDER BY list is empty:\n{sql}"
     return indexes
 
 
@@ -229,7 +202,9 @@ def test_reference_results_match_snapshot(request, reference_results) -> None:
 def test_reference_sql_is_portable() -> None:
     for exercise in _exercises():
         for sql in exercise.reference_sql:
-            assert _FORBIDDEN.search(sql) is None, f"{exercise.id} uses non-portable SQL"
+            assert _FORBIDDEN.search(_portable_sql(sql)) is None, (
+                f"{exercise.id} uses non-portable SQL"
+            )
 
 
 def test_ordered_exercises_have_order_by() -> None:
@@ -246,15 +221,12 @@ def test_no_ties_at_limit(lab_home) -> None:
     assert lab_home is not None
     for exercise in _exercises():
         for sql in exercise.reference_sql:
-            limit_match = _top_level_limit(sql)
-            if limit_match is None:
+            if _top_level_limit(sql) is None:
                 continue
             assert _has_top_level_order_by(sql), (
                 f"{exercise.id} uses LIMIT without a top-level ORDER BY"
             )
-            limit = int(limit_match.group(1))
-            without_limit = (sql[: limit_match.start()] + sql[limit_match.end() :]).strip()
-            probe = f"{without_limit.rstrip(';')} LIMIT {limit + 1}"
+            limit, probe = _limit_probe(sql)
             result = _run(probe)
             if len(result.rows) <= limit:
                 continue
@@ -300,19 +272,93 @@ def test_order_by_inside_comment_does_not_count() -> None:
     assert _has_top_level_order_by(block) is False
 
 
+def test_order_by_inside_nested_comment_does_not_count() -> None:
+    assert not _has_top_level_order_by("SELECT 1 /* outer /* inner */ ORDER BY x */")
+
+
+def test_top_level_order_by_with_trailing_comment_counts() -> None:
+    assert _has_top_level_order_by("SELECT 1 AS x ORDER BY x -- trailing comment")
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * FROM (SELECT 1 LIMIT 1) AS nested",
+        "SELECT 1 -- LIMIT 1",
+        "SELECT 1 /* LIMIT 1 */",
+        "SELECT 1 /* outer /* inner */ LIMIT 1 */",
+    ],
+)
+def test_limit_outside_root_modifiers_does_not_count(sql: str) -> None:
+    assert _top_level_limit(sql) is None
+
+
+def test_top_level_limit_with_trailing_comment_counts() -> None:
+    assert _top_level_limit("SELECT 1 LIMIT 1 -- trailing comment") is not None
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "WITH nested AS (SELECT 1 AS x ORDER BY x LIMIT 1) SELECT * FROM nested",
+        "SELECT 'ORDER BY x LIMIT 1' AS text",
+    ],
+)
+def test_cte_and_string_modifiers_do_not_count(sql: str) -> None:
+    assert not _has_top_level_order_by(sql)
+    assert _top_level_limit(sql) is None
+
+
+def test_parse_error_reports_duckdb_message() -> None:
+    with pytest.raises(pytest.fail.Exception, match="syntax error"):
+        _has_top_level_order_by("SELECT FROM")
+
+
+def test_order_columns_come_from_root_expressions() -> None:
+    sql = "SELECT x, y FROM t ORDER BY t.x DESC NULLS LAST, 2 -- trailing comment"
+    assert _order_column_indexes(sql, ["x", "y"]) == [0, 1]
+
+
+def test_limit_probe_keeps_nested_limit_and_offset() -> None:
+    sql = (
+        "SELECT x FROM (SELECT x FROM (VALUES (1), (2), (3), (4)) AS t(x) "
+        "ORDER BY x LIMIT 3) AS nested ORDER BY x LIMIT 1 OFFSET 1 -- trailing comment"
+    )
+    limit, probe = _limit_probe(sql)
+    assert limit == 1
+    with duckdb.connect(":memory:") as connection:
+        assert connection.execute(probe).fetchall() == [(2,), (3,)]
+    assert _limit_probe(sql) == (limit, probe), "The cached parse tree must stay unchanged"
+
+
+def test_portability_ignores_comments_and_strings() -> None:
+    sql = "SELECT 'CURRENT_DATE QUALIFY' /* outer /* inner */ EXCLUDE */ -- date_diff"
+    assert _FORBIDDEN.search(_portable_sql(sql)) is None
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT x FROM t GROUP BY ALL",
+        "SELECT * EXCLUDE (x) FROM t",
+        "SELECT x FROM t QUALIFY row_number() OVER () = 1",
+        "SELECT CURRENT_DATE",
+        "SELECT list_sum(x) FROM t",
+        "SELECT strftime(x, '%Y') FROM t",
+        "SELECT date_diff('day', x, y) FROM t",
+    ],
+)
+def test_portability_round_trip_preserves_banned_constructs(sql: str) -> None:
+    assert _FORBIDDEN.search(_portable_sql(sql)) is not None
+
+
 def test_like_matches_text_with_a_prefix() -> None:
-    checked = 0
-    for exercise in _exercises():
-        for sql in exercise.reference_sql:
-            if _LIKE.search(_neutralize(sql)) is None:
-                continue
-            checked += 1
-            with duckdb.connect() as connection:
-                connection.execute(
-                    "CREATE TABLE material (material_no VARCHAR, description VARCHAR)"
-                )
-                connection.execute("INSERT INTO material VALUES ('M-9', 'Spare RF generator kit')")
-                rows = connection.execute(sql).fetchall()
-            values = [value for row in rows for value in row]
-            assert "Spare RF generator kit" in values, exercise.id
-    assert checked > 0
+    exercise = next(exercise for exercise in _exercises() if exercise.id == "rf-generator-search")
+    assert exercise.reference_sql
+    for sql in exercise.reference_sql:
+        with duckdb.connect(":memory:") as connection:
+            connection.execute("CREATE TABLE material (material_no VARCHAR, description VARCHAR)")
+            connection.execute("INSERT INTO material VALUES ('M-9', 'Spare RF generator kit')")
+            rows = connection.execute(sql).fetchall()
+        values = [value for row in rows for value in row]
+        assert "Spare RF generator kit" in values, exercise.id
