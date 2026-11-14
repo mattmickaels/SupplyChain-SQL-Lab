@@ -1,6 +1,7 @@
 """Database build, messiness, volumes, and the CLI progress bar."""
 
 import os
+import socket
 from datetime import date
 from pathlib import Path
 
@@ -485,8 +486,22 @@ def test_version_mismatch_rebuilds(tmp_path, monkeypatch) -> None:
     assert sandbox.exists()
 
 
-def test_cli_shows_build_progress(lab_home, capsys) -> None:
+def test_cli_shows_build_progress(lab_home, capsys, monkeypatch) -> None:
     assert os.environ["SCLAB_HOME"] == str(lab_home)
+
+    def listen_until_connected(*_args, **kwargs):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind((kwargs["host"], kwargs["port"]))
+        sock.listen(1)
+        sock.settimeout(5)
+        try:
+            conn, _addr = sock.accept()
+            conn.close()
+        finally:
+            sock.close()
+
+    monkeypatch.setattr("sclab.cli.webbrowser.open", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("sclab.cli.uvicorn.run", listen_until_connected)
     main()
     captured = capsys.readouterr()
     assert "Building the lab database (first run only)..." in captured.out + captured.err

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Lessons{% endblock %}
+{% block content %}
+<p class="today">Today in the lab is {{ today }}.</p>
+<h1>Lessons</h1>
+{% if lessons %}
+<ul class="lesson-list">
+  {% for lesson in lessons %}
+  <li>
+    <a href="/lessons/{{ lesson.id }}">
+      <span class="lesson-number">{{ lesson.number }}</span>
+      <span>
+        <strong>{{ lesson.title }}</strong>
+        <small>{{ lesson.summary }}</small>
+      </span>
+      <span class="progress">{{ lesson.progress }}</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty">No lessons are loaded yet.</p>
+{% endif %}
+{% endblock %}

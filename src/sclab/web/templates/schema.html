@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}{% if spec %}{{ spec.name }}{% else %}Schema{% endif %}{% endblock %}
+{% block content %}
+<p class="today">Today in the lab is {{ today }}.</p>
+<h1>{% if spec %}{{ spec.name }}{% else %}Schema{% endif %}</h1>
+{% if spec %}
+<p>{{ spec.description }}</p>
+<p>SAP name. {% if spec.sap_table %}{{ spec.sap_table }}{% else %}<span class="muted">None</span>{% endif %}</p>
+<div class="grid-wrap">
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Column</th>
+        <th>Type</th>
+        <th>SAP field</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for column in spec.columns %}
+      <tr>
+        <td>{{ column.name }}</td>
+        <td>{{ column.sql_type }}</td>
+        <td>{% if column.sap_field %}{{ column.sap_field }}{% else %}<span class="muted">None</span>{% endif %}</td>
+        <td>{{ column.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<h2>First 20 rows</h2>
+{% if error %}
+<p class="message">{{ error }}</p>
+{% elif preview %}
+<div class="grid-wrap">
+  <table class="grid">
+    <thead>
+      <tr>
+        {% for name in preview.columns %}<th>{{ name }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in preview.rows %}
+      <tr>
+        {% for value in row %}
+        <td>{% if value is none %}<span class="null">NULL</span>{% else %}{{ value }}{% endif %}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% else %}
+<ul class="schema-list">
+  {% for item in tables %}
+  <li>
+    <a href="/schema/{{ item.name }}">{{ item.name }}</a>
+    <span>{% if item.sap_table %}{{ item.sap_table }}{% else %}<span class="muted">None</span>{% endif %}</span>
+    <small>{{ item.description }}</small>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,144 @@
+"""Run one SQL statement against the lesson database or the sandbox."""
+
+import shutil
+import threading
+import time
+from pathlib import Path
+from typing import Literal
+
+import duckdb
+
+from sclab.engine.types import QueryError, QueryResult
+from sclab.paths import lab_db_path, sandbox_db_path
+
+MAX_ROWS = 1000
+TIMEOUT_S = 15.0
+_TIMEOUT_MESSAGE = "Query stopped after 15 seconds. Check your JOIN conditions."
+_FETCH_BATCH = 10_000
+_SAFETY = {
+    "enable_external_access": False,
+    "autoinstall_known_extensions": False,
+    "autoload_known_extensions": False,
+    "lock_configuration": True,
+}
+
+__all__ = [
+    "MAX_ROWS",
+    "TIMEOUT_S",
+    "QueryError",
+    "QueryResult",
+    "reset_sandbox",
+    "run_query",
+]
+
+
+def run_query(
+    sql: str,
+    target: Literal["lesson", "sandbox"] = "lesson",
+    max_rows: int = MAX_ROWS,
+    timeout_s: float = TIMEOUT_S,
+) -> QueryResult:
+    """Run one statement and return at most max_rows rows."""
+    _statements(sql)
+    if target not in ("lesson", "sandbox"):
+        raise QueryError("Choose the lesson database or the practice database.")
+    started = time.perf_counter()
+    try:
+        connection = _connect(target)
+    except duckdb.Error as exc:
+        raise QueryError(str(exc)) from exc
+    interrupted = False
+
+    def on_timeout() -> None:
+        nonlocal interrupted
+        interrupted = True
+        try:
+            connection.interrupt()
+        except Exception:
+            return
+
+    timer = threading.Timer(timeout_s, on_timeout)
+    timer.daemon = True
+    deadline = time.perf_counter() + timeout_s
+    timer.start()
+    try:
+        columns, rows, total_rows, truncated = _collect(connection, sql, max_rows, deadline)
+        if interrupted or time.perf_counter() >= deadline:
+            raise QueryError(_TIMEOUT_MESSAGE)
+        return QueryResult(
+            columns=columns,
+            rows=rows,
+            total_rows=total_rows,
+            truncated=truncated,
+            elapsed_ms=int((time.perf_counter() - started) * 1000),
+        )
+    except QueryError:
+        raise
+    except duckdb.Error as exc:
+        if interrupted or isinstance(exc, duckdb.InterruptException):
+            raise QueryError(_TIMEOUT_MESSAGE) from exc
+        raise QueryError(str(exc)) from exc
+    finally:
+        timer.cancel()
+        try:
+            connection.close()
+        except duckdb.Error:
+            pass
+
+
+def reset_sandbox() -> None:
+    """Replace the sandbox database with a fresh copy of the lesson database."""
+    lab = lab_db_path()
+    sandbox = sandbox_db_path()
+    sandbox.parent.mkdir(parents=True, exist_ok=True)
+    _remove_wal(sandbox)
+    shutil.copy2(lab, sandbox)
+    _remove_wal(sandbox)
+
+
+def _statements(sql: str) -> list:
+    try:
+        statements = duckdb.extract_statements(sql)
+    except duckdb.Error as exc:
+        raise QueryError(str(exc)) from exc
+    if not statements:
+        raise QueryError("Type a query first.")
+    if len(statements) > 1:
+        raise QueryError("Run one statement at a time.")
+    return statements
+
+
+def _connect(target: str):
+    if target == "lesson":
+        return duckdb.connect(str(lab_db_path()), read_only=True, config=_SAFETY)
+    return duckdb.connect(str(sandbox_db_path()), read_only=False, config=_SAFETY)
+
+
+def _collect(connection, sql: str, max_rows: int, deadline: float):
+    pending = connection.execute(sql)
+    columns = [column[0] for column in pending.description] if pending.description else []
+    rows: list[tuple] = []
+    remaining = max_rows
+    while remaining > 0:
+        if time.perf_counter() >= deadline:
+            raise QueryError(_TIMEOUT_MESSAGE)
+        batch = pending.fetchmany(min(_FETCH_BATCH, remaining))
+        if not batch:
+            break
+        rows.extend(tuple(row) for row in batch)
+        remaining -= len(batch)
+    total_rows = len(rows)
+    while True:
+        if time.perf_counter() >= deadline:
+            raise QueryError(_TIMEOUT_MESSAGE)
+        batch = pending.fetchmany(_FETCH_BATCH)
+        if not batch:
+            break
+        total_rows += len(batch)
+    return columns, rows, total_rows, total_rows > max_rows
+
+
+def _remove_wal(path: Path) -> None:
+    wal = Path(str(path) + ".wal")
+    if wal.exists():
+        wal.unlink()
