@@ -64,17 +64,23 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         if lesson is None:
             raise HTTPException(status_code=404, detail="That lesson is not in the lab.")
         progress = store()
+        now = _now()
         blocks = []
         for item in lesson.exercises:
-            blocks.append(
-                {
-                    "id": item.id,
-                    "title": item.title,
-                    "prompt_html": _markdown(item.prompt_md),
-                    "excel_tip": item.excel_tip,
-                    "sql": progress.editor_sql(item.id) or "",
-                }
-            )
+            if item.is_drill:
+                blocks.append(_drill_context(item, progress, now, lesson.id))
+            else:
+                blocks.append(
+                    {
+                        "id": item.id,
+                        "title": item.title,
+                        "is_drill": False,
+                        "prompt_html": _markdown(item.prompt_md),
+                        "databricks_note": item.databricks_note,
+                        "excel_tip": item.excel_tip,
+                        "sql": progress.editor_sql(item.id) or "",
+                    }
+                )
         return render(
             request,
             "lesson.html",
@@ -156,7 +162,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
             except QueryError as exc:
                 return render(request, "_check.html", {"error": exc.message, "outcome": None})
             store().record_attempt(exercise_id, sql, outcome.passed)
-            return render(
+            response = render(
                 request,
                 "_check.html",
                 {
@@ -165,6 +171,9 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
                     "export_form": excel.safe_form_id(f"form-{exercise_id}"),
                 },
             )
+            if exercise.is_drill and outcome.passed:
+                response.headers["HX-Trigger"] = "drill-summary"
+            return response
         except HTTPException:
             raise
         except Exception:
@@ -193,6 +202,68 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
             return HTMLResponse(f'<p class="message">{message}</p>')
         sql = html.escape(exercise.reference_sql[0])
         return HTMLResponse(f'<pre class="solution"><code>{sql}</code></pre>')
+
+    @app.post("/api/drill/{exercise_id}/start")
+    async def api_drill_start(request: Request, exercise_id: str):
+        try:
+            exercise = _require_exercise(exercises, exercise_id)
+            if not exercise.is_drill:
+                raise HTTPException(status_code=404, detail="That exercise is not a drill.")
+            now = _now()
+            store().start_drill(exercise_id, now)
+            lesson_id = exercise_lesson[exercise_id]
+            return render(
+                request,
+                "_drill.html",
+                {
+                    "exercise": _drill_context(exercise, store(), now, lesson_id),
+                    "lesson_id": lesson_id,
+                },
+            )
+        except HTTPException:
+            raise
+        except Exception:
+            return _plain_message(_UNEXPECTED)
+
+    @app.post("/api/drill/{exercise_id}/draft")
+    async def api_drill_draft(request: Request, exercise_id: str):
+        try:
+            exercise = _require_exercise(exercises, exercise_id)
+            if not exercise.is_drill:
+                raise HTTPException(status_code=404, detail="That exercise is not a drill.")
+            text = (await _form(request)).get("text", "")
+            store().save_drill_draft(exercise_id, text)
+            return HTMLResponse("")
+        except HTTPException:
+            raise
+        except Exception:
+            return _plain_message(_UNEXPECTED)
+
+    @app.post("/api/drill/{exercise_id}/summary")
+    async def api_drill_summary(request: Request, exercise_id: str):
+        try:
+            exercise = _require_exercise(exercises, exercise_id)
+            if not exercise.is_drill:
+                raise HTTPException(status_code=404, detail="That exercise is not a drill.")
+            text = (await _form(request)).get("text", "")
+            saved = store()
+            saved.save_drill_summary(exercise_id, text)
+            saved.save_drill_draft(exercise_id, text)
+            now = _now()
+            lesson_id = exercise_lesson[exercise_id]
+            return render(
+                request,
+                "_drill.html",
+                {
+                    "mode": "review",
+                    "exercise": _drill_context(exercise, store(), now, lesson_id),
+                    "lesson_id": lesson_id,
+                },
+            )
+        except HTTPException:
+            raise
+        except Exception:
+            return _plain_message(_UNEXPECTED)
 
     @app.post("/api/export")
     async def api_export(request: Request):
@@ -330,6 +401,87 @@ def _lesson_card(lesson, progress: ProgressStore) -> dict:
         "title": lesson.title,
         "summary": lesson.summary,
         "progress": f"{passed} of {total} passed",
+    }
+
+
+_TIME_UP = "Time is up - finish your answer, then write your summary"
+_SUMMARY_LEAD = (
+    "Write three lines for an executive: the finding, the number that matters, what you'd do"
+)
+
+
+def _now() -> datetime:
+    return datetime.now()
+
+
+def _limit_label(seconds: int) -> str:
+    minutes, rest = divmod(seconds, 60)
+    if rest == 0:
+        if minutes == 1:
+            return "1 minute"
+        return f"{minutes} minutes"
+    if minutes == 0:
+        unit = "second" if rest == 1 else "seconds"
+        return f"{rest} {unit}"
+    minute_unit = "minute" if minutes == 1 else "minutes"
+    second_unit = "second" if rest == 1 else "seconds"
+    return f"{minutes} {minute_unit} {rest} {second_unit}"
+
+
+def _countdown_text(remaining: int) -> str:
+    if remaining <= 0:
+        return _TIME_UP
+    minutes, seconds = divmod(remaining, 60)
+    return f"{minutes}:{seconds:02d}"
+
+
+def _remaining_seconds(started_at: datetime, limit_s: int, now: datetime) -> int:
+    elapsed = int((now - started_at).total_seconds())
+    if elapsed < 0:
+        elapsed = 0
+    remaining = limit_s - elapsed
+    if remaining < 0:
+        return 0
+    return remaining
+
+
+def _drill_context(
+    exercise: Exercise, progress: ProgressStore, now: datetime, lesson_id: str
+) -> dict:
+    started_at = progress.drill_started_at(exercise.id)
+    started = started_at is not None
+    limit = exercise.time_limit_s or 0
+    remaining = _remaining_seconds(started_at, limit, now) if started_at is not None else 0
+    summary = progress.drill_summary(exercise.id) if started else None
+    draft = progress.drill_draft(exercise.id) if started else None
+    submitted = summary is not None
+    passed = started and progress.status(exercise.id) == "passed"
+    show_summary = started and (remaining <= 0 or passed or submitted)
+    prompt = exercise.summary_prompt or ""
+    if draft is not None:
+        box_text = draft
+    else:
+        box_text = summary or ""
+    return {
+        "id": exercise.id,
+        "title": exercise.title,
+        "is_drill": True,
+        "lesson_id": lesson_id,
+        "limit_label": _limit_label(limit),
+        "started": started,
+        "prompt_html": _markdown(exercise.prompt_md) if started else Markup(""),
+        "databricks_note": exercise.databricks_note if started else None,
+        "sql": (progress.editor_sql(exercise.id) or "") if started else "",
+        "remaining": remaining if started else 0,
+        "countdown_text": _countdown_text(remaining) if started else "",
+        "show_summary": show_summary,
+        "summary_lead": _SUMMARY_LEAD,
+        "summary_prompt": prompt if prompt and prompt != _SUMMARY_LEAD else "",
+        "summary_text": box_text,
+        "submitted_text": summary or "",
+        "submitted": submitted,
+        "model_summary": (exercise.model_summary or "") if submitted else "",
+        "checklist": exercise.summary_checklist if submitted else (),
     }
 
 
