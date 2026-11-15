@@ -16,7 +16,7 @@ ORDER BY bay_id
 ```
 
 Two bays come back.
-SC01-B2 and SC01-B3 are above the average of 3.2 slots.
+SC01-B2 and SC01-B3 are above the average of 3.8 slots.
 
 The average is computed on the whole table.
 A filter in the outer query does not change that average.

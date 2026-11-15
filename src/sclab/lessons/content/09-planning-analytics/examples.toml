@@ -359,7 +359,7 @@ WHERE b.bay_id IN ('AU01-B1', 'SC01-B3')
 GROUP BY b.bay_id, b.weekly_slots ORDER BY b.bay_id
 """
 expected_rows = [
-  ["AU01-B1", 2, 0],
+  ["AU01-B1", 3, 0],
   ["SC01-B3", 6, 32]
 ]
 order_matters = true

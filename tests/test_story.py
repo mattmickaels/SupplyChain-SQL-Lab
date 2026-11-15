@@ -126,11 +126,9 @@ def test_bay_overload(lab_conn) -> None:
 
 # CM01 shows 26 Monday weeks from the day after the Sunday snapshot.
 CAPACITY_START = AS_OF_DATE + timedelta(days=1)
-CAPACITY_WEEKS = [CAPACITY_START + timedelta(weeks=n) for n in range(26)]
-# Deposition has the thinnest open backlog: the planted overload took recent bookings,
-# and one Deposition tool must stay idle for the supplier-warning scenario.
-# Its smallest possible bay (2 slots) therefore sits a little under the usual floor.
-FORWARD_LOAD_FLOOR = {"AU01-B1": 30}
+# The Etch bays' slots are pinned by the story (SC01-B3 6 for 104/78, SC01-B2 4 for 34/52),
+# far above normal Etch demand of about 3 starts a week, so their history sits lower.
+PINNED_STORY_SLOTS = {"SC01-B2", OVERLOADED_BAY}
 
 
 def test_every_bay_has_history_and_forward_starts(lab_conn) -> None:
@@ -177,34 +175,37 @@ def test_bays_only_for_families_a_plant_builds(lab_conn) -> None:
     assert misplaced == 0
 
 
-def test_forward_bay_load_is_realistic(lab_conn) -> None:
-    start, end = OVERLOAD_WINDOW
-    slots = dict(lab_conn.execute("SELECT bay_id, weekly_slots FROM build_bay").fetchall())
-    starts = lab_conn.execute(
+def test_historical_bay_load_is_realistic(lab_conn) -> None:
+    rows = lab_conn.execute(
         """
-        SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
-               COUNT(*) AS starts
-        FROM production_order
-        WHERE status IN ('Planned', 'Released') AND planned_start > ?
-        GROUP BY ALL
+        SELECT b.bay_id, 100.0 * COUNT(p.prod_order_no) / (52 * b.weekly_slots) AS load_pct
+        FROM build_bay b LEFT JOIN production_order p ON p.bay_id = b.bay_id
+         AND p.planned_start > ? - INTERVAL 364 DAY AND p.planned_start <= ?
+        GROUP BY b.bay_id, b.weekly_slots ORDER BY b.bay_id
         """,
-        [AS_OF_DATE],
+        [AS_OF_DATE, AS_OF_DATE],
     ).fetchall()
-    load = {(bay_id, week): count for bay_id, week, count in starts}
-    for bay_id, weekly_slots in slots.items():
-        weekly = [load.get((bay_id, week), 0) / weekly_slots for week in CAPACITY_WEEKS]
-        average = 100 * sum(weekly) / len(weekly)
-        assert average >= FORWARD_LOAD_FLOOR.get(bay_id, 40), (bay_id, average)
-        if bay_id == OVERLOADED_BAY:
-            # The planted overload lifts this bay's average; its other weeks stay in range.
-            quiet = [
-                share
-                for week, share in zip(CAPACITY_WEEKS, weekly, strict=True)
-                if week + timedelta(days=6) < start or week > end
-            ]
-            assert 100 * sum(quiet) / len(quiet) <= 100, bay_id
+    assert {bay_id for bay_id, _ in rows} > PINNED_STORY_SLOTS
+    for bay_id, load_pct in rows:
+        if bay_id in PINNED_STORY_SLOTS:
+            assert 0 < load_pct <= 100, (bay_id, load_pct)
         else:
-            assert average <= 100, (bay_id, average)
+            assert 60 <= load_pct <= 100, (bay_id, load_pct)
+
+
+def test_only_the_overloaded_bay_exceeds_slots_in_the_overload_window(lab_conn) -> None:
+    start, end = OVERLOAD_WINDOW
+    over = lab_conn.execute(
+        """
+        SELECT p.bay_id, CAST(date_trunc('week', p.planned_start) AS DATE) AS week_start
+        FROM production_order p JOIN build_bay b ON b.bay_id = p.bay_id
+        WHERE p.status IN ('Planned', 'Released') AND p.planned_start BETWEEN ? AND ?
+        GROUP BY p.bay_id, week_start, b.weekly_slots
+        HAVING COUNT(*) > b.weekly_slots
+        """,
+        [start, end],
+    ).fetchall()
+    assert {bay_id for bay_id, _ in over} == {OVERLOADED_BAY}
 
 
 PROJECTION_CTES = """
@@ -364,15 +365,23 @@ def test_backlog_booked_ahead(lab_conn) -> None:
 
 
 def test_production_start_follows_promised_date(lab_conn) -> None:
-    wrong = lab_conn.execute("""
-        SELECT p.prod_order_no FROM production_order p
+    rows = lab_conn.execute("""
+        SELECT p.prod_order_no, p.status, p.planned_start,
+               i.promised_date - p.planned_start - CASE m.family_code
+                   WHEN 'DEP' THEN 56 WHEN 'ETC' THEN 70 WHEN 'CMP' THEN 84 WHEN 'INS' THEN 42
+               END AS pulled_days,
+               p.planned_finish >= i.promised_date OR p.planned_finish <= p.planned_start AS bad
+        FROM production_order p
         JOIN sales_order_item i ON i.so_no = p.so_no AND i.line_no = p.so_line_no
         JOIN material m ON m.material_no = p.material_no
-        WHERE i.promised_date - p.planned_start <> CASE m.family_code
-            WHEN 'DEP' THEN 56 WHEN 'ETC' THEN 70 WHEN 'CMP' THEN 84 WHEN 'INS' THEN 42 END
-           OR p.planned_finish >= i.promised_date OR p.planned_finish <= p.planned_start
     """).fetchall()
-    assert wrong == []
+    assert not any(bad for *_, bad in rows)
+    pulled = [row for row in rows if row[3] != 0]
+    # A planner may pull a future Planned start 1-3 whole weeks ahead to free a full bay week.
+    for _order, status, start, days, _bad in pulled:
+        assert status == "Planned" and start > AS_OF_DATE
+        assert days in (7, 14, 21)
+    assert len(pulled) <= 10
 
 
 def test_po_volume_has_margin(lab_conn) -> None:

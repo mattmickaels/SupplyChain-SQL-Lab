@@ -263,3 +263,7 @@ The sample notebook walks the Corvane story in six cells: the slip in confirmed 
 - [ ] **Step 2:** Trigger each Review Focus case; check every screen and the notebook in light and dark mode for alignment and overflow.
 - [ ] **Step 3:** Claude Opus whole-branch review of the stage 3 diff; fixes go back through an implementer and a Codex review.
 - [ ] **Step 4:** CI green on Windows and macOS; README describes screens and the notebook; commit `docs: stage 3 quick start`.
+
+## Changes during execution
+
+- 2026-11-15, final fix wave bay ruling (coordinator): data v13 has 5 build bays, each plant has bays only for the families it builds (AU01-B1 DEP and AU01-B4 INS with 3 slots, SC01-B2 Etch 4 and SC01-B3 Etch 6, SG01-B3 CMP 3), replacing the stage 1 "4-6 per plant" layout.

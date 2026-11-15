@@ -433,7 +433,7 @@ WHERE b.bay_id IN ('AU01-B1', 'SC01-B3')
 GROUP BY b.bay_id, b.weekly_slots ORDER BY b.bay_id
 ```
 
-Bay AU01-B1 has 2 slots a week and 0 February starts, and it still appears.
+Bay AU01-B1 has 3 slots a week and 0 February starts, and it still appears.
 Bay SC01-B3 has 6 slots a week and 32 February starts.
 
 Boundary weeks keep the full weekly_slots.

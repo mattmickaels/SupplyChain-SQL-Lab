@@ -35,6 +35,8 @@ COMPONENT_LOCATION = "RM01"
 TOOL_LOCATION = "FG01"
 BUILD_DAYS = {"DEP": 56, "ETC": 70, "CMP": 84, "INS": 42}
 PROMISE_GAP = 7
+# A planner pulls an overfull bay week's extra start up to this many weeks earlier.
+LEVEL_WEEKS = 3
 # Monthly tool bookings follow an industry cycle: strong 2022, a 2023 downturn, then an upswing.
 CYCLE_ANCHORS = (
     (0, 34),
@@ -80,6 +82,8 @@ def generate_transactions(
     production = _production_orders(lines, master["build_bay"])
     forecast = _forecast(master, lines)
     demand, issues = _component_demand(lines, production, leaf)
+    # The planner levels bay weeks after the MRP run, so purchasing keeps its dates.
+    production["planned_start"] = _level_planned_starts(production, master["build_bay"])
     supply = _supply(rng, master, demand)
     movements, inventory = _stock(
         lines, production, supply["goods_receipt"], issues, supply["opening"]
@@ -423,6 +427,35 @@ def _production_orders(lines: pd.DataFrame, bays: pd.DataFrame) -> pd.DataFrame:
     tools["prod_order_no"] = _row_ids(len(tools), "PR-", 7)
     tools["so_line_no"] = tools["line_no"].astype(int)
     return tools
+
+
+def _level_planned_starts(tools: pd.DataFrame, bays: pd.DataFrame) -> pd.Series:
+    """Pull planned starts that overfill a bay week into an earlier week with a free slot.
+
+    Only future Planned orders move, by whole weeks and never onto or before the snapshot,
+    so the finish and promise dates hold. The planted overload is left as it is.
+    """
+    slots = bays.set_index("bay_id")["weekly_slots"].astype(int).to_dict()
+    start = tools["planned_start"].copy()
+    week = start - pd.to_timedelta(start.dt.day_of_week, unit="D")
+    used = week.groupby(tools["bay_id"]).value_counts().to_dict()
+    movable = tools["prod_status"].eq("Planned") & tools["bay_id"].ne(OVERLOADED_BAY)
+    for index in tools.index[movable][::-1]:
+        bay_id = tools.at[index, "bay_id"]
+        monday = week[index]
+        if used[(bay_id, monday)] <= slots[bay_id]:
+            continue
+        for back in range(1, LEVEL_WEEKS + 1):
+            earlier = start[index] - pd.Timedelta(weeks=back)
+            target = monday - pd.Timedelta(weeks=back)
+            if earlier <= AS_OF_TS:
+                break
+            if used.get((bay_id, target), 0) < slots[bay_id]:
+                used[(bay_id, monday)] -= 1
+                used[(bay_id, target)] = used.get((bay_id, target), 0) + 1
+                start[index] = earlier
+                break
+    return start
 
 
 def _forecast(master: dict[str, pd.DataFrame], lines: pd.DataFrame) -> pd.DataFrame:

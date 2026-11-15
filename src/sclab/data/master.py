@@ -255,14 +255,15 @@ N_RF = 12
 N_SUPPLIERS = 150
 N_CUSTOMERS = 25
 # Build bays as (bay_id, plant, family, weekly start slots); each family has one home plant.
+# The small bays have 3 slots, which loads them about 77-88 percent over the last year.
 # The overloaded Etch bay keeps 6 slots, and its Etch twin keeps 4 for the rebalancing drill.
 # Bays keep their earlier ids; bays for families a plant never builds were retired.
 BAYS = (
-    ("AU01-B1", "AU01", "DEP", 2),
-    ("AU01-B4", "AU01", "INS", 2),
+    ("AU01-B1", "AU01", "DEP", 3),
+    ("AU01-B4", "AU01", "INS", 3),
     ("SC01-B2", "SC01", "ETC", 4),
     (OVERLOADED_BAY, "SC01", "ETC", 6),
-    ("SG01-B3", "SG01", "CMP", 2),
+    ("SG01-B3", "SG01", "CMP", 3),
 )
 RETIRED_LAYOUT_BAYS = 5
 _ADJECTIVES = (
