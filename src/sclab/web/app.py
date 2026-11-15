@@ -16,6 +16,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from sclab.constants import AS_OF_DATE, COMPANY_NAME
+from sclab.data.sap_views import SAP_VIEWS
 from sclab.data.schema import TABLES
 from sclab.engine.query import QueryError, reset_sandbox, run_query
 from sclab.engine.types import QueryResult
@@ -97,7 +98,12 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         return render(
             request,
             "schema.html",
-            {"tables": list(TABLES), "spec": None, "preview": None},
+            {
+                "tables": list(TABLES),
+                "spec": None,
+                "preview": None,
+                "sap_views": list(SAP_VIEWS.items()),
+            },
         )
 
     @app.get("/schema/{table_name}")
