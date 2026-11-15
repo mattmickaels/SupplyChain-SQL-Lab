@@ -18,7 +18,7 @@ WHERE h.po_no = 'PO-0043687'
 ```
 
 One row comes back.
-The supplier name is Kindred Flow Controls.
+The supplier name is Kindred Precision Assemblies.
 
 A left join keeps every row from the first table.
 When nothing matches, the columns from the second table are NULL.
@@ -119,7 +119,7 @@ Three rows come back.
 AU01, SC01, and SG01 each have 5 bays.
 
 A join can multiply rows.
-Line 1 of PO-0000003 orders 75 and has three goods receipts of 25.
+Line 1 of PO-0000003 orders 25 and has three goods receipts of 9, 8, and 8.
 
 ```sql
 SELECT i.po_no, i.line_no, SUM(i.order_qty) AS summed_order_qty
@@ -130,7 +130,7 @@ WHERE i.po_no = 'PO-0000003' AND i.line_no = 1
 GROUP BY i.po_no, i.line_no
 ```
 
-summed_order_qty is 225, because 75 was added once per receipt.
+summed_order_qty is 75, because 25 was added once per receipt.
 Sum the receipts first, then join that one row back.
 
 ```sql
@@ -144,8 +144,8 @@ JOIN (
 WHERE i.po_no = 'PO-0000003' AND i.line_no = 1
 ```
 
-order_qty stays 75.
-received_qty is 75.
+order_qty stays 25.
+received_qty is 25.
 
 When a group has exactly one supplier, MIN(supplier_no) returns that supplier.
 supplier_no has to sit inside an aggregate when it is not in the GROUP BY.
@@ -155,13 +155,13 @@ Write the test as confirmed_delivery_date >= requested_delivery_date + INTERVAL 
 A date-time still compares correctly with a date.
 Date minus date is not used here, because those engines do not return the same kind of value.
 
-Line 1 of PO-0006562 was requested for 28 December 2026 and confirmed for 22 February 2027.
+Line 1 of PO-0006802 was requested for 28 December 2026 and confirmed for 22 February 2027.
 The confirmed date is the requested date plus 56 days.
 
 ```sql
 SELECT i.po_no, i.line_no
 FROM purchase_order_item AS i
-WHERE i.po_no = 'PO-0006562'
+WHERE i.po_no = 'PO-0006802'
   AND i.line_no = 1
   AND i.confirmed_delivery_date >= i.requested_delivery_date + INTERVAL 56 DAY
 ```

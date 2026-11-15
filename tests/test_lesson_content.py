@@ -594,8 +594,8 @@ def test_common_wrong_answers_fail(lab_home, reference_results) -> None:
         reference = reference_results[exercise.reference_sql[0]]
         unsafe_qty = {(row[0], row[1]): row[2] for row in unsafe_result.rows}
         reference_qty = {(row[0], row[1]): row[2] for row in reference.rows}
-        assert unsafe_qty[("PO-0000003", 1)] == 225
-        assert reference_qty[("PO-0000003", 1)] == 75
+        assert unsafe_qty[("PO-0000003", 1)] == 75
+        assert reference_qty[("PO-0000003", 1)] == 25
 
 
 def test_like_matches_text_with_a_prefix() -> None:

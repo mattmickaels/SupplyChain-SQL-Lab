@@ -20,13 +20,13 @@ MASTER_TABLES = (
 )
 LONG_LEAD = {
     "RF generator",
-    "dry vacuum pump",
-    "wafer handling robot",
-    "ceramic heater",
-    "quartz liner",
-    "gas box",
-    "process controller",
-    "turbo pump",
+    "Dry vacuum pump",
+    "Wafer handling robot",
+    "Ceramic heater",
+    "Quartz liner",
+    "Gas box",
+    "Process controller",
+    "Turbo pump",
 }
 COUNTRIES = {"US", "JP", "DE", "KR", "TW", "SG", "NL", "CN", "IL"}
 DENYLIST = (
@@ -94,7 +94,12 @@ def test_volumes_within_targets(frames: dict[str, pd.DataFrame]) -> None:
 
     long_lead = components[components["is_long_lead"]]
     assert 0.05 <= len(long_lead) / len(components) <= 0.08
-    assert set(long_lead["description"]) <= LONG_LEAD
+    assert {
+        description.split(", variant ")[0] for description in long_lead["description"]
+    } <= LONG_LEAD
+    variants = long_lead.loc[long_lead["description"].ne("RF generator"), "description"]
+    assert variants.is_unique
+    assert variants.str.match(r".+, variant [1-9]\d*$").all()
     assert not materials.loc[materials["material_type"] != "COMPONENT", "is_long_lead"].any()
 
     planning = frames["material_plant"].merge(
@@ -365,9 +370,9 @@ def test_round2_functional_bom_paths(lab_conn):
             "Variable capacitor",
             "RF coaxial cable",
         ),
-        "Valve manifold": ("gas box", "Valve manifold block", "Pneumatic valve"),
+        "Valve manifold": ("Gas box", "Valve manifold block", "Pneumatic valve"),
         "Mass flow controller": ("Mass flow sensor", "Proportional flow valve"),
-        "PCB assembly": ("process controller", "Control PCB assembly", "Power supply board"),
+        "PCB assembly": ("Process controller", "Control PCB assembly", "Power supply board"),
         "Harness": ("Cable harness", "Harness connector"),
     }
     for parent_type, parent, child_type, child in edges:

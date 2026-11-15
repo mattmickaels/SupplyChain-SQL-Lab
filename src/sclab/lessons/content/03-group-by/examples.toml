@@ -91,7 +91,7 @@ FROM material_plant
 WHERE plant_code = 'AU01'
 GROUP BY plant_code
 """
-expected_rows = [["AU01", 180, 5140]]
+expected_rows = [["AU01", 164, 5156]]
 order_matters = false
 
 [[fact]]

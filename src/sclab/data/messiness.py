@@ -11,6 +11,36 @@ def apply_messiness(
     """Return a copy of the frames with the lab's planted data-quality issues."""
     out = {name: frame.copy() for name, frame in frames.items()}
     out["material"] = _duplicate_materials(rng, out["material"])
+    # Retired configuration parts have no active BOM or spare demand.
+    # Opening movements retain the inventory audit trail without snapshot receipts.
+    idle = (
+        frames["material"]
+        .loc[
+            frames["material"]["material_type"].eq("COMPONENT")
+            & ~frames["material"]["is_long_lead"]
+        ]
+        .tail(30)
+        .copy()
+    )
+    next_no = int(out["material"]["material_no"].str[2:].astype(int).max()) + 1
+    idle["material_no"] = [f"M-{number:06d}" for number in range(next_no, next_no + len(idle))]
+    idle["description"] = idle["description"] + ", retired configuration"
+    out["material"] = pd.concat([out["material"], idle], ignore_index=True)
+    balances = pd.DataFrame(
+        {
+            "material_no": idle["material_no"].to_numpy(),
+            "plant_code": "SC01",
+            "storage_location": "RM01",
+            "qty_on_hand": 12 + np.arange(len(idle)),
+        }
+    )
+    movements = balances.rename(columns={"qty_on_hand": "qty"}).copy()
+    start = len(out["stock_movement"]) + 1
+    movements["movement_no"] = [f"MV-{number:07d}" for number in range(start, start + len(idle))]
+    movements["movement_type"] = "561"
+    movements["posting_date"] = pd.Timestamp("2021-11-01")
+    out["stock_movement"] = pd.concat([out["stock_movement"], movements], ignore_index=True)
+    out["inventory"] = pd.concat([out["inventory"], balances], ignore_index=True)
     out["material_plant"] = _mess_lead_times(rng, out["material_plant"])
     out["purchase_order_item"] = _mess_uom(rng, out["purchase_order_item"])
     out["customer"] = _mess_country(rng, out["customer"])

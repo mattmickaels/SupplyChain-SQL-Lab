@@ -129,13 +129,13 @@ LONG_LEAD_FUNCTIONS = (
     "Turbo pump",
 )
 LONG_LEAD_OTHER = (
-    "dry vacuum pump",
-    "wafer handling robot",
-    "ceramic heater",
-    "quartz liner",
-    "gas box",
-    "process controller",
-    "turbo pump",
+    "Dry vacuum pump",
+    "Wafer handling robot",
+    "Ceramic heater",
+    "Quartz liner",
+    "Gas box",
+    "Process controller",
+    "Turbo pump",
 )
 N_TOOLS = 40
 N_MODULES = 280
@@ -231,7 +231,10 @@ def generate_master(rng: np.random.Generator) -> dict[str, pd.DataFrame]:
             _sources(rng, comp_ids, supplier_ids),
         ),
         "customer": _frame("customer", _customers(rng)),
-        "bom_item": _frame("bom_item", _bom_rows(rng, edges)),
+        "bom_item": _frame(
+            "bom_item",
+            _bom_rows(rng, edges) + _shared_bom_rows(sub_functions, comp_ids, edges),
+        ),
         "build_bay": _frame("build_bay", _bays(rng)),
     }
 
@@ -273,7 +276,9 @@ def _component_description(index: int) -> str:
     if index < N_RF:
         return "RF generator"
     if index < N_LONG_LEAD:
-        return LONG_LEAD_OTHER[(index - N_RF) % len(LONG_LEAD_OTHER)]
+        kind = LONG_LEAD_OTHER[(index - N_RF) % len(LONG_LEAD_OTHER)]
+        variant = (index - N_RF) // len(LONG_LEAD_OTHER) + 1
+        return f"{kind}, variant {variant}"
     if index == N_LONG_LEAD:
         return "Spare RF generator kit"
     function = _component_function(index)
@@ -537,6 +542,40 @@ def _assign_components(sub_functions, comp_ids):
         if N_RF <= index < N_LONG_LEAD and len(choices) > 1:
             assigned[choices[(position + 1) % len(choices)]].append(component)
     return assigned
+
+
+def _shared_bom_rows(sub_functions, comp_ids, edges):
+    # Four qualified standard variants per platform function fit every tool.
+    # Keep each part under its compatible functional subassembly.
+    # Standard kits use one each and do not consume variant-quantity randomness.
+    existing = set(edges)
+    rows = []
+    for function in (
+        "Load port",
+        "Isolation valve",
+        "Vacuum manifold",
+        "Valve manifold",
+        "Mass flow controller",
+        "Harness",
+    ):
+        common = [
+            component
+            for index, component in enumerate(comp_ids)
+            if index > N_LONG_LEAD and _component_function(index) == function
+        ][:4]
+        for sub, sub_function in sub_functions.items():
+            if sub_function != function:
+                continue
+            for part in common:
+                if (sub, part) not in existing:
+                    rows.append(
+                        {
+                            "parent_material_no": sub,
+                            "component_material_no": part,
+                            "qty_per": 1.0,
+                        }
+                    )
+    return rows
 
 
 def _bom_edges(tool_ids, module_ids, module_subs, sub_components):

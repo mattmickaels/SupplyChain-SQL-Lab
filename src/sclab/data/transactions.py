@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from sclab.constants import AS_OF_DATE, HISTORY_START
+from sclab.data.master import _segment
 from sclab.data.mrp import plan_purchases
 from sclab.data.story import (
     CORVANE_SUPPLIER_NO,
@@ -280,6 +281,17 @@ def _apply_status(rng: np.random.Generator, lines: pd.DataFrame) -> pd.DataFrame
     frame["shipped_date"] = pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns]")
     shipped = frame["status"] == "Shipped"
     frame.loc[shipped, "shipped_date"] = frame.loc[shipped, "promised_date"]
+    # Service tiers have different spare fulfilment reliability.
+    # Delays are planned before procurement and stock movements are generated.
+    spare = frame["kind"].eq("spare") & ~cancelled
+    for segment, late_share in (("Foundry", 0.08), ("Logic", 0.18), ("Memory", 0.30)):
+        indexes = frame.index[spare & frame["customer_no"].map(_segment).eq(segment)]
+        late_at = indexes[np.arange(len(indexes)) % 100 < round(late_share * 100)]
+        delivery = frame.loc[late_at, "promised_date"] + pd.to_timedelta(
+            2 + np.arange(len(late_at)) % 10, unit="D"
+        )
+        frame.loc[late_at, "shipped_date"] = delivery.where(delivery.lt(AS_OF_TS))
+        frame.loc[late_at[delivery.ge(AS_OF_TS)], "status"] = "Open"
     key = frame["customer_no"].astype(str) + "|" + frame["order_date"].dt.strftime("%Y-%m-%d")
     frame["so_no"] = _keyed_ids(key, "SO-", 7)
     frame["line_no"] = frame.groupby("so_no", sort=False).cumcount() + 1
@@ -589,7 +601,17 @@ def _set_on_time(rng, grouped: pd.DataFrame) -> pd.DataFrame:
     for code, target in enumerate(targets):
         if suppliers[code] == CORVANE_SUPPLIER_NO:
             continue
-        _mark_rate(on_time, closed_np & (codes == code), target, band=True)
+        # Supply crunch in 2022, recovery in 2024, then normal service.
+        for year, adjustment in (
+            (2021, 0),
+            (2022, -0.10),
+            (2023, -0.03),
+            (2024, 0.07),
+            (2025, 0),
+            (2026, 0),
+        ):
+            mask = closed_np & (codes == code) & frame["confirmed"].dt.year.eq(year).to_numpy()
+            _mark_rate(on_time, mask, target + adjustment, band=True)
     corvane = frame["supplier_no"].eq(CORVANE_SUPPLIER_NO).to_numpy() & closed_np
     receipt = frame["confirmed"]
     _mark_rate(on_time, corvane & receipt.lt(EARLY_END).to_numpy(), 0.95, band=False)

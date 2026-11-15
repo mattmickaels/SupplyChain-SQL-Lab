@@ -86,7 +86,7 @@ One row comes back.
 
 COUNT(*) counts every row in the group, including rows where a column is NULL.
 COUNT(planned_lead_time_days) skips the NULL rows.
-At plant AU01, 180 rows have no planned lead time and 5140 rows have one.
+At plant AU01, 164 rows have no planned lead time and 5156 rows have one.
 
 ```sql
 SELECT plant_code,

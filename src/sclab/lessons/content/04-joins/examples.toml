@@ -6,7 +6,7 @@ FROM purchase_order AS h
 JOIN supplier AS s ON s.supplier_no = h.supplier_no
 WHERE h.po_no = 'PO-0043687'
 """
-expected_rows = [["PO-0043687", "Kindred Flow Controls"]]
+expected_rows = [["PO-0043687", "Kindred Precision Assemblies"]]
 order_matters = false
 
 [[example]]
@@ -101,7 +101,7 @@ SELECT qty
 FROM goods_receipt
 WHERE po_no = 'PO-0000003' AND line_no = 1
 """
-expected_rows = [[25], [25], [25]]
+expected_rows = [[9], [8], [8]]
 order_matters = false
 
 [[example]]
@@ -114,7 +114,7 @@ JOIN goods_receipt AS g
 WHERE i.po_no = 'PO-0000003' AND i.line_no = 1
 GROUP BY i.po_no, i.line_no
 """
-expected_rows = [["PO-0000003", 1, 225]]
+expected_rows = [["PO-0000003", 1, 75]]
 order_matters = false
 
 [[example]]
@@ -129,7 +129,7 @@ JOIN (
 ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
 WHERE i.po_no = 'PO-0000003' AND i.line_no = 1
 """
-expected_rows = [["PO-0000003", 1, 75, 75]]
+expected_rows = [["PO-0000003", 1, 25, 25]]
 order_matters = false
 
 [[example]]
@@ -137,11 +137,11 @@ id = "late-line-stays"
 sql = """
 SELECT i.po_no, i.line_no
 FROM purchase_order_item AS i
-WHERE i.po_no = 'PO-0006562'
+WHERE i.po_no = 'PO-0006802'
   AND i.line_no = 1
   AND i.confirmed_delivery_date >= i.requested_delivery_date + INTERVAL 56 DAY
 """
-expected_rows = [["PO-0006562", 1]]
+expected_rows = [["PO-0006802", 1]]
 order_matters = false
 
 [[fact]]
@@ -202,7 +202,7 @@ id = "late-line-requested"
 sql = """
 SELECT requested_delivery_date
 FROM purchase_order_item
-WHERE po_no = 'PO-0006562' AND line_no = 1
+WHERE po_no = 'PO-0006802' AND line_no = 1
 """
 expected = "2026-12-28"
 
@@ -211,6 +211,6 @@ id = "late-line-confirmed"
 sql = """
 SELECT confirmed_delivery_date
 FROM purchase_order_item
-WHERE po_no = 'PO-0006562' AND line_no = 1
+WHERE po_no = 'PO-0006802' AND line_no = 1
 """
 expected = "2027-02-22"
