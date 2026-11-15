@@ -2,6 +2,7 @@
 
 from datetime import date
 
+import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
@@ -32,10 +33,38 @@ _SAMPLE = Screen(
     not_found="Plant {key} was not found.",
 )
 
+_SCOPED = Screen(
+    code="ZT02",
+    title="Sample scoped display",
+    key_label="Material",
+    queries=(
+        ScreenQuery(
+            "item",
+            "Material in plant",
+            "SELECT material_no, plant_code FROM material_plant"
+            " WHERE material_no = $1 AND plant_code = $2",
+        ),
+    ),
+    exists_sql=("SELECT count(*) FROM material_plant WHERE material_no = $1 AND plant_code = $2"),
+    not_found="Material {key} was not found.",
+    params=("plant_code",),
+)
+
+_BROKEN = Screen(
+    code="ZT03",
+    title="Sample broken display",
+    key_label="Plant",
+    queries=(),
+    exists_sql="SELECT count(*) FROM no_such_table WHERE x = $1",
+    not_found="Plant {key} was not found.",
+)
+
 
 @pytest.fixture(autouse=True)
 def sample_screen():
     register(_SAMPLE)
+    register(_SCOPED)
+    register(_BROKEN)
 
 
 @pytest.fixture
@@ -56,12 +85,35 @@ def test_params_bound_not_interpolated(client) -> None:
     response = client.get("/screens/ZT01", params={"key": key})
     assert response.status_code == 200
     assert "was not found" in response.text
+    plant = _known_plant()
+    assert client.get("/screens/ZT01", params={"key": plant}).text.count("Show the SQL") == 1
+    hostile = render_screen("ZT01", plant + "' OR '1'='1", {})
+    assert hostile.found is False
+    assert inline_params(_SAMPLE.queries[0].sql, [key]).count("'M-1'' OR ''1''=''1'") == 1
 
 
 def test_inline_params_literals() -> None:
     sql = "SELECT $1, $2, $3, $4, $1"
     shown = inline_params(sql, ["O'Neil", date(2026, 11, 1), 7, None])
     assert shown == "SELECT 'O''Neil', DATE '2026-11-01', 7, NULL, 'O''Neil'"
+
+
+def test_inline_params_skips_strings_comments_identifiers() -> None:
+    assert inline_params("SELECT '$1', $1", ["x"]) == "SELECT '$1', 'x'"
+    sql = 'SELECT "a$1", $1 -- $2\n'
+    assert inline_params(sql, ["x"]) == "SELECT \"a$1\", 'x' -- $2\n"
+    assert inline_params("SELECT $1 + $1", [2]) == "SELECT 2 + 2"
+
+
+def test_inline_params_nan_and_inf_are_valid_sql() -> None:
+    shown = inline_params("SELECT $1, $2, $3", [float("nan"), float("inf"), float("-inf")])
+    assert shown == (
+        "SELECT CAST('NaN' AS DOUBLE), CAST('Infinity' AS DOUBLE), CAST('-Infinity' AS DOUBLE)"
+    )
+    row = duckdb.connect().execute(shown).fetchone()
+    assert row[0] != row[0]
+    assert row[1] == float("inf")
+    assert row[2] == float("-inf")
 
 
 def test_displayed_sql_reproduces_rows(lab_home) -> None:
@@ -109,10 +161,69 @@ def test_screen_never_writes() -> None:
     for screen in all_screens():
         sqls = [screen.exists_sql, *(query.sql for query in screen.queries)]
         for sql in sqls:
-            assert sql.lstrip().upper().startswith(("SELECT", "WITH")), screen.code
+            statements = duckdb.extract_statements(sql)
+            assert len(statements) == 1, screen.code
+            assert statements[0].type == duckdb.StatementType.SELECT, screen.code
 
 
 def test_unknown_screen_is_404(client) -> None:
     assert client.get("/screens/NOPE").status_code == 404
     with pytest.raises(KeyError):
         get_screen("NOPE")
+
+
+def _scoped_key() -> tuple[str, str]:
+    return run_query(
+        "SELECT material_no, plant_code FROM material_plant ORDER BY 1, 2 LIMIT 1"
+    ).rows[0]
+
+
+def test_declared_params_ignore_stray_values(lab_home) -> None:
+    material, plant = _scoped_key()
+    data = render_screen("ZT02", material, {"aaa": "1", "plant_code": plant, "zzz": "2"})
+    assert data.found is True
+    assert data.runs["item"].result.rows == [(material, plant)]
+    assert plant in data.runs["item"].display_sql
+
+
+def test_missing_declared_param_asks_for_it(lab_home) -> None:
+    material, _ = _scoped_key()
+    data = render_screen("ZT02", material, {"aaa": "1"})
+    assert data.found is False
+    assert data.message == "Enter a plant code."
+
+
+def test_declared_params_bind_in_declared_order(lab_home) -> None:
+    multi = Screen(
+        code="ZT04",
+        title="Order",
+        key_label="Key",
+        queries=(ScreenQuery("q", "Order", "SELECT $1 AS a, $2 AS b, $3 AS c"),),
+        exists_sql="SELECT 1",
+        not_found="{key}",
+        params=("zeta", "alpha"),
+    )
+    register(multi)
+    data = render_screen("ZT04", "k", {"alpha": "A", "zeta": "Z", "extra": "x"})
+    assert data.runs["q"].result.rows == [("k", "Z", "A")]
+
+
+def test_exists_error_shows_message_not_not_found(client) -> None:
+    data = render_screen("ZT03", "SC01", {})
+    assert data.found is False
+    assert "no_such_table" in data.message
+    assert "was not found" not in data.message
+    assert "no_such_table" in client.get("/screens/ZT03", params={"key": "SC01"}).text
+
+
+def test_empty_key_message(client) -> None:
+    response = client.get("/screens/ZT01")
+    assert response.status_code == 200
+    assert "Enter a plant." in response.text
+
+
+def test_default_template_renders_rows(client) -> None:
+    plant = _known_plant()
+    text = client.get("/screens/ZT01", params={"key": plant}).text
+    assert "<table" in text
+    assert f"<td>{plant}</td>" in text

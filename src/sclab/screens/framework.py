@@ -1,7 +1,8 @@
 """Screen definitions, parameter handling and the display SQL for "Show the SQL".
 
 Parameter convention: `$1` is the key typed on the screen.
-`$2`, `$3` and so on are the extra query-string values, for example `plant`, in order of name.
+`$2`, `$3` and so on bind the names a screen declares in `Screen.params`, in declared order.
+Query-string values that a screen does not declare are ignored.
 Every query is bound by DuckDB; `inline_params` only builds text for the learner to read.
 """
 
@@ -10,11 +11,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
+from math import isinf, isnan
+
+import duckdb
 
 from sclab.engine.query import QueryError, run_query
 from sclab.engine.types import QueryResult
 
-_PLACEHOLDER = re.compile(r"\$(\d+)")
+_DIGITS = re.compile(r"\d+")
 
 
 @dataclass(frozen=True)
@@ -32,6 +36,7 @@ class Screen:
     queries: tuple[ScreenQuery, ...]
     exists_sql: str
     not_found: str
+    params: tuple[str, ...] = ()
 
 
 @dataclass
@@ -78,25 +83,49 @@ def _literal(value: object) -> str:
         return f"TIMESTAMP '{value.isoformat(sep=' ')}'"
     if isinstance(value, date):
         return f"DATE '{value.isoformat()}'"
+    if isinstance(value, float) and (isnan(value) or isinf(value)):
+        text = "NaN" if isnan(value) else ("Infinity" if value > 0 else "-Infinity")
+        return f"CAST('{text}' AS DOUBLE)"
     if isinstance(value, (int, float, Decimal)):
         return str(value)
     return "'" + str(value).replace("'", "''") + "'"
 
 
+def _placeholders(sql: str) -> list[tuple[int, int, int]]:
+    """Find `$n` parameter tokens as (start, end, n), skipping strings, comments and identifiers."""
+    tokens = duckdb.tokenize(sql)
+    found: list[tuple[int, int, int]] = []
+    for position, (offset, kind) in enumerate(tokens[:-1]):
+        if kind != duckdb.token_type.operator or sql[offset : offset + 1] != "$":
+            continue
+        following, following_kind = tokens[position + 1]
+        digits = _DIGITS.match(sql, following)
+        if (
+            following != offset + 1
+            or following_kind != duckdb.token_type.numeric_const
+            or not digits
+        ):
+            continue
+        found.append((offset, digits.end(), int(digits.group())))
+    return found
+
+
 def inline_params(sql: str, params: Sequence[object]) -> str:
     """Replace `$n` with SQL literals. For display only; never run the result with user text."""
-
-    def replace(match: re.Match) -> str:
-        index = int(match.group(1))
+    pieces: list[str] = []
+    cursor = 0
+    for start, end, index in _placeholders(sql):
         if index < 1 or index > len(params):
             raise ValueError(f"No value for parameter ${index}")
-        return _literal(params[index - 1])
-
-    return _PLACEHOLDER.sub(replace, sql)
+        pieces.append(sql[cursor:start])
+        pieces.append(_literal(params[index - 1]))
+        cursor = end
+    pieces.append(sql[cursor:])
+    return "".join(pieces)
 
 
 def _params_for(sql: str, values: Sequence[object]) -> list[object]:
-    needed = max((int(found) for found in _PLACEHOLDER.findall(sql)), default=0)
+    needed = max((index for _, _, index in _placeholders(sql)), default=0)
     padded = list(values) + [None] * max(0, needed - len(values))
     return padded[:needed]
 
@@ -115,8 +144,15 @@ def render_screen(code: str, key: str, extra: dict[str, str]) -> ScreenData:
     key = key.strip()
     if not key:
         return ScreenData(screen, key, False, f"Enter a {screen.key_label.lower()}.")
-    values = [key, *(extra[name] for name in sorted(extra))]
+    values: list[object] = [key]
+    for name in screen.params:
+        value = extra.get(name, "").strip()
+        if not value:
+            return ScreenData(screen, key, False, f"Enter a {name.replace('_', ' ')}.")
+        values.append(value)
     exists = _run(ScreenQuery("exists", "exists", screen.exists_sql), values)
+    if exists.error:
+        return ScreenData(screen, key, False, exists.error)
     rows = exists.result.rows if exists.result else []
     if not rows or rows[0][0] in (0, False, None):
         return ScreenData(screen, key, False, screen.not_found.format(key=key))

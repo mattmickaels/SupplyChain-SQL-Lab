@@ -199,6 +199,9 @@
     if (navigator.clipboard && code) {
       navigator.clipboard.writeText(code.textContent);
       button.textContent = "Copied";
+      setTimeout(function () {
+        button.textContent = "Copy";
+      }, 1500);
     }
   });
 

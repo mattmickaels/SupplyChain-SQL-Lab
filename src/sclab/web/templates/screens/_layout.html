@@ -12,7 +12,7 @@
       <button type="submit">Go</button>
     </form>
   </div>
-  <p class="muted">Like {{ screen.code }} in SAP. Read-only.</p>
+  <p class="muted">Transaction code {{ screen.code }}. Read-only.</p>
   {% if not data.found %}
   {% include "screens/not_found.html" %}
   {% else %}
