@@ -877,6 +877,1198 @@ _WRONG_ANSWERS = (
         ORDER BY i.po_no, i.line_no
         """,
     ),
+    (
+        "plan-open-demand",
+        """
+        SELECT m.family_code, CAST(date_trunc('month', i.promised_date) AS DATE) AS month,
+               SUM(i.qty) AS open_qty
+        FROM sales_order_item i JOIN material m ON m.material_no = i.material_no
+        WHERE m.material_type = 'TOOL'
+          AND i.promised_date >= DATE '2026-11-01' AND i.promised_date < DATE '2027-05-01'
+        GROUP BY m.family_code, CAST(date_trunc('month', i.promised_date) AS DATE)
+        ORDER BY m.family_code, month
+        """,
+    ),
+    (
+        "plan-open-demand",
+        """
+        SELECT m.family_code, CAST(date_trunc('month', i.promised_date) AS DATE) AS month,
+               SUM(i.qty) AS open_qty
+        FROM sales_order_item i JOIN material m ON m.material_no = i.material_no
+        WHERE i.status = 'Open' AND m.material_type = 'TOOL'
+          AND i.promised_date >= DATE '2026-11-01' AND i.promised_date < DATE '2027-04-01'
+        GROUP BY m.family_code, CAST(date_trunc('month', i.promised_date) AS DATE)
+        ORDER BY m.family_code, month
+        """,
+    ),
+    (
+        "plan-forecast-waterfall",
+        """
+        WITH totals AS (
+            SELECT m.family_code, f.forecast_month,
+                   SUM(CASE WHEN f.forecast_version = '2026-09' THEN f.qty ELSE 0 END) AS qty_09,
+                   SUM(CASE WHEN f.forecast_version = '2026-10' THEN f.qty ELSE 0 END) AS qty_10
+            FROM demand_forecast f JOIN material m ON m.material_no = f.material_no
+            WHERE m.material_type = 'TOOL' AND f.forecast_version IN ('2026-09', '2026-10')
+              AND f.forecast_month >= DATE '2026-11-01' AND f.forecast_month < DATE '2027-05-01'
+            GROUP BY m.family_code, f.forecast_month
+        )
+        SELECT family_code, forecast_month, qty_09, qty_10, qty_09 - qty_10 AS change_qty
+        FROM totals ORDER BY family_code, forecast_month
+        """,
+    ),
+    (
+        "plan-forecast-waterfall",
+        """
+        WITH totals AS (
+            SELECT m.family_code, f.forecast_month,
+                   SUM(CASE WHEN f.forecast_version = '2026-09' THEN f.qty ELSE 0 END) AS qty_09,
+                   SUM(CASE WHEN f.forecast_version = '2026-09' THEN f.qty ELSE 0 END) AS qty_10
+            FROM demand_forecast f JOIN material m ON m.material_no = f.material_no
+            WHERE m.material_type = 'TOOL' AND f.forecast_version IN ('2026-09', '2026-10')
+              AND f.forecast_month >= DATE '2026-11-01' AND f.forecast_month < DATE '2027-05-01'
+            GROUP BY m.family_code, f.forecast_month
+        )
+        SELECT family_code, forecast_month, qty_09, qty_10, qty_10 - qty_09 AS change_qty
+        FROM totals ORDER BY family_code, forecast_month
+        """,
+    ),
+    (
+        "plan-forecast-coverage",
+        """
+        WITH booked AS (
+            SELECT m.family_code, CAST(date_trunc('month', i.promised_date) AS DATE) AS month,
+                   SUM(i.qty) AS qty
+            FROM sales_order_item i JOIN material m ON m.material_no = i.material_no
+            WHERE m.material_type = 'TOOL' AND i.status = 'Open'
+              AND i.promised_date >= DATE '2026-11-01' AND i.promised_date < DATE '2027-02-01'
+            GROUP BY m.family_code, CAST(date_trunc('month', i.promised_date) AS DATE)
+        ), forecast AS (
+            SELECT m.family_code, f.forecast_month AS month, SUM(f.qty) AS qty
+            FROM demand_forecast f JOIN material m ON m.material_no = f.material_no
+            WHERE m.material_type = 'TOOL' AND f.forecast_version IN ('2026-09', '2026-10')
+              AND f.forecast_month >= DATE '2026-11-01' AND f.forecast_month < DATE '2027-02-01'
+            GROUP BY m.family_code, f.forecast_month
+        )
+        SELECT COALESCE(b.family_code, f.family_code) AS family_code,
+               COALESCE(b.month, f.month) AS month, COALESCE(b.qty, 0) AS booked_qty,
+               COALESCE(f.qty, 0) AS forecast_qty,
+               ROUND(100.0 * COALESCE(b.qty, 0) / NULLIF(f.qty, 0), 2) AS coverage_pct
+        FROM booked b FULL OUTER JOIN forecast f
+          ON f.family_code = b.family_code AND f.month = b.month
+        ORDER BY family_code, month
+        """,
+    ),
+    (
+        "plan-forecast-coverage",
+        """
+        WITH booked AS (
+            SELECT m.family_code, CAST(date_trunc('month', i.promised_date) AS DATE) AS month,
+                   SUM(i.qty) AS qty
+            FROM sales_order_item i JOIN material m ON m.material_no = i.material_no
+            WHERE m.material_type = 'TOOL' AND i.status = 'Open'
+              AND i.promised_date >= DATE '2026-11-01' AND i.promised_date < DATE '2027-02-01'
+            GROUP BY m.family_code, CAST(date_trunc('month', i.promised_date) AS DATE)
+        ), forecast AS (
+            SELECT m.family_code, f.forecast_month AS month, SUM(f.qty) AS qty
+            FROM demand_forecast f JOIN material m ON m.material_no = f.material_no
+            WHERE m.material_type = 'TOOL' AND f.forecast_version = '2026-10'
+              AND f.forecast_month >= DATE '2026-11-01' AND f.forecast_month < DATE '2027-02-01'
+            GROUP BY m.family_code, f.forecast_month
+        )
+        SELECT COALESCE(b.family_code, f.family_code) AS family_code,
+               COALESCE(b.month, f.month) AS month, COALESCE(b.qty, 0) AS booked_qty,
+               COALESCE(f.qty, 0) AS forecast_qty,
+               ROUND(1.0 * COALESCE(b.qty, 0) / NULLIF(f.qty, 0), 2) AS coverage_pct
+        FROM booked b FULL OUTER JOIN forecast f
+          ON f.family_code = b.family_code AND f.month = b.month
+        ORDER BY family_code, month
+        """,
+    ),
+    (
+        "plan-weekly-balance",
+        """
+        WITH RECURSIVE tree AS (
+            SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+            FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+            WHERE m.material_type = 'TOOL'
+            UNION ALL
+            SELECT t.root, t.family_code, b.component_material_no,
+                   CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+            FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+            WHERE t.level < 10
+        ), leaves AS (
+            SELECT t.root, t.family_code, t.material_no, SUM(t.qty) AS qty
+            FROM tree t JOIN material m ON m.material_no = t.material_no
+            WHERE m.material_type = 'COMPONENT'
+            GROUP BY t.root, t.family_code, t.material_no
+        ), outstanding AS (
+            SELECT i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                   i.confirmed_delivery_date, i.order_qty - COALESCE(SUM(g.qty), 0) AS qty
+            FROM purchase_order_item i JOIN purchase_order h ON h.po_no = i.po_no
+            LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
+            WHERE h.order_date <= DATE '2026-11-01'
+            GROUP BY i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                     i.confirmed_delivery_date, i.order_qty
+            HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
+        ), stock AS (
+            SELECT material_no, plant_code, SUM(qty_on_hand) AS qty FROM inventory
+            WHERE storage_location = 'RM01'
+            GROUP BY material_no, plant_code
+        ), periods AS (
+            SELECT CAST(DATE '2026-11-01' + n * INTERVAL 7 DAY AS DATE) AS week_start
+            FROM (VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12),
+                         (13), (14), (15), (16), (17), (18), (19),
+                         (20), (21), (22), (23), (24), (25)) AS offsets(n)
+        ), targets AS (
+            SELECT mp.material_no, mp.plant_code, mp.safety_stock
+            FROM material_plant mp JOIN material m ON m.material_no = mp.material_no
+            WHERE (m.is_long_lead = true OR m.description = 'RF generator')
+              AND EXISTS (
+                  SELECT 1 FROM production_order p JOIN leaves l ON l.root = p.material_no
+                  WHERE l.material_no = mp.material_no AND p.plant_code = mp.plant_code
+                    AND p.status IN ('Planned', 'Released')
+                    AND p.planned_start > DATE '2026-11-01' AND p.planned_start < DATE '2027-05-02'
+              )
+        ), demand AS (
+            SELECT l.material_no, p.plant_code, p.planned_start AS day, SUM(p.qty * l.qty) AS qty
+            FROM production_order p JOIN leaves l ON l.root = p.material_no
+            WHERE p.status IN ('Planned', 'Released')
+              AND p.planned_start > DATE '2026-11-01' AND p.planned_start < DATE '2027-05-02'
+            GROUP BY l.material_no, p.plant_code, p.planned_start
+        ), weekly AS (
+            SELECT t.material_no, t.plant_code, t.safety_stock, w.week_start,
+                   COALESCE((SELECT SUM(o.qty) FROM outstanding o
+                             WHERE o.material_no = t.material_no AND o.plant_code = t.plant_code
+                               AND o.confirmed_delivery_date IS NOT NULL
+                               AND GREATEST(o.confirmed_delivery_date, DATE '2026-11-01')
+                            >= w.week_start
+                               AND GREATEST(o.confirmed_delivery_date, DATE '2026-11-01')
+                                   < w.week_start + INTERVAL 7 DAY), 0) AS receipts,
+                   COALESCE((SELECT SUM(d.qty) FROM demand d
+                             WHERE d.material_no = t.material_no AND d.plant_code = t.plant_code
+                               AND d.day >= w.week_start
+                            AND d.day < w.week_start + INTERVAL 7 DAY), 0)
+                       AS demand_qty,
+                   COALESCE(s.qty, 0) AS opening_qty
+            FROM targets t CROSS JOIN periods w
+            LEFT JOIN stock s ON s.material_no = t.material_no AND s.plant_code = t.plant_code
+        ), balances AS (
+            SELECT material_no, plant_code, safety_stock, week_start, receipts, demand_qty,
+                   0 + SUM(receipts - demand_qty) OVER (
+                       PARTITION BY material_no, plant_code ORDER BY week_start
+                       ROWS UNBOUNDED PRECEDING) AS projected_balance
+            FROM weekly
+        )
+        SELECT week_start, receipts, demand_qty, projected_balance FROM balances
+        WHERE material_no = 'M-001324' AND plant_code = 'SC01'
+        ORDER BY week_start
+        """,
+    ),
+    (
+        "plan-weekly-balance",
+        """
+        WITH RECURSIVE tree AS (
+            SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+            FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+            WHERE m.material_type = 'TOOL'
+            UNION ALL
+            SELECT t.root, t.family_code, b.component_material_no,
+                   CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+            FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+            WHERE t.level < 10
+        ), leaves AS (
+            SELECT t.root, t.family_code, t.material_no, SUM(t.qty) AS qty
+            FROM tree t JOIN material m ON m.material_no = t.material_no
+            WHERE m.material_type = 'COMPONENT'
+            GROUP BY t.root, t.family_code, t.material_no
+        ), outstanding AS (
+            SELECT i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                   i.confirmed_delivery_date, i.order_qty - SUM(g.qty) AS qty
+            FROM purchase_order_item i JOIN purchase_order h ON h.po_no = i.po_no
+            LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
+            WHERE h.order_date <= DATE '2026-11-01'
+            GROUP BY i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                     i.confirmed_delivery_date, i.order_qty
+            HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
+        ), stock AS (
+            SELECT material_no, plant_code, SUM(qty_on_hand) AS qty FROM inventory
+            WHERE storage_location = 'RM01'
+            GROUP BY material_no, plant_code
+        ), periods AS (
+            SELECT CAST(DATE '2026-11-01' + n * INTERVAL 7 DAY AS DATE) AS week_start
+            FROM (VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12),
+                         (13), (14), (15), (16), (17), (18), (19),
+                         (20), (21), (22), (23), (24), (25)) AS offsets(n)
+        ), targets AS (
+            SELECT mp.material_no, mp.plant_code, mp.safety_stock
+            FROM material_plant mp JOIN material m ON m.material_no = mp.material_no
+            WHERE (m.is_long_lead = true OR m.description = 'RF generator')
+              AND EXISTS (
+                  SELECT 1 FROM production_order p JOIN leaves l ON l.root = p.material_no
+                  WHERE l.material_no = mp.material_no AND p.plant_code = mp.plant_code
+                    AND p.status IN ('Planned', 'Released')
+                    AND p.planned_start > DATE '2026-11-01' AND p.planned_start < DATE '2027-05-02'
+              )
+        ), demand AS (
+            SELECT l.material_no, p.plant_code, p.planned_start AS day, SUM(p.qty * l.qty) AS qty
+            FROM production_order p JOIN leaves l ON l.root = p.material_no
+            WHERE p.status IN ('Planned', 'Released')
+              AND p.planned_start > DATE '2026-11-01' AND p.planned_start < DATE '2027-05-02'
+            GROUP BY l.material_no, p.plant_code, p.planned_start
+        ), weekly AS (
+            SELECT t.material_no, t.plant_code, t.safety_stock, w.week_start,
+                   COALESCE((SELECT SUM(o.qty) FROM outstanding o
+                             WHERE o.material_no = t.material_no AND o.plant_code = t.plant_code
+                               AND o.confirmed_delivery_date IS NOT NULL
+                               AND GREATEST(o.confirmed_delivery_date, DATE '2026-11-01')
+                            >= w.week_start
+                               AND GREATEST(o.confirmed_delivery_date, DATE '2026-11-01')
+                                   < w.week_start + INTERVAL 7 DAY), 0) AS receipts,
+                   COALESCE((SELECT SUM(d.qty) FROM demand d
+                             WHERE d.material_no = t.material_no AND d.plant_code = t.plant_code
+                               AND d.day >= w.week_start
+                            AND d.day < w.week_start + INTERVAL 7 DAY), 0)
+                       AS demand_qty,
+                   COALESCE(s.qty, 0) AS opening_qty
+            FROM targets t CROSS JOIN periods w
+            LEFT JOIN stock s ON s.material_no = t.material_no AND s.plant_code = t.plant_code
+        ), balances AS (
+            SELECT material_no, plant_code, safety_stock, week_start, receipts, demand_qty,
+                   opening_qty + SUM(receipts - demand_qty) OVER (
+                       PARTITION BY material_no, plant_code ORDER BY week_start
+                       ROWS UNBOUNDED PRECEDING) AS projected_balance
+            FROM weekly
+        )
+        SELECT week_start, receipts, demand_qty, projected_balance FROM balances
+        WHERE material_no = 'M-001324' AND plant_code = 'SC01'
+        ORDER BY week_start
+        """,
+    ),
+    (
+        "plan-shortages",
+        """
+        WITH RECURSIVE tree AS (
+            SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+            FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+            WHERE m.material_type = 'TOOL'
+            UNION ALL
+            SELECT t.root, t.family_code, b.component_material_no,
+                   CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+            FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+            WHERE t.level < 10
+        ), leaves AS (
+            SELECT t.root, t.family_code, t.material_no, SUM(t.qty) AS qty
+            FROM tree t JOIN material m ON m.material_no = t.material_no
+            WHERE m.material_type = 'COMPONENT'
+            GROUP BY t.root, t.family_code, t.material_no
+        ), outstanding AS (
+            SELECT i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                   i.confirmed_delivery_date, i.order_qty - COALESCE(SUM(g.qty), 0) AS qty
+            FROM purchase_order_item i JOIN purchase_order h ON h.po_no = i.po_no
+            LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
+            WHERE h.order_date <= DATE '2026-11-01'
+            GROUP BY i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                     i.confirmed_delivery_date, i.order_qty
+            HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
+        ), stock AS (
+            SELECT material_no, plant_code, SUM(qty_on_hand) AS qty FROM inventory
+            WHERE storage_location = 'RM01'
+            GROUP BY material_no, plant_code
+        ), periods AS (
+            SELECT CAST(DATE '2026-11-01' + n * INTERVAL 7 DAY AS DATE) AS week_start
+            FROM (VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12),
+                         (13), (14), (15), (16), (17), (18), (19),
+                         (20), (21), (22), (23), (24), (25)) AS offsets(n)
+        ), targets AS (
+            SELECT mp.material_no, mp.plant_code, mp.safety_stock
+            FROM material_plant mp JOIN material m ON m.material_no = mp.material_no
+            WHERE (m.is_long_lead = true OR m.description = 'RF generator')
+              AND EXISTS (
+                  SELECT 1 FROM production_order p JOIN leaves l ON l.root = p.material_no
+                  WHERE l.material_no = mp.material_no AND p.plant_code = mp.plant_code
+                    AND p.status IN ('Planned', 'Released')
+                    AND p.planned_start > DATE '2026-11-01' AND p.planned_start < DATE '2027-05-02'
+              )
+        ), demand AS (
+            SELECT l.material_no, p.plant_code, p.planned_start AS day, SUM(p.qty * l.qty) AS qty
+            FROM production_order p JOIN leaves l ON l.root = p.material_no
+            WHERE p.status IN ('Planned', 'Released')
+              AND p.planned_start > DATE '2026-11-01' AND p.planned_start < DATE '2027-05-02'
+            GROUP BY l.material_no, p.plant_code, p.planned_start
+        ), weekly AS (
+            SELECT t.material_no, t.plant_code, t.safety_stock, w.week_start,
+                   COALESCE((SELECT SUM(o.qty) FROM outstanding o
+                             WHERE o.material_no = t.material_no AND o.plant_code = t.plant_code
+                               AND o.confirmed_delivery_date IS NOT NULL
+                               AND GREATEST(o.confirmed_delivery_date, DATE '2026-11-01')
+                            >= w.week_start
+                               AND GREATEST(o.confirmed_delivery_date, DATE '2026-11-01')
+                                   < w.week_start + INTERVAL 7 DAY), 0) AS receipts,
+                   COALESCE((SELECT SUM(d.qty) FROM demand d
+                             WHERE d.material_no = t.material_no AND d.plant_code = t.plant_code
+                               AND d.day >= w.week_start
+                            AND d.day < w.week_start + INTERVAL 7 DAY), 0)
+                       AS demand_qty,
+                   COALESCE(s.qty, 0) AS opening_qty
+            FROM targets t CROSS JOIN periods w
+            LEFT JOIN stock s ON s.material_no = t.material_no AND s.plant_code = t.plant_code
+        ), balances AS (
+            SELECT material_no, plant_code, safety_stock, week_start, receipts, demand_qty,
+                   opening_qty + SUM(receipts - demand_qty) OVER (
+                       PARTITION BY material_no, plant_code ORDER BY week_start
+                       ROWS UNBOUNDED PRECEDING) AS projected_balance
+            FROM weekly
+        )
+        SELECT material_no, plant_code, MIN(week_start) AS first_shortage_week
+        FROM balances WHERE projected_balance < 0
+        GROUP BY material_no, plant_code ORDER BY material_no, plant_code
+        """,
+    ),
+    (
+        "plan-shortages",
+        """
+        WITH RECURSIVE tree AS (
+            SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+            FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+            WHERE m.material_type = 'TOOL'
+            UNION ALL
+            SELECT t.root, t.family_code, b.component_material_no,
+                   CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+            FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+            WHERE t.level < 10
+        ), leaves AS (
+            SELECT t.root, t.family_code, t.material_no, SUM(t.qty) AS qty
+            FROM tree t JOIN material m ON m.material_no = t.material_no
+            WHERE m.material_type = 'COMPONENT'
+            GROUP BY t.root, t.family_code, t.material_no
+        ), outstanding AS (
+            SELECT i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                   i.confirmed_delivery_date, i.order_qty - COALESCE(SUM(g.qty), 0) AS qty
+            FROM purchase_order_item i JOIN purchase_order h ON h.po_no = i.po_no
+            LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
+            WHERE h.order_date <= DATE '2026-11-01'
+            GROUP BY i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                     i.confirmed_delivery_date, i.order_qty
+            HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
+        ), stock AS (
+            SELECT material_no, plant_code, SUM(qty_on_hand) AS qty FROM inventory
+            WHERE storage_location = 'RM01'
+            GROUP BY material_no, plant_code
+        ), periods AS (
+            SELECT CAST(DATE '2026-11-01' + n * INTERVAL 7 DAY AS DATE) AS week_start
+            FROM (VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12),
+                         (13), (14), (15), (16), (17), (18), (19),
+                         (20), (21), (22), (23), (24), (25)) AS offsets(n)
+        ), targets AS (
+            SELECT mp.material_no, mp.plant_code, mp.safety_stock
+            FROM material_plant mp JOIN material m ON m.material_no = mp.material_no
+            WHERE (m.is_long_lead = true OR m.description = 'RF generator')
+              AND EXISTS (
+                  SELECT 1 FROM production_order p JOIN leaves l ON l.root = p.material_no
+                  WHERE l.material_no = mp.material_no AND p.plant_code = mp.plant_code
+                    AND p.status IN ('Planned', 'Released')
+                    AND p.planned_start > DATE '2026-11-01' AND p.planned_start < DATE '2027-05-02'
+              )
+        ), demand AS (
+            SELECT l.material_no, p.plant_code, p.planned_start AS day, SUM(p.qty * l.qty) AS qty
+            FROM production_order p JOIN leaves l ON l.root = p.material_no
+            WHERE p.status IN ('Planned', 'Released')
+              AND p.planned_start > DATE '2026-11-01' AND p.planned_start < DATE '2027-05-02'
+            GROUP BY l.material_no, p.plant_code, p.planned_start
+        ), weekly AS (
+            SELECT t.material_no, t.plant_code, t.safety_stock, w.week_start,
+                   COALESCE((SELECT SUM(o.qty) FROM outstanding o
+                             WHERE o.material_no = t.material_no AND o.plant_code = t.plant_code
+                               AND o.confirmed_delivery_date IS NOT NULL
+                               AND GREATEST(o.confirmed_delivery_date, DATE '2026-11-01')
+                            >= w.week_start
+                               AND GREATEST(o.confirmed_delivery_date, DATE '2026-11-01')
+                                   < w.week_start + INTERVAL 7 DAY), 0) AS receipts,
+                   COALESCE((SELECT SUM(d.qty) FROM demand d
+                             WHERE d.material_no = t.material_no AND d.plant_code = t.plant_code
+                               AND d.day >= w.week_start
+                            AND d.day < w.week_start + INTERVAL 7 DAY), 0)
+                       AS demand_qty,
+                   COALESCE(s.qty, 0) AS opening_qty
+            FROM targets t CROSS JOIN periods w
+            LEFT JOIN stock s ON s.material_no = t.material_no AND s.plant_code = t.plant_code
+        ), balances AS (
+            SELECT material_no, plant_code, safety_stock, week_start, receipts, demand_qty,
+                   opening_qty + SUM(receipts - demand_qty) OVER (
+                       PARTITION BY material_no, plant_code ORDER BY week_start
+                       ROWS UNBOUNDED PRECEDING) AS projected_balance
+            FROM weekly
+        )
+        SELECT material_no, plant_code, MIN(week_start) AS first_shortage_week
+        FROM balances WHERE projected_balance <= safety_stock
+        GROUP BY material_no, plant_code ORDER BY material_no, plant_code
+        """,
+    ),
+    (
+        "plan-at-risk-orders",
+        """
+        WITH RECURSIVE tree AS (
+            SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+            FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+            WHERE m.material_type = 'TOOL'
+            UNION ALL
+            SELECT t.root, t.family_code, b.component_material_no,
+                   CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+            FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+            WHERE t.level < 10
+        ), leaves AS (
+            SELECT t.root, t.family_code, t.material_no, SUM(t.qty) AS qty
+            FROM tree t JOIN material m ON m.material_no = t.material_no
+            WHERE m.material_type = 'COMPONENT'
+            GROUP BY t.root, t.family_code, t.material_no
+        ), outstanding AS (
+            SELECT i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                   i.confirmed_delivery_date, i.order_qty - COALESCE(SUM(g.qty), 0) AS qty
+            FROM purchase_order_item i JOIN purchase_order h ON h.po_no = i.po_no
+            LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
+            WHERE h.order_date <= DATE '2026-11-01'
+            GROUP BY i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                     i.confirmed_delivery_date, i.order_qty
+            HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
+        ), stock AS (
+            SELECT material_no, plant_code, SUM(qty_on_hand) AS qty FROM inventory
+            WHERE storage_location = 'RM01'
+            GROUP BY material_no, plant_code
+        ), spare_plant AS (
+            SELECT material_no, MIN(CASE family_code WHEN 'ETC' THEN 'SC01'
+                                   WHEN 'CMP' THEN 'SG01' ELSE 'AU01' END) AS plant_code
+            FROM leaves GROUP BY material_no
+        ), requirements AS (
+            SELECT p.prod_order_no, l.material_no, p.plant_code, p.planned_start AS need_date,
+                   p.qty * l.qty AS qty
+            FROM production_order p JOIN leaves l ON l.root = p.material_no
+            JOIN material m ON m.material_no = l.material_no
+            WHERE p.planned_start > DATE '2026-11-01' AND m.description = 'RF generator'
+            UNION ALL
+            SELECT NULL, i.material_no, sp.plant_code, i.promised_date, i.qty
+            FROM sales_order_item i JOIN spare_plant sp ON sp.material_no = i.material_no
+            JOIN material m ON m.material_no = i.material_no
+            WHERE i.status = 'Open' AND i.promised_date > DATE '2026-11-01'
+              AND m.description = 'RF generator'
+        ), daily_demand AS (
+            SELECT material_no, plant_code, need_date, SUM(qty) AS qty FROM requirements
+            GROUP BY material_no, plant_code, need_date
+        ), cumulative_demand AS (
+            SELECT material_no, plant_code, need_date,
+                   SUM(qty) OVER (PARTITION BY material_no, plant_code ORDER BY need_date
+                                  ROWS UNBOUNDED PRECEDING) AS required_qty
+            FROM daily_demand
+        ), parameters AS (
+            SELECT 28 AS slip_days
+        ), scenarios AS (
+            SELECT 0 AS slip_days UNION ALL SELECT slip_days FROM parameters
+        ), supply_events AS (
+            SELECT s.material_no, s.plant_code, sc.slip_days, DATE '2026-11-01' AS day, s.qty
+            FROM stock s CROSS JOIN scenarios sc
+            UNION ALL
+            SELECT o.material_no, o.plant_code, sc.slip_days,
+                   CAST(GREATEST(o.confirmed_delivery_date
+                        + CASE WHEN o.supplier_no = 'V-10017' THEN sc.slip_days ELSE 0 END
+                          * INTERVAL 1 DAY, DATE '2026-11-01') AS DATE), o.qty
+            FROM outstanding o CROSS JOIN scenarios sc
+            WHERE o.confirmed_delivery_date IS NOT NULL
+        ), daily_supply AS (
+            SELECT material_no, plant_code, slip_days, day, SUM(qty) AS qty FROM supply_events
+            GROUP BY material_no, plant_code, slip_days, day
+        ), supply_balances AS (
+            SELECT material_no, plant_code, slip_days, day,
+                   SUM(qty) OVER (PARTITION BY material_no, plant_code, slip_days ORDER BY day
+                                  ROWS UNBOUNDED PRECEDING) AS available_qty
+            FROM daily_supply
+        ), availability AS (
+            SELECT r.prod_order_no, r.need_date, sc.slip_days,
+                   (SELECT MIN(s.day) FROM supply_balances s
+                    WHERE s.material_no = r.material_no AND s.plant_code = r.plant_code
+                      AND s.slip_days = sc.slip_days
+                      AND s.available_qty >= d.required_qty) AS available_date
+            FROM requirements r JOIN cumulative_demand d
+              ON d.material_no = r.material_no AND d.plant_code = r.plant_code
+                  AND d.need_date = r.need_date
+            CROSS JOIN scenarios sc
+            WHERE r.prod_order_no IS NOT NULL
+        ), line_risk AS (
+            SELECT i.so_no, i.line_no, c.name AS customer_name, i.promised_date,
+                   p.planned_start, a.slip_days,
+                   MAX(datediff('day', p.planned_start, a.available_date)) AS days_at_risk
+            FROM availability a JOIN production_order p ON p.prod_order_no = a.prod_order_no
+            JOIN sales_order_item i ON i.so_no = p.so_no AND i.line_no = p.so_line_no
+            JOIN sales_order h ON h.so_no = i.so_no
+            JOIN customer c ON c.customer_no = h.customer_no
+            JOIN material m ON m.material_no = p.material_no
+            WHERE i.status = 'Open' AND m.material_type = 'TOOL' AND m.family_code = 'ETC'
+              AND h.order_date <= DATE '2026-11-01'
+            GROUP BY i.so_no, i.line_no, c.name, i.promised_date, p.planned_start, a.slip_days
+        )
+        SELECT so_no, line_no, customer_name, promised_date, planned_start, days_at_risk
+        FROM line_risk WHERE slip_days = 28 AND days_at_risk > 0
+        ORDER BY so_no, line_no
+        """,
+    ),
+    (
+        "plan-at-risk-orders",
+        """
+        WITH RECURSIVE tree AS (
+            SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+            FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+            WHERE m.material_type = 'TOOL'
+            UNION ALL
+            SELECT t.root, t.family_code, b.component_material_no,
+                   CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+            FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+            WHERE t.level < 10
+        ), leaves AS (
+            SELECT t.root, t.family_code, t.material_no, SUM(t.qty) AS qty
+            FROM tree t JOIN material m ON m.material_no = t.material_no
+            WHERE m.material_type = 'COMPONENT'
+            GROUP BY t.root, t.family_code, t.material_no
+        ), outstanding AS (
+            SELECT i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                   i.confirmed_delivery_date, i.order_qty - COALESCE(SUM(g.qty), 0) AS qty
+            FROM purchase_order_item i JOIN purchase_order h ON h.po_no = i.po_no
+            LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
+            WHERE h.order_date <= DATE '2026-11-01'
+            GROUP BY i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                     i.confirmed_delivery_date, i.order_qty
+            HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
+        ), stock AS (
+            SELECT material_no, plant_code, SUM(qty_on_hand) AS qty FROM inventory
+            WHERE storage_location = 'FG01'
+            GROUP BY material_no, plant_code
+        ), spare_plant AS (
+            SELECT material_no, MIN(CASE family_code WHEN 'ETC' THEN 'SC01'
+                                   WHEN 'CMP' THEN 'SG01' ELSE 'AU01' END) AS plant_code
+            FROM leaves GROUP BY material_no
+        ), requirements AS (
+            SELECT p.prod_order_no, l.material_no, p.plant_code, p.planned_start AS need_date,
+                   p.qty * l.qty AS qty
+            FROM production_order p JOIN leaves l ON l.root = p.material_no
+            JOIN material m ON m.material_no = l.material_no
+            WHERE p.planned_start > DATE '2026-11-01' AND m.description = 'RF generator'
+            UNION ALL
+            SELECT NULL, i.material_no, sp.plant_code, i.promised_date, i.qty
+            FROM sales_order_item i JOIN spare_plant sp ON sp.material_no = i.material_no
+            JOIN material m ON m.material_no = i.material_no
+            WHERE i.status = 'Open' AND i.promised_date > DATE '2026-11-01'
+              AND m.description = 'RF generator'
+        ), daily_demand AS (
+            SELECT material_no, plant_code, need_date, SUM(qty) AS qty FROM requirements
+            GROUP BY material_no, plant_code, need_date
+        ), cumulative_demand AS (
+            SELECT material_no, plant_code, need_date,
+                   SUM(qty) OVER (PARTITION BY material_no, plant_code ORDER BY need_date
+                                  ROWS UNBOUNDED PRECEDING) AS required_qty
+            FROM daily_demand
+        ), parameters AS (
+            SELECT 28 AS slip_days
+        ), scenarios AS (
+            SELECT 0 AS slip_days UNION ALL SELECT slip_days FROM parameters
+        ), supply_events AS (
+            SELECT s.material_no, s.plant_code, sc.slip_days, DATE '2026-11-01' AS day, s.qty
+            FROM stock s CROSS JOIN scenarios sc
+            UNION ALL
+            SELECT o.material_no, o.plant_code, sc.slip_days,
+                   CAST(GREATEST(o.confirmed_delivery_date
+                        + CASE WHEN o.supplier_no = 'V-10017' THEN sc.slip_days ELSE 0 END
+                          * INTERVAL 1 DAY, DATE '2026-11-01') AS DATE), o.qty
+            FROM outstanding o CROSS JOIN scenarios sc
+            WHERE o.confirmed_delivery_date IS NOT NULL
+        ), daily_supply AS (
+            SELECT material_no, plant_code, slip_days, day, SUM(qty) AS qty FROM supply_events
+            GROUP BY material_no, plant_code, slip_days, day
+        ), supply_balances AS (
+            SELECT material_no, plant_code, slip_days, day,
+                   SUM(qty) OVER (PARTITION BY material_no, plant_code, slip_days ORDER BY day
+                                  ROWS UNBOUNDED PRECEDING) AS available_qty
+            FROM daily_supply
+        ), availability AS (
+            SELECT r.prod_order_no, r.need_date, sc.slip_days,
+                   (SELECT MIN(s.day) FROM supply_balances s
+                    WHERE s.material_no = r.material_no AND s.plant_code = r.plant_code
+                      AND s.slip_days = sc.slip_days
+                      AND s.available_qty >= d.required_qty) AS available_date
+            FROM requirements r JOIN cumulative_demand d
+              ON d.material_no = r.material_no AND d.plant_code = r.plant_code
+                  AND d.need_date = r.need_date
+            CROSS JOIN scenarios sc
+            WHERE r.prod_order_no IS NOT NULL
+        ), line_risk AS (
+            SELECT i.so_no, i.line_no, c.name AS customer_name, i.promised_date,
+                   p.planned_start, a.slip_days,
+                   MAX(datediff('day', p.planned_start, a.available_date)) AS days_at_risk
+            FROM availability a JOIN production_order p ON p.prod_order_no = a.prod_order_no
+            JOIN sales_order_item i ON i.so_no = p.so_no AND i.line_no = p.so_line_no
+            JOIN sales_order h ON h.so_no = i.so_no
+            JOIN customer c ON c.customer_no = h.customer_no
+            JOIN material m ON m.material_no = p.material_no
+            WHERE i.status = 'Open' AND m.material_type = 'TOOL' AND m.family_code = 'ETC'
+              AND h.order_date <= DATE '2026-11-01'
+            GROUP BY i.so_no, i.line_no, c.name, i.promised_date, p.planned_start, a.slip_days
+        )
+        SELECT so_no, line_no, customer_name, promised_date, planned_start, days_at_risk
+        FROM line_risk WHERE slip_days = 0 AND days_at_risk > 0
+        ORDER BY so_no, line_no
+        """,
+    ),
+    (
+        "plan-bay-load",
+        """
+        WITH weeks AS (
+            SELECT DISTINCT CAST(date_trunc('week', planned_start) AS DATE) AS week_start
+            FROM production_order
+            WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+        ), loads AS (
+            SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
+                   COUNT(*) AS starts
+            FROM production_order
+            WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+            GROUP BY bay_id, CAST(date_trunc('week', planned_start) AS DATE)
+        ), grid AS (
+            SELECT b.bay_id, w.week_start, COALESCE(l.starts, 0) AS starts, b.weekly_slots
+            FROM build_bay b CROSS JOIN weeks w
+            LEFT JOIN loads l ON l.bay_id = b.bay_id AND l.week_start = w.week_start
+        )
+        SELECT bay_id, week_start, starts, weekly_slots,
+               ROUND(100.0 * starts / weekly_slots, 2) AS load_pct,
+               starts >= weekly_slots AS overloaded
+        FROM grid ORDER BY bay_id, week_start
+        """,
+    ),
+    (
+        "plan-bay-load",
+        """
+        WITH weeks AS (
+            SELECT DISTINCT CAST(date_trunc('week', planned_start) AS DATE) AS week_start
+            FROM production_order
+            WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+        ), loads AS (
+            SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
+                   COUNT(*) AS starts
+            FROM production_order
+            WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+            GROUP BY bay_id, CAST(date_trunc('week', planned_start) AS DATE)
+        ), grid AS (
+            SELECT b.bay_id, w.week_start, COALESCE(l.starts, 0) AS starts, b.weekly_slots
+            FROM build_bay b CROSS JOIN weeks w
+            LEFT JOIN loads l ON l.bay_id = b.bay_id AND l.week_start = w.week_start
+        )
+        SELECT bay_id, week_start, starts, weekly_slots,
+               ROUND(100.0 * starts / weekly_slots, 2) AS load_pct,
+               starts > weekly_slots AS overloaded
+        FROM grid WHERE starts > 0 ORDER BY bay_id, week_start
+        """,
+    ),
+    (
+        "plan-corvane-what-if",
+        """
+        WITH RECURSIVE tree AS (
+            SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+            FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+            WHERE m.material_type = 'TOOL'
+            UNION ALL
+            SELECT t.root, t.family_code, b.component_material_no,
+                   CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+            FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+            WHERE t.level < 10
+        ), leaves AS (
+            SELECT t.root, t.family_code, t.material_no, SUM(t.qty) AS qty
+            FROM tree t JOIN material m ON m.material_no = t.material_no
+            WHERE m.material_type = 'COMPONENT'
+            GROUP BY t.root, t.family_code, t.material_no
+        ), outstanding AS (
+            SELECT i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                   i.confirmed_delivery_date, i.order_qty - COALESCE(SUM(g.qty), 0) AS qty
+            FROM purchase_order_item i JOIN purchase_order h ON h.po_no = i.po_no
+            LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
+            WHERE h.order_date <= DATE '2026-11-01'
+            GROUP BY i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                     i.confirmed_delivery_date, i.order_qty
+            HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
+        ), stock AS (
+            SELECT material_no, plant_code, SUM(qty_on_hand) AS qty FROM inventory
+            WHERE storage_location = 'RM01'
+            GROUP BY material_no, plant_code
+        ), spare_plant AS (
+            SELECT material_no, MIN(CASE family_code WHEN 'ETC' THEN 'SC01'
+                                   WHEN 'CMP' THEN 'SG01' ELSE 'AU01' END) AS plant_code
+            FROM leaves GROUP BY material_no
+        ), requirements AS (
+            SELECT p.prod_order_no, l.material_no, p.plant_code, p.planned_start AS need_date,
+                   p.qty * l.qty AS qty
+            FROM production_order p JOIN leaves l ON l.root = p.material_no
+            JOIN material m ON m.material_no = l.material_no
+            WHERE p.planned_start > DATE '2026-11-01' AND m.description = 'RF generator'
+            UNION ALL
+            SELECT NULL, i.material_no, sp.plant_code, i.promised_date, i.qty
+            FROM sales_order_item i JOIN spare_plant sp ON sp.material_no = i.material_no
+            JOIN material m ON m.material_no = i.material_no
+            WHERE i.status = 'Open' AND i.promised_date > DATE '2026-11-01'
+              AND m.description = 'RF generator'
+        ), daily_demand AS (
+            SELECT material_no, plant_code, need_date, SUM(qty) AS qty FROM requirements
+            GROUP BY material_no, plant_code, need_date
+        ), cumulative_demand AS (
+            SELECT material_no, plant_code, need_date,
+                   SUM(qty) OVER (PARTITION BY material_no, plant_code ORDER BY need_date
+                                  ROWS UNBOUNDED PRECEDING) AS required_qty
+            FROM daily_demand
+        ), parameters AS (
+            SELECT 0 AS slip_days
+        ), scenarios AS (
+            SELECT 0 AS slip_days UNION ALL SELECT slip_days FROM parameters
+        ), supply_events AS (
+            SELECT s.material_no, s.plant_code, sc.slip_days, DATE '2026-11-01' AS day, s.qty
+            FROM stock s CROSS JOIN scenarios sc
+            UNION ALL
+            SELECT o.material_no, o.plant_code, sc.slip_days,
+                   CAST(GREATEST(o.confirmed_delivery_date
+                        + CASE WHEN o.supplier_no = 'V-10017' THEN sc.slip_days ELSE 0 END
+                          * INTERVAL 1 DAY, DATE '2026-11-01') AS DATE), o.qty
+            FROM outstanding o CROSS JOIN scenarios sc
+            WHERE o.confirmed_delivery_date IS NOT NULL
+        ), daily_supply AS (
+            SELECT material_no, plant_code, slip_days, day, SUM(qty) AS qty FROM supply_events
+            GROUP BY material_no, plant_code, slip_days, day
+        ), supply_balances AS (
+            SELECT material_no, plant_code, slip_days, day,
+                   SUM(qty) OVER (PARTITION BY material_no, plant_code, slip_days ORDER BY day
+                                  ROWS UNBOUNDED PRECEDING) AS available_qty
+            FROM daily_supply
+        ), availability AS (
+            SELECT r.prod_order_no, r.need_date, sc.slip_days,
+                   (SELECT MIN(s.day) FROM supply_balances s
+                    WHERE s.material_no = r.material_no AND s.plant_code = r.plant_code
+                      AND s.slip_days = sc.slip_days
+                      AND s.available_qty >= d.required_qty) AS available_date
+            FROM requirements r JOIN cumulative_demand d
+              ON d.material_no = r.material_no AND d.plant_code = r.plant_code
+                  AND d.need_date = r.need_date
+            CROSS JOIN scenarios sc
+            WHERE r.prod_order_no IS NOT NULL
+        ), line_risk AS (
+            SELECT i.so_no, i.line_no, c.name AS customer_name, i.promised_date,
+                   p.planned_start, a.slip_days,
+                   MAX(datediff('day', p.planned_start, a.available_date)) AS days_at_risk
+            FROM availability a JOIN production_order p ON p.prod_order_no = a.prod_order_no
+            JOIN sales_order_item i ON i.so_no = p.so_no AND i.line_no = p.so_line_no
+            JOIN sales_order h ON h.so_no = i.so_no
+            JOIN customer c ON c.customer_no = h.customer_no
+            JOIN material m ON m.material_no = p.material_no
+            WHERE i.status = 'Open' AND m.material_type = 'TOOL' AND m.family_code = 'ETC'
+              AND h.order_date <= DATE '2026-11-01'
+            GROUP BY i.so_no, i.line_no, c.name, i.promised_date, p.planned_start, a.slip_days
+        ), compared AS (
+            SELECT so_no, line_no,
+                   MAX(CASE WHEN slip_days = 0 AND days_at_risk > 0 THEN 1 ELSE 0 END) AS baseline,
+                   MAX(CASE WHEN slip_days = (SELECT slip_days FROM parameters)
+                             AND days_at_risk > 0 THEN 1 ELSE 0 END) AS slipped
+            FROM line_risk GROUP BY so_no, line_no
+        )
+        SELECT SUM(baseline) AS baseline_at_risk, SUM(slipped) AS slipped_at_risk,
+               SUM(CASE WHEN slipped = 1 AND baseline = 0 THEN 1 ELSE 0 END) AS additional_at_risk
+        FROM compared
+        """,
+    ),
+    (
+        "plan-corvane-what-if",
+        """
+        WITH RECURSIVE tree AS (
+            SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+            FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+            WHERE m.material_type = 'TOOL'
+            UNION ALL
+            SELECT t.root, t.family_code, b.component_material_no,
+                   CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+            FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+            WHERE t.level < 10
+        ), leaves AS (
+            SELECT t.root, t.family_code, t.material_no, SUM(t.qty) AS qty
+            FROM tree t JOIN material m ON m.material_no = t.material_no
+            WHERE m.material_type = 'COMPONENT'
+            GROUP BY t.root, t.family_code, t.material_no
+        ), outstanding AS (
+            SELECT i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                   i.confirmed_delivery_date, i.order_qty - COALESCE(SUM(g.qty), 0) AS qty
+            FROM purchase_order_item i JOIN purchase_order h ON h.po_no = i.po_no
+            LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
+            WHERE h.order_date <= DATE '2026-11-01'
+            GROUP BY i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+                     i.confirmed_delivery_date, i.order_qty
+            HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
+        ), stock AS (
+            SELECT material_no, plant_code, SUM(qty_on_hand) AS qty FROM inventory
+            WHERE storage_location = 'RM01'
+            GROUP BY material_no, plant_code
+        ), spare_plant AS (
+            SELECT material_no, MIN(CASE family_code WHEN 'ETC' THEN 'SC01'
+                                   WHEN 'CMP' THEN 'SG01' ELSE 'AU01' END) AS plant_code
+            FROM leaves GROUP BY material_no
+        ), requirements AS (
+            SELECT p.prod_order_no, l.material_no, p.plant_code, p.planned_start AS need_date,
+                   p.qty * l.qty AS qty
+            FROM production_order p JOIN leaves l ON l.root = p.material_no
+            JOIN material m ON m.material_no = l.material_no
+            WHERE p.planned_start > DATE '2026-11-01' AND m.description = 'RF generator'
+            UNION ALL
+            SELECT NULL, i.material_no, sp.plant_code, i.promised_date, i.qty
+            FROM sales_order_item i JOIN spare_plant sp ON sp.material_no = i.material_no
+            JOIN material m ON m.material_no = i.material_no
+            WHERE i.status = 'Open' AND i.promised_date > DATE '2026-11-01'
+              AND m.description = 'RF generator'
+        ), daily_demand AS (
+            SELECT material_no, plant_code, need_date, SUM(qty) AS qty FROM requirements
+            GROUP BY material_no, plant_code, need_date
+        ), cumulative_demand AS (
+            SELECT material_no, plant_code, need_date,
+                   SUM(qty) OVER (PARTITION BY material_no, plant_code ORDER BY need_date
+                                  ROWS UNBOUNDED PRECEDING) AS required_qty
+            FROM daily_demand
+        ), parameters AS (
+            SELECT 28 AS slip_days
+        ), scenarios AS (
+            SELECT 0 AS slip_days UNION ALL SELECT slip_days FROM parameters
+        ), supply_events AS (
+            SELECT s.material_no, s.plant_code, sc.slip_days, DATE '2026-11-01' AS day, s.qty
+            FROM stock s CROSS JOIN scenarios sc
+            UNION ALL
+            SELECT o.material_no, o.plant_code, sc.slip_days,
+                   CAST(GREATEST(o.confirmed_delivery_date
+                        + CASE WHEN o.supplier_no = 'V-10017' THEN sc.slip_days ELSE 0 END
+                          * INTERVAL 1 DAY, DATE '2026-11-01') AS DATE), o.qty
+            FROM outstanding o CROSS JOIN scenarios sc
+            WHERE o.confirmed_delivery_date IS NOT NULL
+        ), daily_supply AS (
+            SELECT material_no, plant_code, slip_days, day, SUM(qty) AS qty FROM supply_events
+            GROUP BY material_no, plant_code, slip_days, day
+        ), supply_balances AS (
+            SELECT material_no, plant_code, slip_days, day,
+                   SUM(qty) OVER (PARTITION BY material_no, plant_code, slip_days ORDER BY day
+                                  ROWS UNBOUNDED PRECEDING) AS available_qty
+            FROM daily_supply
+        ), availability AS (
+            SELECT r.prod_order_no, r.need_date, sc.slip_days,
+                   (SELECT MIN(s.day) FROM supply_balances s
+                    WHERE s.material_no = r.material_no AND s.plant_code = r.plant_code
+                      AND s.slip_days = sc.slip_days
+                      AND s.available_qty >= d.required_qty) AS available_date
+            FROM requirements r JOIN cumulative_demand d
+              ON d.material_no = r.material_no AND d.plant_code = r.plant_code
+                  AND d.need_date = r.need_date
+            CROSS JOIN scenarios sc
+            WHERE r.prod_order_no IS NOT NULL
+        ), line_risk AS (
+            SELECT i.so_no, i.line_no, c.name AS customer_name, i.promised_date,
+                   p.planned_start, a.slip_days,
+                   MAX(datediff('day', p.planned_start, a.available_date)) AS days_at_risk
+            FROM availability a JOIN production_order p ON p.prod_order_no = a.prod_order_no
+            JOIN sales_order_item i ON i.so_no = p.so_no AND i.line_no = p.so_line_no
+            JOIN sales_order h ON h.so_no = i.so_no
+            JOIN customer c ON c.customer_no = h.customer_no
+            JOIN material m ON m.material_no = p.material_no
+            WHERE i.status = 'Open' AND m.material_type = 'TOOL' AND m.family_code = 'ETC'
+              AND h.order_date <= DATE '2026-11-01'
+            GROUP BY i.so_no, i.line_no, c.name, i.promised_date, p.planned_start, a.slip_days
+        ), compared AS (
+            SELECT so_no, line_no,
+                   MAX(CASE WHEN slip_days = 0 AND days_at_risk > 0 THEN 1 ELSE 0 END) AS baseline,
+                   MAX(CASE WHEN slip_days = (SELECT slip_days FROM parameters)
+                             AND days_at_risk > 0 THEN 1 ELSE 0 END) AS slipped
+            FROM line_risk GROUP BY so_no, line_no
+        )
+        SELECT SUM(baseline) AS baseline_at_risk, SUM(slipped) AS slipped_at_risk,
+               SUM(slipped) AS additional_at_risk
+        FROM compared
+        """,
+    ),
+    (
+        "drill-late-suppliers",
+        """
+        WITH late AS (
+            SELECT h.supplier_no, s.name AS supplier_name, COUNT(*) AS late_receipts
+            FROM goods_receipt g JOIN purchase_order_item i
+          ON i.po_no = g.po_no AND i.line_no = g.line_no
+            JOIN purchase_order h ON h.po_no = i.po_no
+        JOIN supplier s ON s.supplier_no = h.supplier_no
+            WHERE g.receipt_date >= DATE '2025-11-01' AND g.receipt_date < DATE '2026-11-01'
+              AND g.receipt_date > i.requested_delivery_date
+            GROUP BY h.supplier_no, s.name
+        )
+        SELECT supplier_no, supplier_name, late_receipts,
+               ROUND(100.0 * late_receipts / SUM(late_receipts) OVER (), 2) AS share_pct,
+               ROUND(100.0 * SUM(late_receipts) OVER (ORDER BY late_receipts DESC, supplier_no
+                     ROWS UNBOUNDED PRECEDING) / SUM(late_receipts) OVER (), 2) AS cumulative_pct
+        FROM late ORDER BY late_receipts DESC, supplier_no
+        """,
+    ),
+    (
+        "drill-late-suppliers",
+        """
+        WITH late AS (
+            SELECT h.supplier_no, s.name AS supplier_name, COUNT(DISTINCT i.po_no) AS late_receipts
+            FROM goods_receipt g JOIN purchase_order_item i
+          ON i.po_no = g.po_no AND i.line_no = g.line_no
+            JOIN purchase_order h ON h.po_no = i.po_no
+        JOIN supplier s ON s.supplier_no = h.supplier_no
+            WHERE g.receipt_date >= DATE '2025-11-01' AND g.receipt_date < DATE '2026-11-01'
+              AND g.receipt_date > i.confirmed_delivery_date
+            GROUP BY h.supplier_no, s.name
+        )
+        SELECT supplier_no, supplier_name, late_receipts,
+               ROUND(100.0 * late_receipts / SUM(late_receipts) OVER (), 2) AS share_pct,
+               ROUND(100.0 * SUM(late_receipts) OVER (ORDER BY late_receipts DESC, supplier_no
+                     ROWS UNBOUNDED PRECEDING) / SUM(late_receipts) OVER (), 2) AS cumulative_pct
+        FROM late ORDER BY late_receipts DESC, supplier_no
+        """,
+    ),
+    (
+        "drill-halcyon-demand",
+        """
+        WITH bookings AS (
+            SELECT SUM(CASE WHEN h.order_date >= DATE '2025-07-01'
+                            AND h.order_date < DATE '2025-11-01'
+                            THEN i.qty ELSE 0 END) AS booked_2025,
+                   SUM(CASE WHEN h.order_date >= DATE '2026-07-01'
+                            AND h.order_date < DATE '2026-11-01'
+                            THEN i.qty ELSE 0 END) AS booked_2026
+            FROM sales_order_item i JOIN sales_order h ON h.so_no = i.so_no
+            JOIN material m ON m.material_no = i.material_no
+            WHERE h.customer_no IS NOT NULL AND m.material_type = 'TOOL' AND m.family_code = 'ETC'
+              AND i.status <> 'Cancelled'
+        ), forecast AS (
+            SELECT SUM(CASE WHEN f.forecast_version = '2026-09' THEN f.qty ELSE 0 END)
+                   AS forecast_09,
+                   SUM(CASE WHEN f.forecast_version = '2026-10' THEN f.qty ELSE 0 END)
+                   AS forecast_10
+            FROM demand_forecast f JOIN material m ON m.material_no = f.material_no
+            WHERE m.material_type = 'TOOL' AND m.family_code = 'ETC'
+              AND f.forecast_month >= DATE '2026-11-01' AND f.forecast_month < DATE '2027-02-01'
+              AND f.forecast_version IN ('2026-09', '2026-10')
+        )
+        SELECT b.booked_2025, b.booked_2026,
+               ROUND(100.0 * (b.booked_2026 - b.booked_2025) / NULLIF(b.booked_2025, 0), 2)
+                   AS booking_growth_pct,
+               f.forecast_09, f.forecast_10,
+               ROUND(100.0 * (f.forecast_10 - f.forecast_09) / NULLIF(f.forecast_09, 0), 2)
+                   AS forecast_growth_pct
+        FROM bookings b CROSS JOIN forecast f
+        """,
+    ),
+    (
+        "drill-halcyon-demand",
+        """
+        WITH bookings AS (
+            SELECT SUM(CASE WHEN h.order_date >= DATE '2025-01-01'
+                            AND h.order_date < DATE '2025-11-01'
+                            THEN i.qty ELSE 0 END) AS booked_2025,
+                   SUM(CASE WHEN h.order_date >= DATE '2026-07-01'
+                            AND h.order_date < DATE '2026-11-01'
+                            THEN i.qty ELSE 0 END) AS booked_2026
+            FROM sales_order_item i JOIN sales_order h ON h.so_no = i.so_no
+            JOIN material m ON m.material_no = i.material_no
+            WHERE h.customer_no = 'C-2003' AND m.material_type = 'TOOL' AND m.family_code = 'ETC'
+              AND i.status <> 'Cancelled'
+        ), forecast AS (
+            SELECT SUM(CASE WHEN f.forecast_version = '2026-09' THEN f.qty ELSE 0 END)
+                   AS forecast_09,
+                   SUM(CASE WHEN f.forecast_version = '2026-10' THEN f.qty ELSE 0 END)
+                   AS forecast_10
+            FROM demand_forecast f JOIN material m ON m.material_no = f.material_no
+            WHERE m.material_type = 'TOOL' AND m.family_code = 'ETC'
+              AND f.forecast_month >= DATE '2026-11-01' AND f.forecast_month < DATE '2027-02-01'
+              AND f.forecast_version IN ('2026-09', '2026-10')
+        )
+        SELECT b.booked_2025, b.booked_2026,
+               ROUND(100.0 * (b.booked_2026 - b.booked_2025) / NULLIF(b.booked_2025, 0), 2)
+                   AS booking_growth_pct,
+               f.forecast_09, f.forecast_10,
+               ROUND(100.0 * (f.forecast_10 - f.forecast_09) / NULLIF(f.forecast_09, 0), 2)
+                   AS forecast_growth_pct
+        FROM bookings b CROSS JOIN forecast f
+        """,
+    ),
+    (
+        "drill-bay-bottleneck",
+        """
+        WITH weeks AS (
+            SELECT DISTINCT CAST(date_trunc('week', planned_start) AS DATE) AS week_start
+            FROM production_order
+            WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+        ), loads AS (
+            SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
+                   COUNT(*) AS starts
+            FROM production_order
+            WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+            GROUP BY bay_id, CAST(date_trunc('week', planned_start) AS DATE)
+        ), grid AS (
+            SELECT b.bay_id, w.week_start, COALESCE(l.starts, 0) AS starts, b.weekly_slots
+            FROM build_bay b CROSS JOIN weeks w
+            LEFT JOIN loads l ON l.bay_id = b.bay_id AND l.week_start = w.week_start
+        )
+        SELECT bay_id, SUM(starts) AS total_starts, SUM(weekly_slots) AS total_slots,
+               SUM(CASE WHEN starts > weekly_slots THEN starts - weekly_slots ELSE 0 END)
+                   AS excess_starts,
+               ROUND(100.0 * SUM(starts) / SUM(weekly_slots), 2) AS load_pct
+        FROM grid WHERE starts > 0 GROUP BY bay_id ORDER BY load_pct DESC, bay_id
+        """,
+    ),
+    (
+        "drill-bay-bottleneck",
+        """
+        WITH weeks AS (
+            SELECT DISTINCT CAST(date_trunc('week', planned_start) AS DATE) AS week_start
+            FROM production_order
+            WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+        ), loads AS (
+            SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
+                   COUNT(*) AS starts
+            FROM production_order
+            WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+            GROUP BY bay_id, CAST(date_trunc('week', planned_start) AS DATE)
+        ), grid AS (
+            SELECT b.bay_id, w.week_start, COALESCE(l.starts, 0) AS starts, b.weekly_slots
+            FROM build_bay b CROSS JOIN weeks w
+            LEFT JOIN loads l ON l.bay_id = b.bay_id AND l.week_start = w.week_start
+        )
+        SELECT bay_id, SUM(starts) AS total_starts, SUM(weekly_slots) AS total_slots,
+               SUM(starts) - SUM(weekly_slots) AS excess_starts,
+               ROUND(100.0 * SUM(starts) / SUM(weekly_slots), 2) AS load_pct
+        FROM grid GROUP BY bay_id ORDER BY load_pct DESC, bay_id
+        """,
+    ),
+    (
+        "drill-spare-otd",
+        """
+        SELECT c.segment, COUNT(*) AS shipped_lines,
+               SUM(CASE WHEN i.shipped_date <= i.promised_date THEN 1 ELSE 0 END) AS on_time_lines,
+               ROUND(100.0 * SUM(CASE WHEN i.shipped_date <= i.promised_date THEN 1 ELSE 0 END)
+                     / COUNT(*), 2) AS on_time_pct
+        FROM sales_order_item i JOIN sales_order h ON h.so_no = i.so_no
+        JOIN customer c ON c.customer_no = h.customer_no
+        JOIN material m ON m.material_no = i.material_no
+        WHERE m.material_type = 'TOOL' AND i.status = 'Shipped' AND i.promised_date IS NOT NULL
+          AND i.shipped_date >= DATE '2025-11-01' AND i.shipped_date < DATE '2026-11-01'
+        GROUP BY c.segment ORDER BY c.segment
+        """,
+    ),
+    (
+        "drill-spare-otd",
+        """
+        SELECT c.segment, COUNT(*) AS shipped_lines,
+               SUM(CASE WHEN i.shipped_date <= i.promised_date THEN 1 ELSE 0 END) AS on_time_lines,
+               ROUND(100.0 * SUM(CASE WHEN i.shipped_date <= i.promised_date THEN 1 ELSE 0 END)
+                     / COUNT(*), 2) AS on_time_pct
+        FROM sales_order_item i JOIN sales_order h ON h.so_no = i.so_no
+        JOIN customer c ON c.customer_no = h.customer_no
+        JOIN material m ON m.material_no = i.material_no
+        WHERE m.material_type = 'COMPONENT' AND i.status = 'Shipped' AND i.promised_date IS NOT NULL
+          AND h.order_date >= DATE '2025-11-01' AND i.shipped_date < DATE '2026-11-01'
+        GROUP BY c.segment ORDER BY c.segment
+        """,
+    ),
+    (
+        "drill-excess-inventory",
+        """
+        WITH stock AS (
+            SELECT material_no, SUM(qty_on_hand) AS on_hand_qty FROM inventory
+            GROUP BY material_no HAVING SUM(qty_on_hand) > 0
+        )
+        SELECT m.material_no, m.description, s.on_hand_qty,
+               ROUND(s.on_hand_qty * q.unit_price, 2) AS on_hand_value
+        FROM stock s JOIN material m ON m.material_no = s.material_no
+        JOIN material_supplier q ON q.material_no = s.material_no AND q.is_primary = true
+        WHERE EXISTS (
+            SELECT 1 FROM stock_movement u WHERE u.material_no = s.material_no
+              AND u.movement_type IN ('261', '601')
+              AND u.posting_date >= DATE '2025-11-01' AND u.posting_date < DATE '2026-11-01'
+        )
+        ORDER BY on_hand_value DESC, m.material_no LIMIT 10
+        """,
+    ),
+    (
+        "drill-single-source",
+        """
+        WITH RECURSIVE tree AS (
+            SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+            FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+            WHERE m.material_type = 'TOOL'
+            UNION ALL
+            SELECT t.root, t.family_code, b.component_material_no,
+                   CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+            FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+            WHERE t.level < 10
+        ), leaves AS (
+            SELECT t.root, t.family_code, t.material_no, SUM(t.qty) AS qty
+            FROM tree t JOIN material m ON m.material_no = t.material_no
+            WHERE m.material_type = 'COMPONENT'
+            GROUP BY t.root, t.family_code, t.material_no
+        ), single_source AS (
+            SELECT material_no, MIN(supplier_no) AS supplier_no FROM material_supplier
+            GROUP BY material_no HAVING COUNT(*) >= 1
+        ), dependencies AS (
+            SELECT l.material_no, i.so_no, i.line_no, i.qty * l.qty AS component_qty,
+                   i.qty * i.unit_price AS revenue
+            FROM leaves l JOIN sales_order_item i ON i.material_no = l.root
+            JOIN sales_order h ON h.so_no = i.so_no
+            WHERE i.status = 'Open' AND h.order_date <= DATE '2026-11-01'
+        )
+        SELECT d.material_no, s.supplier_no, SUM(d.component_qty) AS open_component_qty,
+               COUNT(*) AS dependent_lines, ROUND(SUM(d.revenue), 2) AS exposed_revenue
+        FROM dependencies d JOIN single_source s ON s.material_no = d.material_no
+        JOIN material m ON m.material_no = d.material_no
+        WHERE m.is_long_lead = true AND m.material_type = 'COMPONENT'
+        GROUP BY d.material_no, s.supplier_no ORDER BY exposed_revenue DESC, d.material_no
+        """,
+    ),
+    (
+        "drill-single-source",
+        """
+        WITH RECURSIVE tree AS (
+            SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+            FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+            WHERE m.material_type = 'TOOL'
+            UNION ALL
+            SELECT t.root, t.family_code, b.component_material_no,
+                   CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+            FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+            WHERE t.level < 10
+        ), leaves AS (
+            SELECT t.root, t.family_code, t.material_no, SUM(t.qty) AS qty
+            FROM tree t JOIN material m ON m.material_no = t.material_no
+            WHERE m.material_type = 'COMPONENT'
+            GROUP BY t.root, t.family_code, t.material_no
+        ), single_source AS (
+            SELECT material_no, MIN(supplier_no) AS supplier_no FROM material_supplier
+            GROUP BY material_no HAVING COUNT(*) = 1
+        ), dependencies AS (
+            SELECT l.material_no, i.so_no, i.line_no, i.qty * l.qty AS component_qty,
+                   i.qty * i.unit_price * l.qty AS revenue
+            FROM leaves l JOIN sales_order_item i ON i.material_no = l.root
+            JOIN sales_order h ON h.so_no = i.so_no
+            WHERE i.status = 'Open' AND h.order_date <= DATE '2026-11-01'
+        )
+        SELECT d.material_no, s.supplier_no, SUM(d.component_qty) AS open_component_qty,
+               COUNT(*) AS dependent_lines, ROUND(SUM(d.revenue), 2) AS exposed_revenue
+        FROM dependencies d JOIN single_source s ON s.material_no = d.material_no
+        JOIN material m ON m.material_no = d.material_no
+        WHERE m.is_long_lead = true AND m.material_type = 'COMPONENT'
+        GROUP BY d.material_no, s.supplier_no ORDER BY exposed_revenue DESC, d.material_no
+        """,
+    ),
 )
 
 
