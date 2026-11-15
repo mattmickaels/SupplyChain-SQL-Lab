@@ -23,6 +23,37 @@ def test_progress_round_trip(tmp_path: Path) -> None:
     assert reloaded.summary() == {"attempted": 1, "passed": 1}
 
 
+def test_draft_is_preferred_when_newer_than_last_sql(tmp_path: Path) -> None:
+    path = tmp_path / "progress.json"
+    store = ProgressStore(path)
+    store.record_attempt("sample-plants", "SELECT 1", False)
+    assert store.editor_sql("sample-plants") == "SELECT 1"
+    store.save_draft("sample-plants", "SELECT 2")
+    assert store.last_sql("sample-plants") == "SELECT 1"
+    assert store.status("sample-plants") == "attempted"
+    assert store.editor_sql("sample-plants") == "SELECT 2"
+    store.record_attempt("sample-plants", "SELECT 3", True)
+    assert store.last_sql("sample-plants") == "SELECT 3"
+    assert store.editor_sql("sample-plants") == "SELECT 3"
+    assert store.status("sample-plants") == "passed"
+    reloaded = ProgressStore(path)
+    assert reloaded.editor_sql("sample-plants") == "SELECT 3"
+    assert reloaded.summary() == {"attempted": 0, "passed": 1}
+
+
+def test_draft_without_attempt_stays_new(tmp_path: Path) -> None:
+    path = tmp_path / "progress.json"
+    store = ProgressStore(path)
+    store.save_draft("sample-plants", "SELECT 1")
+    assert store.status("sample-plants") == "new"
+    assert store.last_sql("sample-plants") is None
+    assert store.editor_sql("sample-plants") == "SELECT 1"
+    assert store.summary() == {"attempted": 0, "passed": 0}
+    reloaded = ProgressStore(path)
+    assert reloaded.status("sample-plants") == "new"
+    assert reloaded.editor_sql("sample-plants") == "SELECT 1"
+
+
 def test_passed_stays_passed_after_later_failed_attempt(tmp_path: Path) -> None:
     path = tmp_path / "progress.json"
     store = ProgressStore(path)

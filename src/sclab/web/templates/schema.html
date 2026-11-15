@@ -5,7 +5,7 @@
 <h1>{% if spec %}{{ spec.name }}{% else %}Schema{% endif %}</h1>
 {% if spec %}
 <p>{{ spec.description }}</p>
-<p>SAP name. {% if spec.sap_table %}{{ spec.sap_table }}{% else %}<span class="muted">None</span>{% endif %}</p>
+<p>{% if spec.sap_table %}SAP table: {{ spec.sap_table }}{% else %}-{% endif %}</p>
 <div class="grid-wrap">
   <table class="grid">
     <thead>
@@ -21,8 +21,8 @@
       <tr>
         <td>{{ column.name }}</td>
         <td>{{ column.sql_type }}</td>
-        <td>{% if column.sap_field %}{{ column.sap_field }}{% else %}<span class="muted">None</span>{% endif %}</td>
-        <td>{{ column.description }}</td>
+        <td>{% if column.sap_field %}{{ column.sap_field }}{% else %}-{% endif %}</td>
+        <td class="prose">{{ column.description }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -32,31 +32,16 @@
 {% if error %}
 <p class="message">{{ error }}</p>
 {% elif preview %}
-<div class="grid-wrap">
-  <table class="grid">
-    <thead>
-      <tr>
-        {% for name in preview.columns %}<th>{{ name }}</th>{% endfor %}
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in preview.rows %}
-      <tr>
-        {% for value in row %}
-        <td>{% if value is none %}<span class="null">NULL</span>{% else %}{{ value }}{% endif %}</td>
-        {% endfor %}
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+{% with columns=preview.columns, rows=preview.rows, types=preview.column_types %}
+{% include "_grid.html" %}
+{% endwith %}
 {% endif %}
 {% else %}
 <ul class="schema-list">
   {% for item in tables %}
   <li>
     <a href="/schema/{{ item.name }}">{{ item.name }}</a>
-    <span>{% if item.sap_table %}{{ item.sap_table }}{% else %}<span class="muted">None</span>{% endif %}</span>
+    <span>{% if item.sap_table %}{{ item.sap_table }}{% else %}-{% endif %}</span>
     <small>{{ item.description }}</small>
   </li>
   {% endfor %}

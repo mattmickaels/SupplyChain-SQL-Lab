@@ -28,7 +28,15 @@
         mode: "text/x-sql",
         lineNumbers: true,
         matchBrackets: true,
+        viewportMargin: Infinity,
       });
+      var input = editor.getInputField();
+      var label = el.getAttribute("aria-label") || "SQL";
+      input.setAttribute("aria-label", label);
+      if (el.id) {
+        input.id = el.id + "-input";
+      }
+      input.setAttribute("name", (el.id || "sql") + "-editor");
       el.editor = editor;
       editor.on("change", function () {
         editor.save();
@@ -45,4 +53,14 @@
   });
 
   document.body.addEventListener("htmx:configRequest", saveEditors);
+  document.body.addEventListener("htmx:responseError", function (event) {
+    var target = event.detail && event.detail.target;
+    if (!target) {
+      return;
+    }
+    var panel = document.createElement("p");
+    panel.className = "message";
+    panel.textContent = "Something went wrong. Try again.";
+    target.replaceChildren(panel);
+  });
 })();

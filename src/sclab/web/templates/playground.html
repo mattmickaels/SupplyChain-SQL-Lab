@@ -6,7 +6,7 @@
 <p>This editor writes to the practice database. The lesson database stays read-only.</p>
 <form id="playground-form">
   <label for="playground-sql">SQL</label>
-  <textarea id="playground-sql" name="sql" data-editor rows="8"></textarea>
+  <textarea id="playground-sql" name="sql" data-editor rows="8" aria-label="Playground"></textarea>
   <input type="hidden" name="target" value="sandbox">
   <div class="actions">
     <button type="button" data-run hx-post="/api/run" hx-include="#playground-form" hx-target="#playground-result">Run</button>

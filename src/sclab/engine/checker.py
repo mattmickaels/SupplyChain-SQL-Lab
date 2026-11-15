@@ -1,7 +1,7 @@
 import itertools
 from collections import Counter, defaultdict
-from dataclasses import dataclass
-from datetime import date
+from dataclasses import dataclass, field
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from sclab.engine.types import QueryResult
@@ -18,13 +18,27 @@ class CheckOutcome:
     extra_rows: list[tuple]
     expected_count: int
     actual_count: int
+    columns: list[str] = field(default_factory=list)
+    column_types: list[str] = field(default_factory=list)
+
+
+def canonical_number(x: object) -> float:
+    """Round away float noise, then to 6 decimal places. -0.0 becomes 0.0."""
+    value = round(round(float(x), 12), 6)
+    if value == 0.0:
+        return 0.0
+    return value
 
 
 def normalize_value(v: object) -> object:
     if v is None or isinstance(v, bool | str):
         return v
     if isinstance(v, int | float | Decimal):
-        return round(float(v), 6)
+        return canonical_number(v)
+    if isinstance(v, datetime):
+        if v.time() == time.min:
+            return v.date().isoformat()
+        return v.isoformat()
     if isinstance(v, date):
         return v.isoformat()
     return v

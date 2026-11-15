@@ -2,22 +2,7 @@
 <p class="message">{{ error }}</p>
 {% elif result %}
 <p class="meta">{{ note }} {{ result.elapsed_ms }} ms.</p>
-<div class="grid-wrap">
-  <table class="grid">
-    <thead>
-      <tr>
-        {% for name in result.columns %}<th>{{ name }}</th>{% endfor %}
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in result.rows %}
-      <tr>
-        {% for value in row %}
-        <td>{% if value is none %}<span class="null">NULL</span>{% else %}{{ value }}{% endif %}</td>
-        {% endfor %}
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+{% with columns=result.columns, rows=result.rows, types=result.column_types %}
+{% include "_grid.html" %}
+{% endwith %}
 {% endif %}

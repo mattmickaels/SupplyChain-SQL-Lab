@@ -34,6 +34,13 @@
     --null-bg: #2a3641;
     --shadow: none;
   }
+
+  .CodeMirror span.cm-keyword { color: #7ddecb; }
+  .CodeMirror span.cm-string { color: #f0c48a; }
+  .CodeMirror span.cm-number { color: #8fe7b0; }
+  .CodeMirror span.cm-comment { color: #c5d0da; }
+  .CodeMirror span.cm-operator { color: #e7eef4; }
+  .CodeMirror span.cm-variable-2 { color: #9dc7ff; }
 }
 
 * { box-sizing: border-box; }
@@ -127,6 +134,11 @@ h1 { margin: 0.2rem 0 1rem; font-size: 1.7rem; }
 
 .message, .summary { background: var(--warn-bg); color: var(--warn); }
 
+.message {
+  white-space: pre-wrap;
+  font-family: var(--mono);
+}
+
 label { display: block; font-weight: 600; margin-bottom: 0.35rem; }
 
 textarea {
@@ -172,6 +184,40 @@ button:focus-visible, a:focus-visible, textarea:focus-visible {
 
 .grid th { background: var(--bg); }
 
+.grid td.num, .grid th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.grid td.prose {
+  font-family: var(--sans);
+  white-space: normal;
+}
+
+.prose pre {
+  overflow-x: auto;
+  margin: 0.8rem 0;
+  padding: 0.75rem 0.9rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  font-family: var(--mono);
+  font-size: 0.92rem;
+}
+
+.prose code {
+  font-family: var(--mono);
+  background: var(--bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.25rem;
+}
+
+.prose pre code {
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
 .null {
   display: inline-block;
   padding: 0.02rem 0.35rem;
@@ -195,12 +241,15 @@ button:focus-visible, a:focus-visible, textarea:focus-visible {
 
 .CodeMirror {
   height: auto;
-  min-height: 8rem;
   border: 1px solid var(--line);
   border-radius: 0.4rem;
   font-family: var(--mono);
   background: var(--paper);
   color: var(--ink);
+}
+
+.CodeMirror-scroll {
+  min-height: 8rem;
 }
 
 .CodeMirror-gutters { background: var(--bg); border-right: 1px solid var(--line); }

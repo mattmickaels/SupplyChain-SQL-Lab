@@ -48,6 +48,15 @@ def load_lessons(content_dir: Path | None = None, include_sample: bool = False) 
             continue
         lessons.append(_lesson_from_folder(folder))
     lessons.sort(key=lambda lesson: (lesson.number, lesson.id))
+    seen: dict[str, str] = {}
+    for lesson in lessons:
+        for exercise in lesson.exercises:
+            previous = seen.get(exercise.id)
+            if previous is not None:
+                raise ValueError(
+                    f"Exercise id {exercise.id} is used in {previous} and {lesson.id}."
+                )
+            seen[exercise.id] = lesson.id
     return lessons
 
 
@@ -83,6 +92,8 @@ def check_answer(
             order_matters=exercise.order_matters,
             names_matter=exercise.names_matter,
         )
+        outcome.columns = list(expected.columns)
+        outcome.column_types = list(expected.column_types)
         if outcome.passed:
             return outcome
         if index == 0:

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -8,6 +8,7 @@ class QueryResult:
     total_rows: int
     truncated: bool
     elapsed_ms: int
+    column_types: list[str] = field(default_factory=list)
 
 
 class QueryError(Exception):

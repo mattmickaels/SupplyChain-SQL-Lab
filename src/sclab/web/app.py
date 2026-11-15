@@ -1,6 +1,8 @@
 """Server-rendered pages for lessons, the schema, and the playground."""
 
 import html
+from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -9,8 +11,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markdown_it import MarkdownIt
-from markupsafe import Markup
+from markupsafe import Markup, escape
 from starlette.concurrency import run_in_threadpool
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from sclab.constants import AS_OF_DATE, COMPANY_NAME
 from sclab.data.schema import TABLES
@@ -24,6 +27,25 @@ _WEB_DIR = Path(__file__).resolve().parent
 _STATIC_DIR = _WEB_DIR.parent / "static"
 _MD = MarkdownIt("commonmark", {"html": False, "linkify": False})
 _TABLES = {item.name: item for item in TABLES}
+_UNEXPECTED = "Something went wrong. Try again."
+_HTMX_REQUIRED = "Use the lab page to run that action."
+_NUMERIC_TYPES = {
+    "TINYINT",
+    "SMALLINT",
+    "INTEGER",
+    "BIGINT",
+    "HUGEINT",
+    "UTINYINT",
+    "USMALLINT",
+    "UINTEGER",
+    "UBIGINT",
+    "UHUGEINT",
+    "FLOAT",
+    "DOUBLE",
+    "REAL",
+    "DECIMAL",
+    "NUMERIC",
+}
 
 
 def create_app(content_dir: Path | None = None, include_sample: bool = False) -> FastAPI:
@@ -31,6 +53,8 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
     lessons = load_lessons(content_dir, include_sample=include_sample)
     exercises = {item.id: item for lesson in lessons for item in lesson.exercises}
     templates = Jinja2Templates(directory=_WEB_DIR / "templates")
+    templates.env.filters["cell"] = format_cell
+    templates.env.tests["numeric_type"] = is_numeric_type
     app = FastAPI(title=COMPANY_NAME, docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
@@ -61,7 +85,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
                     "title": item.title,
                     "prompt_html": _markdown(item.prompt_md),
                     "excel_tip": item.excel_tip,
-                    "sql": progress.last_sql(item.id) or "",
+                    "sql": progress.editor_sql(item.id) or "",
                 }
             )
         return render(
@@ -105,34 +129,43 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
 
     @app.post("/api/run")
     async def api_run(request: Request):
-        fields = await _form(request)
-        sql = fields.get("sql", "")
-        target = fields.get("target", "lesson")
         try:
-            result = await run_in_threadpool(run_query, sql, target)
-            context = {"error": None, "result": result, "note": _result_note(result)}
-        except QueryError as exc:
-            context = {"error": exc.message, "result": None, "note": ""}
-        return render(request, "_result.html", context)
+            fields = await _form(request)
+            sql = fields.get("sql", "")
+            target = fields.get("target", "lesson")
+            exercise_id = fields.get("exercise_id", "")
+            if exercise_id in exercises:
+                await run_in_threadpool(store().save_draft, exercise_id, sql)
+            try:
+                result = await run_in_threadpool(run_query, sql, target)
+                context = {"error": None, "result": result, "note": _result_note(result)}
+            except QueryError as exc:
+                context = {"error": exc.message, "result": None, "note": ""}
+            return render(request, "_result.html", context)
+        except HTTPException:
+            raise
+        except Exception:
+            return render(
+                request,
+                "_result.html",
+                {"error": _UNEXPECTED, "result": None, "note": ""},
+            )
 
     @app.post("/api/check/{exercise_id}")
     async def api_check(request: Request, exercise_id: str):
-        sql = (await _form(request)).get("sql", "")
-        exercise = _require_exercise(exercises, exercise_id)
-        error = None
-        outcome = None
         try:
-            outcome = await run_in_threadpool(check_answer, exercise, sql)
-            passed = outcome.passed
-        except QueryError as exc:
-            error = exc.message
-            passed = False
-        store().record_attempt(exercise_id, sql, passed)
-        return render(
-            request,
-            "_check.html",
-            {"error": error, "outcome": outcome},
-        )
+            sql = (await _form(request)).get("sql", "")
+            exercise = _require_exercise(exercises, exercise_id)
+            try:
+                outcome = await run_in_threadpool(check_answer, exercise, sql)
+            except QueryError as exc:
+                return render(request, "_check.html", {"error": exc.message, "outcome": None})
+            store().record_attempt(exercise_id, sql, outcome.passed)
+            return render(request, "_check.html", {"error": None, "outcome": outcome})
+        except HTTPException:
+            raise
+        except Exception:
+            return render(request, "_check.html", {"error": _UNEXPECTED, "outcome": None})
 
     @app.get("/api/hint/{exercise_id}/{n}")
     def api_hint(exercise_id: str, n: int):
@@ -159,10 +192,22 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         return HTMLResponse(f'<pre class="solution"><code>{sql}</code></pre>')
 
     @app.post("/api/sandbox/reset")
-    async def api_reset():
-        await run_in_threadpool(reset_sandbox)
+    async def api_reset(request: Request):
+        try:
+            await run_in_threadpool(reset_sandbox)
+        except HTTPException:
+            raise
+        except Exception:
+            return _plain_message(_UNEXPECTED)
         return HTMLResponse('<p class="banner">Practice database reset.</p>')
 
+    @app.middleware("http")
+    async def require_htmx_post(request: Request, call_next):
+        if request.method == "POST" and request.headers.get("hx-request") != "true":
+            return _plain_message(_HTMX_REQUIRED, status_code=403)
+        return await call_next(request)
+
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
     return app
 
 
@@ -170,6 +215,31 @@ async def _form(request: Request) -> dict[str, str]:
     raw = (await request.body()).decode("utf-8")
     parsed = parse_qs(raw, keep_blank_values=True)
     return {key: values[0] for key, values in parsed.items() if values}
+
+
+def _plain_message(text: str, status_code: int = 200) -> HTMLResponse:
+    return HTMLResponse(f'<p class="message">{html.escape(text)}</p>', status_code=status_code)
+
+
+def is_numeric_type(type_name: object) -> bool:
+    if not isinstance(type_name, str):
+        return False
+    head = type_name.strip().strip('"').upper().split("(", 1)[0].strip()
+    return head in _NUMERIC_TYPES
+
+
+def format_cell(value: object) -> Markup:
+    if value is None:
+        return Markup('<span class="null">NULL</span>')
+    if isinstance(value, bool):
+        return Markup("true" if value else "false")
+    if isinstance(value, datetime):
+        return Markup(escape(value.isoformat()))
+    if isinstance(value, date):
+        return Markup(escape(value.isoformat()))
+    if isinstance(value, Decimal | float | int):
+        return Markup(escape(str(value)))
+    return Markup(escape(str(value)))
 
 
 def _today() -> str:

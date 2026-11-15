@@ -21,6 +21,7 @@ def test_select_returns_columns_and_rows(lab_conn) -> None:
     expected = lab_conn.execute("SELECT plant_code FROM plant ORDER BY 1").fetchall()
     result = run_query("SELECT plant_code FROM plant ORDER BY 1")
     assert result.columns == ["plant_code"]
+    assert result.column_types == ["VARCHAR"]
     assert result.rows == [tuple(row) for row in expected]
     assert len(result.rows) == 3
     assert result.total_rows == 3
