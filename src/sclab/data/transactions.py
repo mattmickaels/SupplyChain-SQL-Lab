@@ -576,8 +576,10 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
         (grouped.loc[spread, "need_date"] - AS_OF_TS).dt.days.to_numpy(),
         AS_OF_TS,
     )
-    # A few lines are confirmed exactly 56 days after the snapshot, inside the same
-    # weekly bucket as their neighbours, so "before" and "on or before" differ there.
+    # Three lines are confirmed on 27 December 2026, 56 days after the snapshot.
+    # That day is a Sunday, so it sits in the Monday-start week of 21 December,
+    # earlier than the week of the neighbouring confirmations.
+    # "Before" and "on or before" that week edge therefore differ.
     edge = AS_OF_TS + pd.Timedelta(days=56)
     near = grouped.index[
         forward

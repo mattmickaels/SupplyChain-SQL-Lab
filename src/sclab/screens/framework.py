@@ -37,6 +37,7 @@ class Screen:
     exists_sql: str
     not_found: str
     params: tuple[str, ...] = ()
+    summary: str = ""
 
 
 @dataclass

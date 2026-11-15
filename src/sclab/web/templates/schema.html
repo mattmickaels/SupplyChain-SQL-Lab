@@ -1,11 +1,14 @@
 {% extends "base.html" %}
-{% block title %}{% if spec %}{{ spec.name }}{% else %}Schema{% endif %}{% endblock %}
+{% block title %}{% if spec %}{{ spec.name }}{% elif view %}{{ view.name }}{% else %}Schema{% endif %}{% endblock %}
 {% block content %}
 <p class="today">Today in the lab is {{ today }}.</p>
-<h1>{% if spec %}{{ spec.name }}{% else %}Schema{% endif %}</h1>
+<h1>{% if spec %}{{ spec.name }}{% elif view %}{{ view.name }}{% else %}Schema{% endif %}</h1>
 {% if spec %}
 <p>{{ spec.description }}</p>
 <p>{% if spec.sap_table %}SAP table: {{ spec.sap_table }}{% else %}-{% endif %}</p>
+{% if view_name %}
+<p>SAP view: <a href="/schema/{{ view_name }}">{{ view_name }}</a></p>
+{% endif %}
 <div class="grid-wrap">
   <table class="grid">
     <thead>
@@ -43,6 +46,46 @@
 {% include "_grid.html" %}
 {% endwith %}
 {% endif %}
+{% elif view %}
+<p>SAP view of <a href="/schema/{{ view.base }}">{{ view.base }}</a>.</p>
+<p>The columns use SAP field names.</p>
+<div class="grid-wrap">
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>SAP field</th>
+        <th>Lab column</th>
+        <th>Type</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for alias, english, sql_type, description in view.columns %}
+      <tr>
+        <td>{{ alias }}</td>
+        <td>{{ english }}</td>
+        <td>{{ sql_type }}</td>
+        <td class="prose">{{ description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<h2>First 20 rows</h2>
+{% if error %}
+<p class="message">{{ error }}</p>
+{% elif preview %}
+<form id="schema-{{ view.name }}">
+  <input type="hidden" name="sql" value="SELECT * FROM {{ view.name }} LIMIT 20">
+  <input type="hidden" name="target" value="lesson">
+  <input type="hidden" name="label" value="schema-{{ view.name }}">
+  <input type="hidden" name="return_to" value="/schema/{{ view.name }}">
+</form>
+{% set export_form = "schema-" ~ view.name %}
+{% with columns=preview.columns, rows=preview.rows, types=preview.column_types %}
+{% include "_grid.html" %}
+{% endwith %}
+{% endif %}
 {% else %}
 <ul class="schema-list">
   {% for item in tables %}
@@ -58,8 +101,8 @@
 <ul class="schema-list">
   {% for view_name, base_name in sap_views %}
   <li>
+    <a href="/schema/{{ view_name }}">{{ view_name }}</a>
     <span>{{ base_name }}</span>
-    <span>{{ view_name }}</span>
     <small>SAP field names.</small>
   </li>
   {% endfor %}

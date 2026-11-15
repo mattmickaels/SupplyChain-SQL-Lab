@@ -168,6 +168,7 @@ def _register() -> None:
         Screen(
             code="CS03",
             title="Display BOM",
+            summary="Bill of materials, one level at a time.",
             key_label="Material",
             queries=(
                 ScreenQuery("header", "Material", _HEADER),
@@ -182,6 +183,7 @@ def _register() -> None:
         Screen(
             code="CS15",
             title="Where-Used",
+            summary="Every parent that uses a component.",
             key_label="Component",
             queries=(
                 ScreenQuery("header", "Component", _HEADER),

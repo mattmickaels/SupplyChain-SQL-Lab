@@ -1,0 +1,5 @@
+{% if plants is defined and plants.get(number) %}
+<a class="drill" href="/screens/MM03?key={{ number | urlencode }}&amp;plant={{ plants.get(number) | urlencode }}">{{ number }}</a>
+{% else %}
+{{ number }}
+{% endif %}

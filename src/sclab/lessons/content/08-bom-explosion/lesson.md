@@ -121,5 +121,8 @@ Use UNION ALL so a repeated path is not dropped.
 Sum extended quantity by component before you multiply by an order quantity.
 Otherwise one order is counted once per path and then again.
 
+See the explosion of M-000011 on [CS03](/screens/CS03?key=M-000011).
+See where M-001321 is used on [CS15](/screens/CS15?key=M-001321).
+
 Check yourself.
 The depth guard sits in the recursive term, on a column named level, as level < 10.

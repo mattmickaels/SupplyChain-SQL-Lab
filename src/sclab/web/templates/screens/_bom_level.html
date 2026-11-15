@@ -14,7 +14,7 @@
         hx-target="#bom-{{ node_id }}"
         hx-swap="innerHTML">Expand</button>
       {% endif %}
-      <span class="mono">{{ row[0] }}</span>
+      <span class="mono">{% with number=row[0] %}{% include "screens/_material.html" %}{% endwith %}</span>
       <span>{{ row[1] }}</span>
       <span class="muted">{{ row[3] }}</span>
       <span class="num">{{ row[2] | cell(types[2]) }}</span>

@@ -27,6 +27,27 @@ SAP_VIEWS: dict[str, str] = {
 }
 
 
+def view_for_table(table_name: str) -> str | None:
+    """SAP view name for an English table, when this lab has one."""
+    for view_name, base_name in SAP_VIEWS.items():
+        if base_name == table_name:
+            return view_name
+    return None
+
+
+def sap_view(name: str) -> tuple[str, tuple[tuple[str, str, str, str], ...]] | None:
+    """Base table and columns (SAP name, English name, type, description) for one view."""
+    base_name = SAP_VIEWS.get(name.lower())
+    if base_name is None:
+        return None
+    spec = table(base_name)
+    columns = tuple(
+        (_sap_alias(column), column.name, column.sql_type, column.description)
+        for column in spec.columns
+    )
+    return base_name, columns
+
+
 def create_sap_views(conn: duckdb.DuckDBPyConnection) -> list[str]:
     """Create one view per SAP table name and return the view names."""
     created: list[str] = []

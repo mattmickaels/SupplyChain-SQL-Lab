@@ -16,13 +16,14 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from sclab.constants import AS_OF_DATE, COMPANY_NAME
-from sclab.data.sap_views import SAP_VIEWS
+from sclab.data.sap_views import SAP_VIEWS, sap_view, view_for_table
 from sclab.data.schema import TABLES
 from sclab.engine.query import QueryError, reset_sandbox, run_query
 from sclab.engine.types import QueryResult
 from sclab.lessons.model import Exercise, check_answer, load_lessons
 from sclab.lessons.progress import ProgressStore
 from sclab.paths import progress_path
+from sclab.screens.framework import all_screens
 from sclab.web import export as excel
 from sclab.web.cells import display_text, is_numeric_type
 from sclab.web.notebook_routes import register_notebook_routes
@@ -61,7 +62,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
     def home(request: Request):
         progress = store()
         cards = [_lesson_card(lesson, progress) for lesson in lessons]
-        return render(request, "home.html", {"lessons": cards})
+        return render(request, "home.html", {"lessons": cards, "screens": all_screens()})
 
     @app.get("/lessons/{lesson_id}")
     def lesson_page(request: Request, lesson_id: str):
@@ -94,6 +95,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
                 "lesson_title": lesson.title,
                 "body_html": _markdown(lesson.body_md),
                 "exercises": blocks,
+                "sap_links": _sap_links(lesson.body_md),
             },
         )
 
@@ -114,7 +116,29 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
     def schema_table(request: Request, table_name: str):
         spec = _TABLES.get(table_name)
         if spec is None:
-            raise HTTPException(status_code=404, detail="That table is not in the lab.")
+            viewed = sap_view(table_name)
+            if viewed is None:
+                raise HTTPException(status_code=404, detail="That table is not in the lab.")
+            base_name, columns = viewed
+            view_name = table_name.lower()
+            try:
+                preview = run_query(f"SELECT * FROM {view_name} LIMIT 20")
+                error = None
+            except QueryError as exc:
+                preview = None
+                error = exc.message
+            return render(
+                request,
+                "schema.html",
+                {
+                    "tables": list(TABLES),
+                    "spec": None,
+                    "view": {"name": view_name, "base": base_name, "columns": columns},
+                    "preview": preview,
+                    "error": error,
+                    "sap_views": list(SAP_VIEWS.items()),
+                },
+            )
         try:
             preview = run_query(f"SELECT * FROM {table_name} LIMIT 20")
             error = None
@@ -124,7 +148,13 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         return render(
             request,
             "schema.html",
-            {"tables": list(TABLES), "spec": spec, "preview": preview, "error": error},
+            {
+                "tables": list(TABLES),
+                "spec": spec,
+                "preview": preview,
+                "error": error,
+                "view_name": view_for_table(spec.name),
+            },
         )
 
     @app.get("/playground")
@@ -410,6 +440,15 @@ def format_cell(value: object, type_name: object = "") -> Markup:
 
 def _today() -> str:
     return f"{AS_OF_DATE.day} {AS_OF_DATE.strftime('%B')} {AS_OF_DATE.year}"
+
+
+def _sap_links(body_md: str) -> list[tuple[str, str]]:
+    names = set(re.findall(r"\b[a-z_][a-z0-9_]*\b", body_md))
+    return sorted(
+        (view_name, base_name)
+        for view_name, base_name in SAP_VIEWS.items()
+        if base_name in names or view_name in names
+    )
 
 
 def _markdown(text: str, *, inline: bool = False) -> Markup:

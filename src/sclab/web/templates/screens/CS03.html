@@ -6,7 +6,7 @@
 {% elif header.result and header.result.rows %}
 {% set item = header.result.rows[0] %}
 <div class="screen-header">
-  <p><span class="muted">Material</span> <span class="mono">{{ item[0] }}</span></p>
+  <p><span class="muted">Material</span> <span class="mono">{% with number=item[0] %}{% include "screens/_material.html" %}{% endwith %}</span></p>
   <p>{{ item[1] }}</p>
   <p><span class="muted">Type</span> {{ item[2] }}</p>
 </div>
@@ -17,6 +17,7 @@
   {% else %}
   <a href="/screens/CS03?key={{ data.key | urlencode }}&amp;view=explode">Explode all</a>
   {% endif %}
+  <a href="/screens/CS15?key={{ data.key | urlencode }}">Where used</a>
 </p>
 {% if view == 'explode' %}
 {% set run = data.runs['explode'] %}
@@ -40,7 +41,7 @@
       {% for row in run.result.rows %}
       <tr>
         <td class="num" data-level="{{ row[0] }}">{{ row[0] }}</td>
-        <td class="mono">{{ row[1] }}</td>
+        <td class="mono">{% with number=row[1] %}{% include "screens/_material.html" %}{% endwith %}</td>
         <td class="bom-indent" style="padding-left: {{ row[0] }}rem">{{ row[2] }}</td>
         <td>{{ row[3] }}</td>
         <td class="num">{{ row[5] | cell(run.result.column_types[5]) }}</td>

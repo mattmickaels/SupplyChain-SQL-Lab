@@ -10,12 +10,18 @@
 <body>
   <header class="top">
     <a class="wordmark" href="/">{{ company }}</a>
-    <nav>
+    <nav aria-label="Main">
       <a href="/">Lessons</a>
+      <a href="/screens">Screens</a>
+      <a href="/notebooks">Notebook</a>
       <a href="/schema">Schema</a>
       <a href="/playground">Playground</a>
-      <a href="/notebooks">Notebooks</a>
     </nav>
+    <form class="tcode-box" action="/screens/go" method="get">
+      <label for="header-tcode">Transaction code</label>
+      <input id="header-tcode" name="tcode" size="6" maxlength="8" autocomplete="off" spellcheck="false">
+      <button type="submit">Go</button>
+    </form>
   </header>
   <main>
     {% block content %}{% endblock %}

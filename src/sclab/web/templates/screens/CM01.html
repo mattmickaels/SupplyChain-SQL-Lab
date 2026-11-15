@@ -60,9 +60,35 @@
 {% if orders.error %}
 <p class="message">{{ orders.error }}</p>
 {% elif orders.result.rows %}
-{% with columns=orders.result.columns, rows=orders.result.rows, types=orders.result.column_types %}
-{% include "_grid.html" %}
-{% endwith %}
+{% set columns = orders.result.columns %}
+{% set types = orders.result.column_types %}
+<div class="grid-wrap">
+  <table class="grid">
+    <thead>
+      <tr>
+        {% for name in columns %}
+        <th>{{ name }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in orders.result.rows %}
+      <tr>
+        {% for value in row %}
+        {% set column = columns[loop.index0] %}
+        <td>
+          {% if column == 'material_no' and value %}
+          <a class="drill" href="/screens/MM03?key={{ value | urlencode }}&amp;plant={{ data.key | urlencode }}">{{ value }}</a>
+          {% else %}
+          {{ value | cell(types[loop.index0]) }}
+          {% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% else %}
 <p class="empty">No bay has production starts in the next {{ h[hc.index('horizon_weeks')] }} weeks.</p>
 {% endif %}
