@@ -6,11 +6,14 @@
 {% elif header.result and header.result.rows %}
 {% set item = header.result.rows[0] %}
 <div class="screen-header">
-  <p><span class="muted">Component</span> <span class="mono">{{ item[0] }}</span></p>
+  <p><span class="muted">Component</span> <span class="mono">{% with number=item[0] %}{% include "screens/_material.html" %}{% endwith %}</span></p>
   <p>{{ item[1] }}</p>
   <p><span class="muted">Type</span> {{ item[2] }}</p>
 </div>
 {% endif %}
+<p class="actions">
+  <a href="/screens/CS03?key={{ data.key | urlencode }}">Display BOM</a>
+</p>
 {% set run = data.runs['used'] %}
 {% if run.error %}
 <p class="message">{{ run.error }}</p>
@@ -30,7 +33,7 @@
       {% for row in run.result.rows %}
       <tr>
         <td class="num">{{ row[0] }}</td>
-        <td class="mono">{{ row[1] }}</td>
+        <td class="mono">{% with number=row[1] %}{% include "screens/_material.html" %}{% endwith %}</td>
         <td>{{ row[2] }}</td>
         <td>{{ row[3] }}</td>
         <td class="mono">{{ row[4] }}</td>

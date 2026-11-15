@@ -37,6 +37,11 @@ class Screen:
     exists_sql: str
     not_found: str
     params: tuple[str, ...] = ()
+    summary: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.summary.strip():
+            raise ValueError(f"Screen {self.code} needs a one-line summary.")
 
 
 @dataclass

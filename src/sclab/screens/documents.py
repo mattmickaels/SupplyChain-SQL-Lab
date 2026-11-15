@@ -15,6 +15,7 @@ def _screen(
     queries: tuple[ScreenQuery, ...],
     exists_sql: str,
     not_found: str,
+    summary: str,
     params: tuple[str, ...] = (),
 ) -> Screen:
     screen = Screen(
@@ -25,6 +26,7 @@ def _screen(
         exists_sql=exists_sql,
         not_found=not_found,
         params=params,
+        summary=summary,
     )
     register(screen)
     return screen
@@ -111,6 +113,7 @@ SCREENS = {
     "MM03": _screen(
         code="MM03",
         title="Display Material",
+        summary="Material master, plant data, stock, and open orders.",
         key_label="Material",
         params=("plant",),
         exists_sql="SELECT COUNT(*) FROM material WHERE material_no = $1",
@@ -181,6 +184,7 @@ SCREENS = {
     "XK03": _screen(
         code="XK03",
         title="Display Supplier",
+        summary="Supplier master, lead times, and on-time history.",
         key_label="Supplier",
         exists_sql="SELECT COUNT(*) FROM supplier WHERE supplier_no = $1",
         not_found="Supplier {key} was not found.",
@@ -235,6 +239,7 @@ SCREENS = {
     "ME23N": _screen(
         code="ME23N",
         title="Display Purchase Order",
+        summary="Purchase order header, lines, and goods receipts.",
         key_label="Purchase order",
         exists_sql="SELECT COUNT(*) FROM purchase_order WHERE po_no = $1",
         not_found="Purchase order {key} was not found.",
@@ -291,6 +296,7 @@ SCREENS = {
     "VA03": _screen(
         code="VA03",
         title="Display Sales Order",
+        summary="Sales order header and lines.",
         key_label="Sales order",
         exists_sql="SELECT COUNT(*) FROM sales_order WHERE so_no = $1",
         not_found="Sales order {key} was not found.",

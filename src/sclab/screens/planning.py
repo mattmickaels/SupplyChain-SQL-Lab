@@ -175,6 +175,7 @@ ORDER BY g.bay_id, g.week_start, p.planned_start, p.prod_order_no
 MD04 = Screen(
     code="MD04",
     title="Stock / Requirements List",
+    summary="Stock, receipts, requirements, and the projected balance.",
     key_label="Material",
     queries=(
         ScreenQuery("header", "Material and plant", MD04_HEADER_SQL),
@@ -188,6 +189,7 @@ MD04 = Screen(
 CM01 = Screen(
     code="CM01",
     title="Capacity Load",
+    summary="Weekly load of each build bay.",
     key_label="Plant",
     queries=(
         ScreenQuery("header", "Plant", CM01_HEADER_SQL),

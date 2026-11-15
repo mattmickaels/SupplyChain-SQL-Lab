@@ -4,6 +4,18 @@
 <p class="today">Today in the lab is {{ today }}.</p>
 <h1>{{ lesson_title }}</h1>
 <div class="prose">{{ body_html }}</div>
+{% if sap_links %}
+<h2>SAP views</h2>
+<ul class="schema-list">
+  {% for view_name, base_name in sap_links %}
+  <li>
+    <a href="/schema/{{ view_name }}">{{ view_name }}</a>
+    <span>{{ base_name }}</span>
+    <small>SAP field names for this table.</small>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
 {% for exercise in exercises %}
 {% if exercise.is_drill %}
 {% include "_drill.html" %}

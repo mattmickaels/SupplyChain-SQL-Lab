@@ -20,6 +20,10 @@ WHERE h.po_no = 'PO-0043687'
 One row comes back.
 The supplier name is Kindred Vacuum Pumps.
 
+See this join as a screen.
+[ME23N](/screens/ME23N?key=PO-0043687) opens that purchase order.
+[MM03](/screens/MM03?key=M-001501&plant=AU01) opens the material on its line.
+
 A left join keeps every row from the first table.
 When nothing matches, the columns from the second table are NULL.
 

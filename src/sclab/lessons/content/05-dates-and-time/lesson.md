@@ -25,7 +25,6 @@ WHERE g.gr_no = 'GR-0010740'
 
 Adding a whole number of days uses INTERVAL.
 confirmed_delivery_date + INTERVAL 1 DAY is the next day.
-date_add(confirmed_delivery_date, 1) is the same day on Databricks.
 For this line, the confirmed date plus 1 day is 7 July 2022, the day GR-0010740 arrived.
 
 ```sql
@@ -107,7 +106,6 @@ WHERE gr_no = 'GR-0010740'
 
 A recency test adds a number of days to the latest date and compares that result with the lab's today, DATE '2026-11-01'.
 More than N days before today means latest_date + INTERVAL N DAY is still before 1 November 2026.
-date_add(latest_date, N) is the same comparison on Databricks.
 Every customer has an order on or after 22 October 2026.
 The latest order of any kind is never 180 days old.
 A tool order is a sales order line for a material whose material_type is TOOL.

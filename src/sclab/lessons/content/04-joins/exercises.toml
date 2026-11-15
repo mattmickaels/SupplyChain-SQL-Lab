@@ -126,7 +126,7 @@ excel_tip = "Filter the order header to customer C-2003, then list the open line
 id = "join-open-rf-po-lines"
 title = "Open RF generator purchase lines"
 prompt_md = """
-List purchase order lines for the materials whose description starts with RF generator, (with the comma, so the spare kit stays out).
+List purchase order lines for materials whose description starts with RF generator, including the comma so the spare kit stays out.
 The order was placed on or before 1 November 2026.
 Received quantity is below order_qty.
 A line with no goods receipt counts as received quantity 0.
