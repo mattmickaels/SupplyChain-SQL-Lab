@@ -938,6 +938,43 @@ _WRONG_ANSWERS = (
             WHERE g.receipt_date >= DATE '2025-11-01'
               AND g.receipt_date < DATE '2026-11-01'
             GROUP BY h.supplier_no
+            HAVING COUNT(*) >= 20
+        ) AS r ON r.supplier_no = line.supplier_no
+        LEFT JOIN material_supplier AS q
+          ON q.material_no = line.material_no
+         AND q.supplier_no = line.supplier_no
+        WHERE line.first_receipt_date >= DATE '2025-11-01'
+          AND line.first_receipt_date < DATE '2026-11-01'
+        GROUP BY line.supplier_no, r.receipt_count
+        ORDER BY line.supplier_no
+        """,
+    ),
+    (
+        "dates-actual-vs-quoted-lead-time",
+        """
+        SELECT line.supplier_no,
+               ROUND(AVG(line.actual_days), 1) AS avg_actual_lead_time_days,
+               ROUND(AVG(q.quoted_lead_time_days), 1) AS avg_quoted_lead_time_days,
+               r.receipt_count
+        FROM (
+            SELECT i.po_no,
+                   i.line_no,
+                   i.material_no,
+                   h.supplier_no,
+                   MIN(g.receipt_date) AS first_receipt_date,
+                   datediff('day', h.order_date, MIN(g.receipt_date)) AS actual_days
+            FROM purchase_order_item AS i
+            JOIN purchase_order AS h ON h.po_no = i.po_no
+            JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
+            GROUP BY i.po_no, i.line_no, i.material_no, h.supplier_no, h.order_date
+        ) AS line
+        JOIN (
+            SELECT h.supplier_no, COUNT(*) AS receipt_count
+            FROM goods_receipt AS g
+            JOIN purchase_order AS h ON h.po_no = g.po_no
+            WHERE g.receipt_date >= DATE '2025-11-01'
+              AND g.receipt_date < DATE '2026-11-01'
+            GROUP BY h.supplier_no
         ) AS r ON r.supplier_no = line.supplier_no
         LEFT JOIN material_supplier AS q
           ON q.material_no = line.material_no
@@ -966,27 +1003,63 @@ _WRONG_ANSWERS = (
         SELECT date_trunc('week', i.confirmed_delivery_date) AS week_start,
                COUNT(*) AS open_line_count
         FROM purchase_order_item AS i
+        LEFT JOIN (
+            SELECT po_no, line_no, SUM(qty) AS received_qty
+            FROM goods_receipt
+            GROUP BY po_no, line_no
+        ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
         WHERE i.confirmed_delivery_date >= DATE '2026-11-01'
-          AND i.confirmed_delivery_date < DATE '2026-11-01' + INTERVAL 8 DAY
+          AND i.confirmed_delivery_date < DATE '2026-11-01' + INTERVAL 56 DAY
+          AND COALESCE(r.received_qty, 0) = 0
         GROUP BY date_trunc('week', i.confirmed_delivery_date)
         ORDER BY week_start
         """,
     ),
     (
-        "dates-quiet-tool-families",
+        "dates-open-po-lines-by-week",
+        """
+        SELECT date_trunc('week', i.confirmed_delivery_date) AS week_start,
+               COUNT(*) AS open_line_count
+        FROM purchase_order_item AS i
+        LEFT JOIN (
+            SELECT po_no, line_no, SUM(qty) AS received_qty
+            FROM goods_receipt
+            GROUP BY po_no, line_no
+        ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+        WHERE i.confirmed_delivery_date >= DATE '2026-11-01'
+          AND i.confirmed_delivery_date < DATE '2026-11-01' + INTERVAL 8 DAY
+          AND COALESCE(r.received_qty, 0) < i.order_qty
+        GROUP BY date_trunc('week', i.confirmed_delivery_date)
+        ORDER BY week_start
+        """,
+    ),
+    (
+        "dates-quiet-tool-customers",
         """
         SELECT c.customer_no,
-               c.name AS customer_name,
-               m.family_code,
-               MAX(h.order_date) AS last_order_date
+               c.name,
+               MAX(h.order_date) AS last_tool_order_date
         FROM customer AS c
         JOIN sales_order AS h ON h.customer_no = c.customer_no
         JOIN sales_order_item AS i ON i.so_no = h.so_no
         JOIN material AS m ON m.material_no = i.material_no
         WHERE m.material_type = 'TOOL'
-        GROUP BY c.customer_no, c.name, m.family_code
+        GROUP BY c.customer_no, c.name
+        HAVING MAX(h.order_date) + INTERVAL 180 DAY < DATE '2026-11-01'
+        ORDER BY last_tool_order_date, c.customer_no
+        """,
+    ),
+    (
+        "dates-quiet-tool-customers",
+        """
+        SELECT c.customer_no,
+               c.name,
+               MAX(h.order_date) AS last_tool_order_date
+        FROM customer AS c
+        JOIN sales_order AS h ON h.customer_no = c.customer_no
+        GROUP BY c.customer_no, c.name
         HAVING MAX(h.order_date) + INTERVAL 90 DAY < DATE '2026-11-01'
-        ORDER BY last_order_date, c.customer_no, m.family_code
+        ORDER BY last_tool_order_date, c.customer_no
         """,
     ),
     (
@@ -1025,10 +1098,22 @@ _WRONG_ANSWERS = (
         """
         SELECT plant_code,
                SUM(CASE WHEN planned_lead_time_days IS NULL THEN 1 ELSE 0 END) AS null_count,
-               SUM(
-                   CASE WHEN COALESCE(planned_lead_time_days, -1) = 0 THEN 1 ELSE 0 END
-               ) AS zero_count,
+               SUM(CASE WHEN planned_lead_time_days = 0 THEN 1 ELSE 0 END) AS zero_count,
                SUM(CASE WHEN planned_lead_time_days >= 0 THEN 1 ELSE 0 END) AS valid_count
+        FROM material_plant
+        GROUP BY plant_code
+        ORDER BY plant_code
+        """,
+    ),
+    (
+        "clean-lead-time-counts",
+        """
+        SELECT plant_code,
+               SUM(CASE WHEN planned_lead_time_days IS NULL THEN 1 ELSE 0 END) AS null_count,
+               SUM(
+                   CASE WHEN COALESCE(planned_lead_time_days, 0) = 0 THEN 1 ELSE 0 END
+               ) AS zero_count,
+               SUM(CASE WHEN planned_lead_time_days > 0 THEN 1 ELSE 0 END) AS valid_count
         FROM material_plant
         GROUP BY plant_code
         ORDER BY plant_code
@@ -1078,6 +1163,13 @@ _WRONG_ANSWERS = (
          AND s.is_primary = true
         WHERE p.planned_lead_time_days IS NULL
         ORDER BY p.material_no, p.plant_code
+        """,
+    ),
+    (
+        "clean-removed-material-rows",
+        """
+        SELECT COUNT(*) - COUNT(DISTINCT TRIM(description)) AS removed_rows
+        FROM material
         """,
     ),
     (

@@ -106,22 +106,28 @@ WHERE gr_no = 'GR-0000036'
 ```
 
 A recency test adds a number of days to the latest date and compares that result with the lab's today, DATE '2026-11-01'.
-More than 180 days before today means latest_date + INTERVAL 180 DAY is still before 1 November 2026.
-On Databricks, date_add(latest_date, 180) is the same comparison.
-Every customer has an order in late October 2026, so the latest order for the customer as a whole is never that old.
-Split tool orders by product family and the gap shows up.
-Meadow Semiconductors, customer C-2021, last ordered a Deposition tool on 18 November 2025.
-That date plus 180 days is 17 May 2026, which is before 1 November 2026.
+More than N days before today means latest_date + INTERVAL N DAY is still before 1 November 2026.
+On Databricks, date_add(latest_date, N) is the same comparison.
+Every customer has an order on or after 26 October 2026.
+The latest order of any kind is never 180 days old.
+A tool order is a sales order line for a material whose material_type is TOOL.
+Harbor Foundry, customer C-2002, last ordered a tool on 1 August 2026.
+That date plus 90 days is 30 October 2026, which is before 1 November 2026.
+That date plus 180 days is 28 January 2027, which is after 1 November 2026.
+No customer's latest tool order is more than 365, 270, or 180 days before 1 November 2026.
 
 ```sql
-SELECT MAX(h.order_date) AS last_order_date,
-       MAX(h.order_date) + INTERVAL 180 DAY AS plus_180_days
-FROM sales_order AS h
+SELECT c.customer_no,
+       c.name,
+       MAX(h.order_date) AS last_tool_order_date,
+       MAX(h.order_date) + INTERVAL 90 DAY AS plus_90_days
+FROM customer AS c
+JOIN sales_order AS h ON h.customer_no = c.customer_no
 JOIN sales_order_item AS i ON i.so_no = h.so_no
 JOIN material AS m ON m.material_no = i.material_no
-WHERE h.customer_no = 'C-2021'
+WHERE c.customer_no = 'C-2002'
   AND m.material_type = 'TOOL'
-  AND m.family_code = 'DEP'
+GROUP BY c.customer_no, c.name
 ```
 
 Corvane RF Systems is supplier V-10017.

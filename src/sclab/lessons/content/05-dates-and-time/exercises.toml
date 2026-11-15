@@ -45,7 +45,7 @@ Order by receipt_year.
 hints = [
   "Group the receipts by year, then divide the late ones by the total.",
   "Multiply by 100.0 before you round to 1 decimal, and keep years 2022 through 2026.",
-  "SELECT EXTRACT(YEAR FROM g.receipt_date) AS ___, COUNT(*) AS receipt_count, SUM(CASE WHEN g.receipt_date > i.confirmed_delivery_date THEN 1 ELSE 0 END) AS ___, ROUND(100.0 * ___ / COUNT(*), 1) AS late_pct FROM goods_receipt AS g JOIN purchase_order_item AS i ON ___ WHERE g.receipt_date >= ___ AND g.receipt_date < ___ GROUP BY ___ ORDER BY receipt_year",
+  "SELECT EXTRACT(YEAR FROM g.receipt_date) AS ___, COUNT(*) AS receipt_count, SUM(CASE WHEN ___ THEN 1 ELSE 0 END) AS late_count, ROUND(___ / COUNT(*), 1) AS late_pct FROM goods_receipt AS g JOIN purchase_order_item AS i ON ___ WHERE g.receipt_date >= ___ AND g.receipt_date < ___ GROUP BY ___ ORDER BY receipt_year",
 ]
 reference_sql = [
   """
@@ -209,43 +209,44 @@ date_add(DATE '2026-11-01', 56) matches DATE '2026-11-01' + INTERVAL 56 DAY.
 """
 
 [[exercise]]
-id = "dates-quiet-tool-families"
-title = "Tool families with no recent order"
+id = "dates-quiet-tool-customers"
+title = "Customers with no recent tool order"
 prompt_md = """
-Find each customer and product family whose latest tool order is more than 180 days before 1 November 2026.
-Every customer has some order in late October 2026, so do not test the customer's latest order of any kind.
-Use tool lines only, material_type = 'TOOL', and group by customer and family_code.
-More than 180 days before today means last_order_date + INTERVAL 180 DAY is still before DATE '2026-11-01'.
-Return customer_no, customer_name, family_code, and last_order_date.
-customer_name is customer.name.
-last_order_date is the latest sales_order.order_date in that group.
-Order by last_order_date, then customer_no, then family_code.
+Find customers whose most recent tool order is more than 90 days before 1 November 2026.
+A tool order is a sales order line whose material has material_type = 'TOOL'.
+Use one row per customer, not per product family.
+365 days, 270 days, and 180 days before 1 November 2026 each match no customer.
+Every customer ordered a tool on or after 1 August 2026, so the threshold that still leaves a customer out is 90 days.
+More than 90 days means last_tool_order_date + INTERVAL 90 DAY is still before DATE '2026-11-01'.
+Return customer_no, name, and last_tool_order_date.
+name is customer.name.
+last_tool_order_date is the latest sales_order.order_date among that customer's tool lines.
+Order by last_tool_order_date, then customer_no.
 """
 hints = [
-  "The latest tool order has to be computed inside each customer and family, not across the whole customer.",
-  "Join the order to the tool, group by customer and family, and keep groups where MAX(order_date) + INTERVAL 180 DAY is before 1 November 2026.",
-  "SELECT c.customer_no, c.name AS ___, m.family_code, MAX(h.order_date) AS last_order_date FROM customer AS c JOIN sales_order AS h ON ___ JOIN sales_order_item AS i ON ___ JOIN material AS m ON ___ WHERE m.material_type = ___ GROUP BY c.customer_no, c.name, m.family_code HAVING MAX(h.order_date) + INTERVAL 180 DAY < ___ ORDER BY last_order_date, c.customer_no, m.family_code",
+  "Take the latest tool order once per customer.",
+  "Keep customers where that date plus 90 days is still before 1 November 2026.",
+  "SELECT c.customer_no, c.name, MAX(h.order_date) AS last_tool_order_date FROM customer AS c JOIN sales_order AS h ON ___ JOIN sales_order_item AS i ON ___ JOIN material AS m ON ___ WHERE m.material_type = ___ GROUP BY c.customer_no, c.name HAVING MAX(h.order_date) + INTERVAL ___ DAY < ___ ORDER BY last_tool_order_date, c.customer_no",
 ]
 reference_sql = [
   """
 SELECT c.customer_no,
-       c.name AS customer_name,
-       m.family_code,
-       MAX(h.order_date) AS last_order_date
+       c.name,
+       MAX(h.order_date) AS last_tool_order_date
 FROM customer AS c
 JOIN sales_order AS h ON h.customer_no = c.customer_no
 JOIN sales_order_item AS i ON i.so_no = h.so_no
 JOIN material AS m ON m.material_no = i.material_no
 WHERE m.material_type = 'TOOL'
-GROUP BY c.customer_no, c.name, m.family_code
-HAVING MAX(h.order_date) + INTERVAL 180 DAY < DATE '2026-11-01'
-ORDER BY last_order_date, c.customer_no, m.family_code
+GROUP BY c.customer_no, c.name
+HAVING MAX(h.order_date) + INTERVAL 90 DAY < DATE '2026-11-01'
+ORDER BY last_tool_order_date, c.customer_no
 """,
 ]
 order_matters = true
 names_matter = true
-excel_tip = "Take the latest tool order date per customer and family with MAXIFS, then keep dates more than 180 days before 1 November 2026."
-databricks_note = "date_add(last_order_date, 180) matches last_order_date + INTERVAL 180 DAY."
+excel_tip = "Take the latest tool order date per customer with MAXIFS, then keep dates more than 90 days before 1 November 2026."
+databricks_note = "date_add(last_tool_order_date, 90) matches last_tool_order_date + INTERVAL 90 DAY."
 
 [[exercise]]
 id = "dates-corvane-on-time-by-quarter"
@@ -263,7 +264,7 @@ The fourth quarter of 2026 only contains receipts through the end of October 202
 hints = [
   "On time includes a receipt that lands on the confirmed date.",
   "Filter supplier V-10017, group by year and quarter, and round 100.0 times the on-time share to 1 decimal.",
-  "SELECT EXTRACT(YEAR FROM g.receipt_date) AS ___, EXTRACT(QUARTER FROM g.receipt_date) AS ___, COUNT(*) AS receipt_count, ROUND(100.0 * SUM(CASE WHEN g.receipt_date <= i.confirmed_delivery_date THEN 1 ELSE 0 END) / COUNT(*), 1) AS on_time_pct FROM goods_receipt AS g JOIN purchase_order_item AS i ON ___ JOIN purchase_order AS h ON ___ WHERE h.supplier_no = ___ AND g.receipt_date >= ___ AND g.receipt_date < ___ GROUP BY ___ ORDER BY receipt_year, receipt_quarter",
+  "SELECT EXTRACT(YEAR FROM g.receipt_date) AS ___, EXTRACT(QUARTER FROM g.receipt_date) AS ___, COUNT(*) AS receipt_count, ROUND(SUM(CASE WHEN ___ THEN 1 ELSE 0 END) / COUNT(*), 1) AS on_time_pct FROM goods_receipt AS g JOIN purchase_order_item AS i ON ___ JOIN purchase_order AS h ON ___ WHERE h.supplier_no = ___ AND g.receipt_date >= ___ AND g.receipt_date < ___ GROUP BY ___ ORDER BY receipt_year, receipt_quarter",
 ]
 reference_sql = [
   """

@@ -11,8 +11,15 @@ In Excel, TRIM and UPPER clean text, and AVERAGE skips blank cells.
 SQL AVG does the same: it skips NULL and still counts 0.
 
 TRIM removes spaces at both ends of text.
+Two descriptions that match after TRIM are candidates, not proof that the material numbers are the same part.
+Twelve materials share the exact description RF generator, from M-001321 through M-001332.
+Those are different parts.
+Gas box, variant 2 is M-001344, and Gas box, variant 15 is M-001435.
+The variant number makes them different parts.
+A planted copy is a row whose description differs from a real material only by trailing spaces.
 M-004744 is Aligner spindle, variant 103.
 M-005363 is the same words with a trailing space, so its description is 29 characters and M-004744 is 28.
+M-005339 is Gas box, variant 15 with a trailing space, and M-001435 is the real row.
 
 ```sql
 SELECT material_no, description, LENGTH(description) AS description_length
@@ -108,17 +115,26 @@ WHERE (p.material_no = 'M-000002' AND p.plant_code = 'SC01')
 ORDER BY p.material_no
 ```
 
-A cleaned material list keeps one row per trimmed description.
-MIN(material_no) keeps the lowest material number in the group.
-For Aligner spindle, variant 103, the kept number is M-004744.
+A cleaned material list removes only those planted copies.
+Keep the real row: the lower material_no whose description has no extra space.
+For Aligner spindle, variant 103, the kept number is M-004744 and the removed number is M-005363.
+Do not drop every material that shares a trimmed description.
+Doing that to RF generator would keep only M-001321 and delete the other 11 real parts.
 
 ```sql
-SELECT MIN(material_no) AS material_no,
-       TRIM(description) AS trimmed_description
+SELECT material_no
 FROM material
 WHERE TRIM(description) = 'Aligner spindle, variant 103'
-GROUP BY TRIM(description)
+  AND description <> TRIM(description)
+```
+
+```sql
+SELECT MIN(material_no) AS kept_material_no,
+       COUNT(*) AS material_count
+FROM material
+WHERE description = 'RF generator'
 ```
 
 Check yourself.
-Decide what should happen to NULL and to 0 before you average, and trim text before you group it.
+Decide what should happen to NULL and to 0 before you average.
+Treat a shared description as a candidate, and delete a row only when the extra characters are trailing spaces.
