@@ -70,8 +70,9 @@ plant_code is SG01, and bay_id is NULL.
 That pattern is an anti-join.
 A left join plus WHERE the right-hand key IS NULL keeps left rows that had no match.
 
-A condition on the right-hand table belongs in ON.
-Put it in WHERE and the blank match is thrown away, so the left join behaves like an inner join.
+A condition on the right-hand table goes in ON when you want to keep left rows that have no match.
+Put that condition in WHERE only when you mean to drop those rows.
+In WHERE, the blank match is thrown away, so the left join behaves like an inner join.
 
 The query above keeps the condition b.bay_id = 'SG01-B9' in ON, and the plant row stays.
 Move that test to WHERE and the plant row disappears.

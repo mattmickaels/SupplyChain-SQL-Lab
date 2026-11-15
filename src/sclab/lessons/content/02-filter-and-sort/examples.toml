@@ -54,6 +54,15 @@ expected_rows = [
 order_matters = false
 
 [[fact]]
+id = "singapore-plant"
+sql = """
+SELECT name
+FROM plant
+WHERE plant_code = 'SG01'
+"""
+expected = "Singapore"
+
+[[fact]]
 id = "japan-country-code"
 sql = """
 SELECT MIN(country)
