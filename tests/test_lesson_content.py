@@ -3263,3 +3263,341 @@ def test_production_derived_calendar_wrong_answers_fail(planning_scenario, exerc
     exercise = next(item for item in _exercises() if item.id == exercise_id)
     outcome = check_answer(exercise, sql, runner=_scenario_runner(planning_scenario))
     assert outcome.passed is False
+
+
+_C1_LESSONS = frozenset(
+    {
+        "05-dates-and-time",
+        "06-nulls-and-cleaning",
+        "07-ctes-and-window-functions",
+        "08-bom-explosion",
+        "10-interview-drills",
+    }
+)
+_NOTE_PREFIXES = ("databricks", "on databricks")
+
+
+def _c1_exercises() -> list[tuple[str, Exercise]]:
+    return [
+        (lesson.id, exercise)
+        for lesson in load_lessons()
+        if lesson.id in _C1_LESSONS
+        for exercise in lesson.exercises
+    ]
+
+
+def test_c1_databricks_notes_do_not_start_with_a_label() -> None:
+    """Raw notes must not open with a Databricks label. The loader strips those labels."""
+    for folder_name in sorted(_C1_LESSONS):
+        data = tomllib.loads(
+            (_CONTENT / folder_name / "exercises.toml").read_text(encoding="utf-8")
+        )
+        for row in data["exercise"]:
+            note = row.get("databricks_note")
+            if not isinstance(note, str) or not note.strip():
+                continue
+            folded = note.lstrip().casefold()
+            assert not folded.startswith(_NOTE_PREFIXES), row["id"]
+
+
+def test_c1_databricks_note_only_when_sql_uses_an_exception_form() -> None:
+    for _lesson_id, exercise in _c1_exercises():
+        allowed: list[str] = []
+        for sql in exercise.reference_sql:
+            forms, rejected = _date_exception_forms(sql)
+            assert not rejected, exercise.id
+            allowed.extend(forms)
+        has_note = _has_databricks_note(exercise.databricks_note)
+        assert has_note is bool(allowed), exercise.id
+        if not has_note:
+            continue
+        fragments = re.findall(r"`([^`]+)`", exercise.databricks_note or "")
+        sql = " ".join(" ".join(exercise.reference_sql).split())
+        assert fragments, exercise.id
+        assert any(" ".join(fragment.split()) in sql for fragment in fragments), exercise.id
+
+
+def test_c1_drill_summary_prompts_are_specific() -> None:
+    prompts = [
+        exercise.summary_prompt for _lesson_id, exercise in _c1_exercises() if exercise.is_drill
+    ]
+    assert len(prompts) == 6
+    assert all(isinstance(prompt, str) and prompt.strip() for prompt in prompts)
+    assert len(set(prompts)) == 6
+
+
+def test_c1_on_time_rank_uses_the_rounded_percentage() -> None:
+    exercise = next(
+        item for _lesson_id, item in _c1_exercises() if item.id == "cte-supplier-on-time-rank"
+    )
+    text = exercise.prompt_md.casefold()
+    assert "rounded" in text
+    assert "on_time_pct" in text
+
+
+def test_c1_booking_prompts_include_cancelled_lines() -> None:
+    wanted = {
+        "dates-lines-booked-by-month",
+        "cte-tool-order-change",
+        "drill-halcyon-demand",
+    }
+    found = {
+        exercise.id: exercise.prompt_md.casefold()
+        for _lesson_id, exercise in _c1_exercises()
+        if exercise.id in wanted
+    }
+    assert set(found) == wanted
+    for exercise_id, text in found.items():
+        assert "include cancelled" in text, exercise_id
+
+
+def test_c1_lesson_6_shows_exists_before_the_exercise() -> None:
+    lesson = next(item for item in load_lessons() if item.id == "06-nulls-and-cleaning")
+    assert "EXISTS" in lesson.body_md
+    exercise = next(item for item in lesson.exercises if item.id == "clean-removed-material-rows")
+    assert "EXISTS" in exercise.reference_sql[0]
+
+
+def test_c1_quiet_tool_example_is_not_the_answer_row() -> None:
+    lesson = next(item for item in load_lessons() if item.id == "05-dates-and-time")
+    assert "C-2009" not in lesson.body_md
+    assert "C-2025" in lesson.body_md
+
+
+def test_c1_past_due_open_lines_match_the_prompt(lab_home) -> None:
+    assert lab_home is not None
+    exercise = next(
+        item for _lesson_id, item in _c1_exercises() if item.id == "dates-open-po-lines-by-week"
+    )
+    assert "9 week rows" in exercise.prompt_md
+    assert "1726" in exercise.prompt_md
+    result = _run(
+        """
+        SELECT COUNT(*)
+        FROM purchase_order_item AS i
+        LEFT JOIN (
+            SELECT po_no, line_no, SUM(qty) AS received_qty
+            FROM goods_receipt
+            GROUP BY po_no, line_no
+        ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+        WHERE i.confirmed_delivery_date < DATE '2026-11-01'
+          AND COALESCE(r.received_qty, 0) < i.order_qty
+        """
+    )
+    assert result.rows == [(1726,)]
+
+
+_C1_WRONG_ANSWERS = (
+    (
+        "dates-lines-booked-by-month",
+        """
+        SELECT date_trunc('month', h.order_date) AS booked_month,
+               COUNT(*) AS line_count
+        FROM sales_order_item AS i
+        JOIN sales_order AS h ON h.so_no = i.so_no
+        WHERE h.order_date >= DATE '2025-01-01'
+          AND h.order_date < DATE '2026-01-01'
+          AND i.status <> 'Cancelled'
+        GROUP BY date_trunc('month', h.order_date)
+        ORDER BY booked_month
+        """,
+    ),
+    (
+        "cte-tool-order-change",
+        """
+        WITH monthly AS (
+            SELECT CAST(date_trunc('month', h.order_date) AS DATE) AS month,
+                   SUM(i.qty) AS order_qty
+            FROM sales_order_item AS i
+            JOIN sales_order AS h ON h.so_no = i.so_no
+            JOIN material AS m ON m.material_no = i.material_no
+            WHERE m.material_type = 'TOOL'
+              AND i.status <> 'Cancelled'
+              AND h.order_date >= DATE '2025-01-01'
+              AND h.order_date < DATE '2026-11-01'
+            GROUP BY CAST(date_trunc('month', h.order_date) AS DATE)
+        )
+        SELECT month,
+               order_qty,
+               order_qty - LAG(order_qty) OVER (ORDER BY month) AS qty_change
+        FROM monthly
+        ORDER BY month
+        """,
+    ),
+    (
+        "cte-tool-order-change",
+        """
+        WITH monthly AS (
+            SELECT CAST(date_trunc('month', h.order_date) AS DATE) AS month,
+                   COUNT(*) AS order_qty
+            FROM sales_order_item AS i
+            JOIN sales_order AS h ON h.so_no = i.so_no
+            JOIN material AS m ON m.material_no = i.material_no
+            WHERE m.material_type = 'TOOL'
+              AND h.order_date >= DATE '2025-01-01'
+              AND h.order_date < DATE '2026-11-01'
+            GROUP BY CAST(date_trunc('month', h.order_date) AS DATE)
+        )
+        SELECT month,
+               order_qty,
+               order_qty - LAG(order_qty) OVER (ORDER BY month) AS qty_change
+        FROM monthly
+        ORDER BY month
+        """,
+    ),
+    (
+        "cte-customer-share",
+        """
+        WITH open_lines AS (
+            SELECT h.customer_no,
+                   c.name AS customer_name,
+                   COUNT(*) AS open_qty
+            FROM sales_order_item AS i
+            JOIN sales_order AS h ON h.so_no = i.so_no
+            JOIN customer AS c ON c.customer_no = h.customer_no
+            JOIN material AS m ON m.material_no = i.material_no
+            WHERE i.status = 'Open'
+              AND m.material_type = 'TOOL'
+            GROUP BY h.customer_no, c.name
+        )
+        SELECT customer_no,
+               customer_name,
+               open_qty,
+               ROUND(100.0 * open_qty / SUM(open_qty) OVER (), 1) AS share_pct
+        FROM open_lines
+        ORDER BY share_pct DESC, customer_no
+        """,
+    ),
+    (
+        "cte-supplier-on-time-rank",
+        """
+        WITH rates AS (
+            SELECT s.supplier_no,
+                   s.name AS supplier_name,
+                   COUNT(*) AS receipts,
+                   ROUND(
+                       100.0 * AVG(
+                           CASE
+                               WHEN g.receipt_date <= i.confirmed_delivery_date THEN 1.0
+                               ELSE 0.0
+                           END
+                       ),
+                       1
+                   ) AS on_time_pct,
+                   100.0 * AVG(
+                       CASE
+                           WHEN g.receipt_date <= i.confirmed_delivery_date THEN 1.0
+                           ELSE 0.0
+                       END
+                   ) AS raw_pct
+            FROM goods_receipt AS g
+            JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+            JOIN purchase_order AS h ON h.po_no = g.po_no
+            JOIN supplier AS s ON s.supplier_no = h.supplier_no
+            WHERE g.receipt_date >= DATE '2025-11-01'
+              AND g.receipt_date < DATE '2026-11-01'
+            GROUP BY s.supplier_no, s.name
+            HAVING COUNT(*) >= 20
+        )
+        SELECT supplier_no,
+               supplier_name,
+               receipts,
+               on_time_pct,
+               RANK() OVER (ORDER BY raw_pct DESC) AS rank_no
+        FROM rates
+        ORDER BY rank_no, supplier_no
+        """,
+    ),
+    (
+        "drill-halcyon-demand",
+        """
+        WITH lines AS (
+            SELECT h.order_date
+            FROM sales_order_item i
+            JOIN sales_order h ON h.so_no = i.so_no
+            JOIN material m ON m.material_no = i.material_no
+            WHERE h.customer_no = 'C-2003'
+              AND m.material_type = 'TOOL'
+              AND m.family_code = 'ETC'
+        ),
+        bookings AS (
+            SELECT
+                (SELECT COUNT(*) FROM lines
+                 WHERE order_date >= DATE '2025-07-01' AND order_date < DATE '2025-11-01')
+                    AS booked_2025,
+                (SELECT COUNT(*) FROM lines
+                 WHERE order_date >= DATE '2026-07-01' AND order_date < DATE '2026-11-01')
+                    AS booked_2026
+        ),
+        forecast AS (
+            SELECT SUM(CASE WHEN f.forecast_version = '2026-09' THEN f.qty ELSE 0 END)
+                       AS forecast_09,
+                   SUM(CASE WHEN f.forecast_version = '2026-10' THEN f.qty ELSE 0 END)
+                       AS forecast_10
+            FROM demand_forecast f
+            JOIN material m ON m.material_no = f.material_no
+            WHERE m.material_type = 'TOOL'
+              AND m.family_code = 'ETC'
+              AND f.forecast_month >= DATE '2026-11-01'
+              AND f.forecast_month < DATE '2027-02-01'
+              AND f.forecast_version IN ('2026-09', '2026-10')
+        )
+        SELECT b.booked_2025, b.booked_2026,
+               ROUND(100.0 * (b.booked_2026 - b.booked_2025) / NULLIF(b.booked_2025, 0), 2)
+                   AS booking_growth_pct,
+               f.forecast_09, f.forecast_10,
+               ROUND(100.0 * (f.forecast_10 - f.forecast_09) / NULLIF(f.forecast_09, 0), 2)
+                   AS forecast_growth_pct
+        FROM bookings b CROSS JOIN forecast f
+        """,
+    ),
+    (
+        "bom-rf-for-open-orders",
+        """
+        WITH RECURSIVE tree AS (
+            SELECT m.material_no AS tool_no,
+                   b.component_material_no AS material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)) AS extended_qty,
+                   1 AS level
+            FROM material AS m
+            JOIN bom_item AS b ON b.parent_material_no = m.material_no
+            WHERE m.material_type = 'TOOL'
+            UNION ALL
+            SELECT t.tool_no,
+                   b.component_material_no,
+                   CAST(t.extended_qty * b.qty_per AS DECIMAL(20,6)),
+                   t.level + 1
+            FROM tree AS t
+            JOIN bom_item AS b ON b.parent_material_no = t.material_no
+            WHERE t.level < 10
+        ),
+        per_tool AS (
+            SELECT t.tool_no,
+                   t.material_no,
+                   SUM(t.extended_qty) AS qty_per_tool
+            FROM tree AS t
+            JOIN material AS c ON c.material_no = t.material_no
+            WHERE c.material_type = 'COMPONENT'
+              AND c.description LIKE 'RF generator,%'
+            GROUP BY t.tool_no, t.material_no
+        )
+        SELECT p.material_no,
+               c.description,
+               COUNT(*) AS required_qty
+        FROM per_tool AS p
+        JOIN sales_order_item AS i ON i.material_no = p.tool_no
+        JOIN material AS c ON c.material_no = p.material_no
+        WHERE i.status = 'Open'
+        GROUP BY p.material_no, c.description
+        ORDER BY p.material_no
+        """,
+    ),
+)
+
+
+def test_c1_booking_and_quantity_wrong_answers_fail(lab_home) -> None:
+    assert lab_home is not None
+    exercises = {exercise.id: exercise for _lesson_id, exercise in _c1_exercises()}
+    for exercise_id, sql in _C1_WRONG_ANSWERS:
+        outcome = check_answer(exercises[exercise_id], sql, runner=_run)
+        assert outcome.passed is False, exercise_id

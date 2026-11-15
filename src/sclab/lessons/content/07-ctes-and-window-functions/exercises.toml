@@ -109,6 +109,7 @@ Rank suppliers by on-time receipt rate over the last 12 months.
 The window is receipt_date from 1 November 2025 up to, and not including, 1 November 2026.
 A receipt is on time when receipt_date is on or before confirmed_delivery_date.
 The rate is 100 times the average of that test, rounded to 1 decimal.
+Rank on that rounded on_time_pct, not on the unrounded average.
 Keep suppliers with at least 20 receipts in the window.
 Use RANK(), so a tie shares a rank and the next rank skips.
 Return supplier_no, supplier_name, receipts, on_time_pct, and rank_no.
@@ -245,7 +246,7 @@ ORDER BY month
 ]
 order_matters = true
 names_matter = true
-databricks_note = "On Databricks, date_trunc('MONTH', receipt_date) matches date_trunc('month', receipt_date)."
+databricks_note = "On this query, `date_trunc('month', g.receipt_date)` is written `date_trunc('MONTH', g.receipt_date)` on Databricks."
 excel_tip = "A monthly sum, then a running total down that month column."
 
 [[exercise]]
@@ -254,6 +255,9 @@ title = "Month-over-month change in tool orders"
 prompt_md = """
 Show the month-over-month change in tool sales-order quantity for 2025 and 2026.
 A tool has material_type TOOL.
+Include cancelled lines.
+A line is booked on the order date even when status is later Cancelled.
+order_qty is the sum of line quantity, not COUNT(*).
 The order dates run from 1 January 2025 up to, and not including, 1 November 2026.
 One row per month that has an order.
 month is the first day of that month.
@@ -290,7 +294,7 @@ ORDER BY month
 ]
 order_matters = true
 names_matter = true
-databricks_note = "On Databricks, date_trunc('MONTH', order_date) matches date_trunc('month', order_date)."
+databricks_note = "On this query, `date_trunc('month', h.order_date)` is written `date_trunc('MONTH', h.order_date)` on Databricks."
 excel_tip = "A monthly sum of tool order quantity, then this month minus the cell above."
 
 [[exercise]]
@@ -300,7 +304,7 @@ prompt_md = """
 For each customer, show that customer's share of total open tool quantity.
 Open means status = 'Open'.
 A tool has material_type TOOL.
-open_qty is the sum of line quantity.
+open_qty is the sum of line quantity, not COUNT(*).
 share_pct is 100 times open_qty divided by the total open quantity, rounded to 1 decimal.
 Use SUM(open_qty) OVER () for that total.
 Return customer_no, customer_name, open_qty, and share_pct.

@@ -97,6 +97,8 @@ Check yourself.
 Average the material totals, not the individual purchase lines.
 
 RANK() gives the same rank to a tie and skips the next rank.
+Rank on the rounded percentage.
+Ranking the unrounded average splits ties that round to the same rate.
 ROW_NUMBER() never repeats a rank, so a tie becomes two different numbers.
 On time means receipt_date is on or before confirmed_delivery_date.
 The last 12 months run from 1 November 2025 up to, and not including, 1 November 2026.
@@ -189,7 +191,7 @@ January is 169 and the running total is 169.
 February is 78 and the running total is 247.
 March is 266 and the running total is 513.
 
-On Databricks, date_trunc('MONTH', receipt_date) matches date_trunc('month', receipt_date).
+On this query, `date_trunc('month', g.receipt_date)` is written `date_trunc('MONTH', g.receipt_date)` on Databricks.
 
 September and October 2026 have no receipts of an RF generator.
 A month with no receipts does not appear when you group the receipt rows.
@@ -221,7 +223,10 @@ January has order quantity 46, February has 46, and March has 61.
 January's change is NULL.
 February changes by 0 and March changes by 15.
 
-On Databricks, date_trunc('MONTH', order_date) matches date_trunc('month', order_date).
+On this query, `date_trunc('month', h.order_date)` is written `date_trunc('MONTH', h.order_date)` on Databricks.
+These totals include cancelled lines.
+A tool line is booked on the order date even when status is later Cancelled.
+order_qty is the sum of line quantity, not a count of lines.
 
 SUM(open_qty) OVER () is the total of every row in the window, with no partition.
 Filter after that total is computed.

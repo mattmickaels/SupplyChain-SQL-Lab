@@ -194,3 +194,25 @@ WHERE TRIM(description) = 'Legacy gasket kit, variant 1'
 """
 expected_rows = [["M-005402", 2]]
 order_matters = false
+
+[[example]]
+id = "exists-planted-servo-copy"
+sql = """
+SELECT copy.material_no FROM material AS copy
+WHERE copy.material_no = 'M-005351' AND EXISTS (SELECT 1 FROM material AS kept WHERE kept.description = TRIM(copy.description) AND kept.material_no < copy.material_no)
+"""
+expected_rows = [["M-005351"]]
+order_matters = false
+
+[[fact]]
+id = "exact-description-duplicates"
+sql = """
+SELECT COUNT(*)
+FROM (
+    SELECT description
+    FROM material
+    GROUP BY description
+    HAVING COUNT(*) > 1
+)
+"""
+expected = 0

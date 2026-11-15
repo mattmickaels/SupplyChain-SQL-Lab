@@ -32,9 +32,8 @@ FROM late ORDER BY late_receipts DESC, supplier_no
 order_matters = true
 names_matter = true
 excel_tip = "Make a supplier Pareto pivot with a running percentage."
-databricks_note = "Databricks: date_trunc('MONTH', d) and date_trunc('WEEK', d) use the same arguments; d + INTERVAL 7 DAY is supported; datediff('day', a, b) becomes datediff(b, a)."
 time_limit_s = 900
-summary_prompt = "Write three lines: the main result with numbers, the planning implication or limitation, and a specific next action."
+summary_prompt = "Summarize which suppliers account for late receipt events in the last 12 months, and whether that concentration is enough to focus a recovery plan."
 model_summary = """
 Harbor Precision Assemblies led with 82 late receipt events (1.86%); the top 10 supplied 694 of 4404 (15.76%) in Nov 2025-Oct 2026.
 Late events are spread across 136 suppliers; this is an event count, not a quantity or supplier late-rate ranking.
@@ -48,7 +47,10 @@ title = "Is Halcyon demand real?"
 prompt_md = """
 Assess whether Halcyon Memory's Etch increase is backed by real bookings, and separately report the forward Etch forecast change.
 Return one row: booked_2025, booked_2026, booking_growth_pct, forecast_09, forecast_10, forecast_growth_pct.
-Bookings are non-cancelled ETC TOOL quantities for customer C-2003 placed July 1 through October 31 of each year (DATE '2025-07-01' to DATE '2025-11-01' exclusive, and DATE '2026-07-01' to DATE '2026-11-01' exclusive).
+Include cancelled lines.
+A tool line is booked on the order date even when status is later Cancelled.
+Sum ETC TOOL quantity for customer C-2003, not COUNT(*) of the lines.
+The windows are July 1 through October 31 of each year (DATE '2025-07-01' to DATE '2025-11-01' exclusive, and DATE '2026-07-01' to DATE '2026-11-01' exclusive).
 Forecast totals cover November 2026 through January 2027 (DATE '2026-11-01' inclusive to DATE '2027-02-01' exclusive), ETC TOOLs, versions 2026-09 and 2026-10.
 Both growth percentages are 100 times (new minus old) divided by old, rounded to 2 decimals, NULL for a zero denominator.
 The forecast has no customer key: do not attribute its family-wide increase to Halcyon or directly compare the two different windows as coverage.
@@ -67,7 +69,6 @@ WITH bookings AS (
     FROM sales_order_item i JOIN sales_order h ON h.so_no = i.so_no
     JOIN material m ON m.material_no = i.material_no
     WHERE h.customer_no = 'C-2003' AND m.material_type = 'TOOL' AND m.family_code = 'ETC'
-      AND i.status <> 'Cancelled'
 ), forecast AS (
     SELECT SUM(CASE WHEN f.forecast_version = '2026-09' THEN f.qty ELSE 0 END) AS forecast_09,
            SUM(CASE WHEN f.forecast_version = '2026-10' THEN f.qty ELSE 0 END) AS forecast_10
@@ -85,9 +86,8 @@ FROM bookings b CROSS JOIN forecast f
 order_matters = false
 names_matter = true
 excel_tip = "Compare same-season booking pivots year over year, with a separate forecast-version pivot."
-databricks_note = "Databricks: date_trunc('MONTH', d) and date_trunc('WEEK', d) use the same arguments; d + INTERVAL 7 DAY is supported; datediff('day', a, b) becomes datediff(b, a)."
 time_limit_s = 900
-summary_prompt = "Write three lines: the main result with numbers, the planning implication or limitation, and a specific next action."
+summary_prompt = "Summarize whether Halcyon's Jul-Oct Etch bookings rose, and what the separate Nov-Jan Etch forecast change does and does not prove."
 model_summary = """
 Halcyon Etch bookings rose from 19 to 43 units in Jul-Oct year over year, up 126.32%, so the increase includes real orders.
 The separate Nov-Jan Etch forecast doubled from 30 to 60 units; it has no customer key and cannot be assigned to Halcyon.
@@ -102,6 +102,7 @@ prompt_md = """
 For this drill, next quarter means the planning quarter DATE '2026-12-01' inclusive through DATE '2027-03-01' exclusive.
 Use the weekly start-slot method from lesson 9, including all 13 ISO weeks from DATE '2026-11-30' through DATE '2027-02-22', zero-load bay-weeks and full slots in boundary weeks.
 Return one row per bay: bay_id, total_starts, total_slots (weekly_slots times all 13 calendar weeks), excess_starts (sum of positive weekly starts minus slots), load_pct (100 times total starts / total slots, rounded to 2 decimals).
+family_code on build_bay shows which bays can build the same tools.
 Each production order is one start slot.
 Sort by load_pct descending then bay_id and return all bays.
 Use excess_starts to describe how many starts need moving, even when average utilization hides peak weeks.
@@ -138,13 +139,13 @@ FROM grid GROUP BY bay_id ORDER BY load_pct DESC, bay_id
 order_matters = true
 names_matter = true
 excel_tip = "Pivot the complete bay-week grid and keep a separate positive-overload column."
-databricks_note = "Databricks: date_trunc('MONTH', d) and date_trunc('WEEK', d) use the same arguments; d + INTERVAL 7 DAY is supported; datediff('day', a, b) becomes datediff(b, a)."
+databricks_note = "On this query, `date_trunc('week', planned_start)` is written `date_trunc('WEEK', planned_start)` on Databricks, and `DATE '2026-11-30' + level * INTERVAL 7 DAY` is a whole-day interval."
 time_limit_s = 900
-summary_prompt = "Write three lines: the main result with numbers, the planning implication or limitation, and a specific next action."
+summary_prompt = "Summarize which bay is overloaded in Dec-Feb, and whether a same-family bay at that plant has spare slots for rebalancing."
 model_summary = """
-SC01-B3 is the Dec-Feb bottleneck: 104 starts against 78 slots across all 13 calendar weeks, or 133.33% load.
-Its positive weekly overload totals 26 starts; this start-slot metric does not measure occupied bay days.
-Move or add capacity for those 26 starts, checking compatible bays and customer promises week by week.
+SC01-B3, an Etch bay with 6 slots a week, is at 133.33 percent: 104 starts against 78 slots, with 26 starts above the weekly caps.
+SC01-B2 is the other Etch bay at SC01, with 4 slots a week, 34 starts, 52 slots, and 65.38 percent load, and some weeks still have open slots.
+Rebalance Etch starts from SC01-B3 onto SC01-B2 in the weeks B2 is not already full.
 """
 summary_checklist = ["Names the number that matters", "States the date window and scope", "Separates evidence from inference", "Recommends an action", "Three lines or fewer"]
 
@@ -176,9 +177,8 @@ GROUP BY c.segment ORDER BY c.segment
 order_matters = true
 names_matter = true
 excel_tip = "A segment pivot with a 1/0 on-time helper column gives counts and rates."
-databricks_note = "Databricks: date_trunc('MONTH', d) and date_trunc('WEEK', d) use the same arguments; d + INTERVAL 7 DAY is supported; datediff('day', a, b) becomes datediff(b, a)."
 time_limit_s = 900
-summary_prompt = "Write three lines: the main result with numbers, the planning implication or limitation, and a specific next action."
+summary_prompt = "Summarize spare-part on-time delivery by segment for the last 12 months, and which segment the service team should review first."
 model_summary = """
 Nov 2025-Oct 2026 spare-line OTD was Foundry 92.04% (1838/1997), Logic 82.16% (1326/1614), and Memory 70.05% (994/1419).
 Memory trails Foundry by 21.99 percentage points; shipment cohorts show a service gap, not its cause.
@@ -220,9 +220,8 @@ ORDER BY on_hand_value DESC, m.material_no LIMIT 10
 order_matters = true
 names_matter = true
 excel_tip = "Sum stock once per material, XLOOKUP the primary price, and filter out recent usage."
-databricks_note = "Databricks: date_trunc('MONTH', d) and date_trunc('WEEK', d) use the same arguments; d + INTERVAL 7 DAY is supported; datediff('day', a, b) becomes datediff(b, a)."
 time_limit_s = 900
-summary_prompt = "Write three lines: the main result with numbers, the planning implication or limitation, and a specific next action."
+summary_prompt = "Summarize the idle on-hand value in the top 10 unused materials, and what to check before writing that stock off."
 model_summary = """
 The top 10 materials with no usage in Nov 2025-Oct 2026 hold 1063696.15 of stock at the snapshot.
 M-005409 leads at 213618.60 for 17 units; this uses a primary-source quote rather than an accounting valuation.
@@ -283,9 +282,8 @@ GROUP BY d.material_no, s.supplier_no ORDER BY exposed_revenue DESC, d.material_
 order_matters = true
 names_matter = true
 excel_tip = "Use a where-used table to connect open order value to each single-source component."
-databricks_note = "Databricks: date_trunc('MONTH', d) and date_trunc('WEEK', d) use the same arguments; d + INTERVAL 7 DAY is supported; datediff('day', a, b) becomes datediff(b, a)."
 time_limit_s = 900
-summary_prompt = "Write three lines: the main result with numbers, the planning implication or limitation, and a specific next action."
+summary_prompt = "Summarize the largest single-source long-lead exposure on open tool orders, and why those revenue figures are not a shortage total."
 model_summary = """
 M-001324 depends on V-10017 for 233 component units across 43 open tool lines, exposing 286059500.00 in sales value.
 The result contains 12 single-source long-lead dependencies; exposure overlaps across parts and does not prove a shortage or lost revenue.

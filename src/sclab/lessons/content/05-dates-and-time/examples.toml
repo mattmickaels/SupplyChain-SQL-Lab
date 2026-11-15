@@ -105,6 +105,24 @@ GROUP BY c.customer_no, c.name
 expected_rows = [["C-2009", "Quiet Memory", "2026-06-24", "2026-09-22"]]
 order_matters = false
 
+[[example]]
+id = "rowan-tool-recency"
+sql = """
+SELECT c.customer_no,
+       c.name,
+       MAX(h.order_date) AS last_tool_order_date,
+       MAX(h.order_date) + INTERVAL 90 DAY AS plus_90_days
+FROM customer AS c
+JOIN sales_order AS h ON h.customer_no = c.customer_no
+JOIN sales_order_item AS i ON i.so_no = h.so_no
+JOIN material AS m ON m.material_no = i.material_no
+WHERE c.customer_no = 'C-2025'
+  AND m.material_type = 'TOOL'
+GROUP BY c.customer_no, c.name
+"""
+expected_rows = [["C-2025", "Rowan Semiconductors", "2026-08-25", "2026-11-23"]]
+order_matters = false
+
 [[fact]]
 id = "po-0000010-order-date"
 sql = """
@@ -297,3 +315,18 @@ expected_rows = [
   [4, 2, 0.0],
 ]
 order_matters = true
+
+[[fact]]
+id = "past-due-open-po-lines"
+sql = """
+SELECT COUNT(*)
+FROM purchase_order_item AS i
+LEFT JOIN (
+    SELECT po_no, line_no, SUM(qty) AS received_qty
+    FROM goods_receipt
+    GROUP BY po_no, line_no
+) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+WHERE i.confirmed_delivery_date < DATE '2026-11-01'
+  AND COALESCE(r.received_qty, 0) < i.order_qty
+"""
+expected = 1726
