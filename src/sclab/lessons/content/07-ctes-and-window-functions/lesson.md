@@ -191,7 +191,6 @@ January is 169 and the running total is 169.
 February is 78 and the running total is 247.
 March is 266 and the running total is 513.
 
-On this query, `date_trunc('month', g.receipt_date)` is written `date_trunc('MONTH', g.receipt_date)` on Databricks.
 
 September and October 2026 have no receipts of an RF generator.
 A month with no receipts does not appear when you group the receipt rows.
@@ -223,7 +222,6 @@ January has order quantity 46, February has 46, and March has 61.
 January's change is NULL.
 February changes by 0 and March changes by 15.
 
-On this query, `date_trunc('month', h.order_date)` is written `date_trunc('MONTH', h.order_date)` on Databricks.
 These totals include cancelled lines.
 A tool line is booked on the order date even when status is later Cancelled.
 order_qty is the sum of line quantity, not a count of lines.

@@ -25,7 +25,6 @@ ORDER BY m.family_code, month
 order_matters = true
 names_matter = true
 excel_tip = "Use a pivot table with family and promised month as rows and open quantity as values."
-databricks_note = "date_trunc('month', i.promised_date) takes the same arguments as written."
 
 [[exercise]]
 id = "plan-forecast-waterfall"
@@ -99,7 +98,6 @@ ORDER BY family_code, month
 order_matters = true
 names_matter = true
 excel_tip = "Build two pivots at the same grain, then look up matching family-month keys."
-databricks_note = "date_trunc('month', i.promised_date) takes the same arguments as written."
 
 [[exercise]]
 id = "plan-weekly-balance"
@@ -191,7 +189,6 @@ ORDER BY w.week_start
 order_matters = true
 names_matter = true
 excel_tip = "A running Excel balance adds each week's receipts and subtracts its demand from the prior balance."
-databricks_note = "DATE '2026-11-01' + n * INTERVAL 7 DAY and w.week_start + INTERVAL 7 DAY are supported as written. If n * INTERVAL 7 DAY is rejected, use date_add(DATE '2026-11-01', n * 7)."
 
 [[exercise]]
 id = "plan-shortages"
@@ -294,7 +291,6 @@ ORDER BY material_no, plant_code
 order_matters = true
 names_matter = true
 excel_tip = "Filter a running-balance table below its safety-stock column, then pivot to the earliest date."
-databricks_note = "DATE '2026-11-01' + n * INTERVAL 7 DAY and w.week_start + INTERVAL 7 DAY are supported as written. If n * INTERVAL 7 DAY is rejected, use date_add(DATE '2026-11-01', n * 7)."
 
 [[exercise]]
 id = "plan-rf-spare-plant"
@@ -600,7 +596,7 @@ ORDER BY i.so_no, i.line_no
 order_matters = true
 names_matter = true
 excel_tip = "Use a cumulative need and supply ledger before looking up the date each order can start."
-databricks_note = "datediff('day', p.planned_start, a.available_date) becomes datediff(a.available_date, p.planned_start)."
+databricks_note = "Write `datediff(DAY, p.planned_start, a.available_date)` or `datediff(a.available_date, p.planned_start)` in place of `datediff('day', p.planned_start, a.available_date)`."
 
 [[exercise]]
 id = "plan-bay-load"
@@ -647,7 +643,6 @@ FROM grid ORDER BY bay_id, week_start
 order_matters = true
 names_matter = true
 excel_tip = "Pivot order counts by bay and Monday week, then divide by the bay's slot capacity."
-databricks_note = "date_trunc('week', planned_start) is supported as written, and weeks start on Monday. DATE '2026-11-30' + level * INTERVAL 7 DAY is supported as written; if level * INTERVAL 7 DAY is rejected, use date_add(DATE '2026-11-30', level * 7)."
 
 [[exercise]]
 id = "plan-corvane-exposure"
@@ -833,7 +828,7 @@ ORDER BY so_no, line_no
 order_matters = true
 names_matter = true
 excel_tip = "Use a scenario input cell for slip days, then show each line's delay under both inputs side by side."
-databricks_note = "o.confirmed_delivery_date + CASE ... END * INTERVAL 1 DAY is supported as written; if it is rejected, use date_add(o.confirmed_delivery_date, CASE WHEN o.supplier_no = 'V-10017' THEN sc.slip_days ELSE 0 END). datediff('day', p.planned_start, a.available_date) becomes datediff(a.available_date, p.planned_start)."
+databricks_note = "Write `datediff(DAY, p.planned_start, a.available_date)` or `datediff(a.available_date, p.planned_start)` in place of `datediff('day', p.planned_start, a.available_date)`."
 
 [[exercise]]
 id = "plan-corvane-what-if"
@@ -850,7 +845,7 @@ The slip is a what-if on supplier dates; it does not say customer shipment dates
 hints = [
   "Each sales line is either late or not late in each run. Count lines, not days.",
   "Use your previous query as a CTE. Count the lines with baseline_days > 0, the lines with slipped_days > 0, and the lines late only after the slip.",
-  "WITH RECURSIVE ___ (your previous query, as a CTE named line_compare, without its final WHERE) SELECT SUM(CASE WHEN ___ THEN 1 ELSE 0 END) AS baseline_at_risk, SUM(CASE WHEN ___ THEN 1 ELSE 0 END) AS slipped_at_risk, SUM(CASE WHEN ___ AND ___ THEN 1 ELSE 0 END) AS additional_at_risk FROM line_compare"
+  "WITH RECURSIVE ___ (your previous query, as a CTE named line_compare, without its HAVING) SELECT SUM(CASE WHEN ___ THEN 1 ELSE 0 END) AS baseline_at_risk, SUM(CASE WHEN ___ THEN 1 ELSE 0 END) AS slipped_at_risk, SUM(CASE WHEN ___ AND ___ THEN 1 ELSE 0 END) AS additional_at_risk FROM line_compare"
 ]
 reference_sql = ["""
 WITH RECURSIVE tree AS (
@@ -981,4 +976,4 @@ FROM line_compare
 order_matters = false
 names_matter = true
 excel_tip = "Compare the two delay columns, then count the lines that are late only in the slipped column."
-databricks_note = "o.confirmed_delivery_date + CASE ... END * INTERVAL 1 DAY is supported as written; if it is rejected, use date_add(o.confirmed_delivery_date, CASE WHEN o.supplier_no = 'V-10017' THEN sc.slip_days ELSE 0 END). datediff('day', p.planned_start, a.available_date) becomes datediff(a.available_date, p.planned_start)."
+databricks_note = "Write `datediff(DAY, p.planned_start, a.available_date)` or `datediff(a.available_date, p.planned_start)` in place of `datediff('day', p.planned_start, a.available_date)`."

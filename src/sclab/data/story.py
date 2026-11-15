@@ -4,6 +4,8 @@ from datetime import date
 
 CORVANE_SUPPLIER_NO = "V-10017"
 HALCYON_CUSTOMER_NO = "C-2003"
+# The customer whose last tool order is exactly 90 days before the snapshot.
+BOUNDARY_CUSTOMER_NO = "C-2025"
 OVERLOADED_BAY = "SC01-B3"
 SLIP_START = date(2026, 8, 1)
 SLIP_DAYS = 56

@@ -29,7 +29,6 @@ _FORBIDDEN = re.compile(
 )
 _DAY_UNITS = frozenset({"day"})
 _TRUNC_UNITS = frozenset({"month", "week"})
-_DAY_INTERVALS = frozenset({"to_days"})
 _OTHER_INTERVALS = frozenset(
     {
         "to_hours",
@@ -291,14 +290,17 @@ def _interval_literal_is_whole_days(node: dict) -> bool:
 
 
 def _date_exception_forms(sql: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Split controlled date forms into allowed units and rejected units."""
+    """Split controlled date forms into noted forms and rejected forms.
+
+    Day intervals and date_trunc with a month or week unit run as written on Databricks,
+    so they need no note.
+    Only the DuckDB datediff form with a quoted day unit needs a note.
+    """
     allowed: list[str] = []
     rejected: list[str] = []
     for node in _walk(_parse_sql(sql)):
         if _is_interval_literal(node):
-            if _interval_literal_is_whole_days(node):
-                allowed.append("interval")
-            else:
+            if not _interval_literal_is_whole_days(node):
                 rejected.append("interval")
             continue
         if node.get("class") != "FUNCTION":
@@ -312,12 +314,8 @@ def _date_exception_forms(sql: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
             else:
                 rejected.append(name)
         elif name == "date_trunc":
-            if unit in _TRUNC_UNITS:
-                allowed.append(name)
-            else:
+            if unit not in _TRUNC_UNITS:
                 rejected.append(name)
-        elif name in _DAY_INTERVALS:
-            allowed.append("interval")
         elif name in _OTHER_INTERVALS:
             rejected.append(name)
     return tuple(allowed), tuple(rejected)
@@ -443,6 +441,13 @@ def test_exception_forms_need_databricks_note() -> None:
                 )
 
 
+def test_databricks_note_only_for_the_datediff_form() -> None:
+    """A note belongs exactly where the reference SQL uses datediff with a quoted day unit."""
+    for exercise in _exercises():
+        noted = [form for sql in exercise.reference_sql for form in _date_exception_forms(sql)[0]]
+        assert _has_databricks_note(exercise.databricks_note) is bool(noted), exercise.id
+
+
 def test_recursive_queries_have_depth_guard() -> None:
     for exercise in _exercises():
         for sql in exercise.reference_sql:
@@ -504,9 +509,11 @@ def test_recursive_guard_constant_is_at_most_10() -> None:
     assert _recursive_guard_problem(not_less_than) is not None
 
 
-_ALLOWED_DATE_SQL = (
+_NOTED_DATE_SQL = (
     "SELECT datediff('day', a, b) FROM t",
     "SELECT date_diff('day', a, b) FROM t",
+)
+_PLAIN_DATE_SQL = (
     "SELECT date_trunc('month', d) FROM t",
     "SELECT date_trunc('week', d) FROM t",
     "SELECT d + INTERVAL 7 DAY FROM t",
@@ -515,15 +522,22 @@ _ALLOWED_DATE_SQL = (
 )
 
 
-@pytest.mark.parametrize("sql", _ALLOWED_DATE_SQL)
-def test_allowed_date_forms_pass_with_note(sql: str) -> None:
-    assert _date_exception_problem(sql, "date_add or datediff equivalent.") is None
+@pytest.mark.parametrize("sql", _NOTED_DATE_SQL)
+def test_datediff_form_passes_with_note(sql: str) -> None:
+    assert _date_exception_problem(sql, "datediff(end, start) equivalent.") is None
 
 
-@pytest.mark.parametrize("sql", _ALLOWED_DATE_SQL)
-def test_allowed_date_forms_fail_without_note(sql: str) -> None:
+@pytest.mark.parametrize("sql", _NOTED_DATE_SQL)
+def test_datediff_form_fails_without_note(sql: str) -> None:
     assert _date_exception_problem(sql, None) is not None
     assert _date_exception_problem(sql, "  ") is not None
+
+
+@pytest.mark.parametrize("sql", _PLAIN_DATE_SQL)
+def test_plain_date_forms_need_no_note(sql: str) -> None:
+    """Day intervals and month or week truncation run as written on Databricks."""
+    assert _date_exception_forms(sql) == ((), ())
+    assert _date_exception_problem(sql, None) is None
 
 
 @pytest.mark.parametrize(
@@ -542,10 +556,9 @@ def test_disallowed_date_units_fail_with_note(sql: str) -> None:
     assert _date_exception_problem(sql, "A note does not allow this unit.") is not None
 
 
-def test_non_ascii_day_interval_needs_note() -> None:
+def test_non_ascii_day_interval_needs_no_note() -> None:
     sql = "SELECT 'é', DATE '2026-01-01' + INTERVAL 1 DAY"
-    assert _date_exception_problem(sql, None) is not None
-    assert _date_exception_problem(sql, "date_add(DATE '2026-01-01', 1).") is None
+    assert _date_exception_problem(sql, None) is None
 
 
 def test_interval_column_is_not_a_date_exception() -> None:
@@ -818,6 +831,25 @@ _WRONG_ANSWERS = (
         """,
     ),
     (
+        "join-open-rf-po-lines",
+        """
+        SELECT i.po_no, i.line_no, s.name AS supplier_name, i.confirmed_delivery_date
+        FROM purchase_order_item AS i
+        JOIN purchase_order AS h ON h.po_no = i.po_no
+        JOIN supplier AS s ON s.supplier_no = h.supplier_no
+        JOIN material AS m ON m.material_no = i.material_no
+        LEFT JOIN (
+            SELECT po_no, line_no, sum(qty) AS received_qty
+            FROM goods_receipt
+            GROUP BY po_no, line_no
+        ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+        WHERE m.description LIKE '%RF generator%'
+          AND h.order_date <= DATE '2026-11-01'
+          AND COALESCE(r.received_qty, 0) < i.order_qty
+        ORDER BY i.confirmed_delivery_date, i.po_no, i.line_no
+        """,
+    ),
+    (
         "join-corvane-late-lines",
         """
         SELECT i.po_no, i.line_no, m.description,
@@ -916,7 +948,7 @@ _WRONG_ANSWERS = (
         """
         SELECT material_no, description
         FROM material
-        WHERE description = 'RF generator'
+        WHERE description LIKE 'RF generator,%'
         ORDER BY material_no
         """,
     ),
@@ -1099,6 +1131,24 @@ _WRONG_ANSWERS = (
         """,
     ),
     (
+        "dates-open-po-lines-by-week",
+        """
+        SELECT date_trunc('week', i.confirmed_delivery_date) AS week_start,
+               COUNT(*) AS open_line_count
+        FROM purchase_order_item AS i
+        LEFT JOIN (
+            SELECT po_no, line_no, SUM(qty) AS received_qty
+            FROM goods_receipt
+            GROUP BY po_no, line_no
+        ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+        WHERE i.confirmed_delivery_date >= DATE '2026-11-01'
+          AND i.confirmed_delivery_date <= DATE '2026-11-01' + INTERVAL 56 DAY
+          AND COALESCE(r.received_qty, 0) < i.order_qty
+        GROUP BY date_trunc('week', i.confirmed_delivery_date)
+        ORDER BY week_start
+        """,
+    ),
+    (
         "dates-quiet-tool-customers",
         """
         SELECT c.customer_no,
@@ -1124,6 +1174,22 @@ _WRONG_ANSWERS = (
         JOIN sales_order AS h ON h.customer_no = c.customer_no
         GROUP BY c.customer_no, c.name
         HAVING MAX(h.order_date) + INTERVAL 90 DAY < DATE '2026-11-01'
+        ORDER BY last_tool_order_date, c.customer_no
+        """,
+    ),
+    (
+        "dates-quiet-tool-customers",
+        """
+        SELECT c.customer_no,
+               c.name,
+               MAX(h.order_date) AS last_tool_order_date
+        FROM customer AS c
+        JOIN sales_order AS h ON h.customer_no = c.customer_no
+        JOIN sales_order_item AS i ON i.so_no = h.so_no
+        JOIN material AS m ON m.material_no = i.material_no
+        WHERE m.material_type = 'TOOL'
+        GROUP BY c.customer_no, c.name
+        HAVING MAX(h.order_date) + INTERVAL 90 DAY <= DATE '2026-11-01'
         ORDER BY last_tool_order_date, c.customer_no
         """,
     ),
@@ -3317,6 +3383,50 @@ def test_c1_databricks_note_only_when_sql_uses_an_exception_form() -> None:
         assert any(" ".join(fragment.split()) in sql for fragment in fragments), exercise.id
 
 
+def test_c1_drill_model_summary_facts(lab_home) -> None:
+    assert lab_home is not None
+    exercises = {item.id: item for _lesson_id, item in _c1_exercises()}
+    single = exercises["drill-single-source"]
+    top = _run(single.reference_sql[0]).rows[:3]
+    assert top[0][1:] == top[1][1:]
+    assert top[0][0] != top[1][0]
+    assert top[2][4] < top[0][4]
+    assert (top[0][0], top[1][0]) == ("M-001324", "M-001332")
+    assert "M-001324 and M-001332 tie exactly" in single.model_summary
+    assert (top[0][2], top[0][3], float(top[0][4])) == (233, 43, 286059500.00)
+    bay = exercises["drill-bay-bottleneck"]
+    assert _run(bay.reference_sql[0]).rows[0] == ("SC01-B3", 104, 78, 26, 133.33)
+    weekly = _run(
+        """
+        SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
+               COUNT(*) AS starts
+        FROM production_order
+        WHERE status IN ('Planned', 'Released')
+          AND planned_start > DATE '2026-11-01'
+          AND planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+          AND bay_id IN ('SC01-B2', 'SC01-B3')
+        GROUP BY bay_id, CAST(date_trunc('week', planned_start) AS DATE)
+        """
+    ).rows
+    cap = {"SC01-B2": 4, "SC01-B3": 6}
+    starts = {(bay_id, week): count for bay_id, week, count in weekly}
+    weeks = _all_weeks()
+    over = [max(starts.get(("SC01-B3", w), 0) - cap["SC01-B3"], 0) for w in weeks]
+    spare = [max(cap["SC01-B2"] - starts.get(("SC01-B2", w), 0), 0) for w in weeks]
+    assert over == [2] * 13
+    assert sum(spare) == 18
+    assert sum(1 for value in spare if value == 0) == 5
+    assert sum(min(a, b) for a, b in zip(over, spare, strict=True)) == 14
+    assert "only 14 of the 26 excess starts can move" in bay.model_summary
+    assert "5 of the 13 weeks" in bay.model_summary
+    assert "the other 12 starts" in bay.model_summary
+
+
+def _all_weeks() -> list:
+    first = date(2026, 11, 30)
+    return [first + timedelta(days=7 * n) for n in range(13)]
+
+
 def test_c1_drill_summary_prompts_are_specific() -> None:
     prompts = [
         exercise.summary_prompt for _lesson_id, exercise in _c1_exercises() if exercise.is_drill
@@ -3829,6 +3939,46 @@ def test_planning_lesson_sql_blocks_are_checked_examples() -> None:
     checked = {_normalize_ws(item["sql"]) for item in data["example"]}
     for block in blocks:
         assert _normalize_ws(block) in checked, f"Lesson 9 block has no checked result:\n{block}"
+
+
+def test_planning_lesson_rf_generator_facts(lab_home) -> None:
+    assert lab_home is not None
+    text = (_CONTENT / "09-planning-analytics" / "lesson.md").read_text(encoding="utf-8")
+    assert "Etch and deposition tools need RF generators" in text
+    assert "four RF generators, two each of two kinds" in text
+    tree = """
+        WITH RECURSIVE tree AS (
+            SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+            FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+            WHERE m.material_type = 'TOOL'
+            UNION ALL
+            SELECT t.root, t.family_code, b.component_material_no,
+                   CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+            FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+            WHERE t.level < 10
+        )
+    """
+    families = _run(
+        tree
+        + """
+        SELECT DISTINCT t.family_code
+        FROM tree t JOIN material m ON m.material_no = t.material_no
+        WHERE m.description LIKE 'RF generator,%'
+        ORDER BY t.family_code
+        """
+    )
+    assert families.rows == [("DEP",), ("ETC",)]
+    kinds = _run(
+        tree
+        + """
+        SELECT t.material_no, SUM(t.qty)
+        FROM tree t JOIN material m ON m.material_no = t.material_no
+        WHERE t.root = 'M-000011' AND m.description LIKE 'RF generator,%'
+        GROUP BY t.material_no ORDER BY t.material_no
+        """
+    )
+    assert [(row[0], float(row[1])) for row in kinds.rows] == [("M-001321", 2.0), ("M-001329", 2.0)]
 
 
 def test_planning_lesson_states_the_status_rule_and_spare_convention() -> None:

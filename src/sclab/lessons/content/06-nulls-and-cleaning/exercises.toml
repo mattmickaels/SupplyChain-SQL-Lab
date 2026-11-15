@@ -215,8 +215,8 @@ Do not remove a row when no real row holds its text.
 Return one row with removed_rows, the number of planted copies removed.
 """
 hints = [
-  "A trailing space marks the copy. An exact description match does not.",
-  "Count rows whose description changes when trimmed and whose trimmed text belongs to a lower material number.",
+  "A trailing space marks the copy.",
+  "Count rows whose description changes when trimmed and whose trimmed text is held by another material.",
   "SELECT ___ AS removed_rows FROM material AS copy WHERE copy.description ___ AND EXISTS (SELECT 1 FROM material AS kept WHERE ___)",
 ]
 reference_sql = [
@@ -228,10 +228,9 @@ WHERE copy.description <> TRIM(copy.description)
       SELECT 1
       FROM material AS kept
       WHERE kept.description = TRIM(copy.description)
-        AND kept.material_no < copy.material_no
   )
 """,
 ]
 order_matters = false
 names_matter = true
-excel_tip = "Count rows that gain a match only after TRIM, and leave exact description matches in place."
+excel_tip = "Count rows that gain a match only after TRIM."

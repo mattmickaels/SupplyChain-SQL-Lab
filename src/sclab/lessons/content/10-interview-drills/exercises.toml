@@ -144,13 +144,12 @@ FROM grid GROUP BY bay_id ORDER BY load_pct DESC, bay_id
 order_matters = true
 names_matter = true
 excel_tip = "Pivot the complete bay-week grid and keep a separate positive-overload column."
-databricks_note = "On this query, `date_trunc('week', planned_start)` is written `date_trunc('WEEK', planned_start)` on Databricks, and `DATE '2026-11-30' + level * INTERVAL 7 DAY` is written `date_add(DATE '2026-11-30', level * 7)` on Databricks."
 time_limit_s = 900
 summary_prompt = "Summarize which bay is overloaded in Dec-Feb, and whether a same-family bay at that plant has spare slots for rebalancing. Use three lines or fewer."
 model_summary = """
 SC01-B3, an Etch bay with 6 slots a week, is at 133.33 percent on Planned and Released starts in Dec-Feb: 104 starts against 78 slots, with 26 starts above the weekly caps.
-Totals suggest 18 spare slots on SC01-B2 (34 starts against 52 slots, 65.38 percent), but its spare slots fall in different weeks, so week by week only 14 of the 26 excess starts can move.
-Rebalance those 14 from SC01-B3 to SC01-B2, and about 12 starts still need more capacity or a schedule change.
+Totals suggest 18 spare slots on SC01-B2 (34 starts against 52 slots, 65.38 percent), but a week-by-week follow-up check shows SC01-B3 is 2 starts over its cap every week while SC01-B2 has no spare slot in 5 of the 13 weeks, so only 14 of the 26 excess starts can move.
+Rebalance those 14 from SC01-B3 to SC01-B2, and the other 12 starts need more capacity or a schedule change.
 """
 summary_checklist = ["Names the number that matters", "States the date window and scope", "Separates evidence from inference", "Recommends an action", "Three lines or fewer"]
 
@@ -290,7 +289,7 @@ excel_tip = "Use a where-used table to connect open order value to each single-s
 time_limit_s = 900
 summary_prompt = "Summarize the largest single-source long-lead exposure on open tool orders, and why those revenue figures are not a shortage total. Use three lines or fewer."
 model_summary = """
-M-001324 depends on V-10017 for 233 component units across 43 open tool lines, exposing 286059500.00 in sales value.
+M-001324 and M-001332 tie exactly as the largest exposure: each depends on V-10017 for 233 component units across 43 open tool lines, exposing 286059500.00 in sales value.
 The result contains 12 single-source long-lead dependencies; exposure overlaps across parts and does not prove a shortage or lost revenue.
 Review RF supply coverage and qualification of alternative sources before committing additional customer demand.
 """

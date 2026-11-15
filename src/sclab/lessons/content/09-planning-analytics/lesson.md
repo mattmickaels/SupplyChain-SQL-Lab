@@ -121,12 +121,12 @@ Total each side by family and month first, then join.
 Projected available balance (PAB) is opening stock, plus receipts, minus requirements.
 Safety stock is a threshold, so a balance below it is a warning even while it is still positive.
 
-Every tool needs RF generators somewhere deep in its bill of materials.
+Etch and deposition tools need RF generators somewhere deep in their bill of materials.
 Lesson 8 walked that bill with WITH RECURSIVE.
 Here the same walk starts from every tool at once, multiplies qty_per down each path, and keeps the root tool as a column.
 A component can sit under a tool by more than one path, so you add the quantities for each root and component.
 Keep that sum as a CTE called leaves: one row for each root tool and component, with the total quantity per tool.
-Etch tool M-000011 needs two RF generators of two kinds.
+Etch tool M-000011 needs four RF generators, two each of two kinds.
 
 ```sql
 WITH RECURSIVE tree AS (

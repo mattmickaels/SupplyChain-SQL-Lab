@@ -68,7 +68,6 @@ WHERE g.po_no = 'PO-0000010'
 ```
 
 date_trunc('month', order_date) snaps a day back to the first of its month.
-The unit is written date_trunc('MONTH', order_date) on Databricks.
 A booking includes cancelled lines, in this lesson and in the later booking exercises.
 The line was booked on the order date even when status is later Cancelled.
 Sales order lines placed in January 2025 number 576.
@@ -85,7 +84,6 @@ GROUP BY date_trunc('month', h.order_date)
 ```
 
 date_trunc('week', a date) snaps the day back to the Monday of its week.
-The unit is written date_trunc('WEEK', a date) on Databricks.
 PO-0002506 line 1 is confirmed for 1 November 2026.
 That confirmed date falls in the week starting 26 October 2026.
 
@@ -113,8 +111,8 @@ date_add(latest_date, N) is the same comparison on Databricks.
 Every customer has an order on or after 22 October 2026.
 The latest order of any kind is never 180 days old.
 A tool order is a sales order line for a material whose material_type is TOOL.
-Rowan Semiconductors, customer C-2025, last ordered a tool on 25 August 2026.
-That date plus 90 days is 23 November 2026, which is after 1 November 2026, so Rowan is not in the 90-day result.
+Rowan Semiconductors, customer C-2025, last ordered a tool on 3 August 2026.
+That date plus 90 days is exactly 1 November 2026, which is not before 1 November 2026, so Rowan is not in the 90-day result.
 No customer's latest tool order is more than 365, 270, or 180 days before 1 November 2026.
 
 ```sql

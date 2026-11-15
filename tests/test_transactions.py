@@ -115,3 +115,42 @@ def test_backlog_release_uses_last_feasible_working_day():
     released = _backlog_order_dates(np.random.default_rng(SEED), planned, booked)
     # Only Friday remains after three processing days; the snapshot is Sunday.
     assert list(released.dt.date) == [date(2026, 10, 30), date(2026, 10, 1)]
+
+
+def test_forward_confirmations_have_no_snapshot_spike(lab_conn):
+    """Clipped confirmations are spread out, so no later day is busier than any past day."""
+    daily = lab_conn.execute("""
+        SELECT confirmed_delivery_date AS day, COUNT(*) AS lines
+        FROM purchase_order_item GROUP BY 1
+    """).df()
+    daily["day"] = pd.to_datetime(daily["day"])
+    today = pd.Timestamp(AS_OF_DATE)
+    before = daily[daily.day < today]
+    after = daily[daily.day >= today]
+    assert after.lines.max() <= before.lines.max()
+    week = daily[(daily.day >= today) & (daily.day <= today + pd.Timedelta(days=6))]
+    assert len(week) == 7
+    assert week.lines.max() <= 1.5 * week.lines.min()
+
+
+def test_boundary_rows_exist_for_the_date_exercises(lab_conn):
+    """Rows sit exactly on the 56-day and 90-day bounds, so on-or-before differs from before."""
+    edge = lab_conn.execute("""
+        SELECT COUNT(*) FROM purchase_order_item i
+        LEFT JOIN (SELECT po_no, line_no, SUM(qty) AS received FROM goods_receipt
+                   GROUP BY po_no, line_no) r USING (po_no, line_no)
+        WHERE i.confirmed_delivery_date = DATE '2026-11-01' + INTERVAL 56 DAY
+          AND COALESCE(r.received, 0) < i.order_qty
+    """).fetchone()[0]
+    assert edge > 0
+    quiet = lab_conn.execute("""
+        SELECT COUNT(*) FROM (
+            SELECT h.customer_no FROM sales_order h
+            JOIN sales_order_item i ON i.so_no = h.so_no
+            JOIN material m ON m.material_no = i.material_no
+            WHERE m.material_type = 'TOOL'
+            GROUP BY h.customer_no
+            HAVING MAX(h.order_date) + INTERVAL 90 DAY = DATE '2026-11-01'
+        )
+    """).fetchone()[0]
+    assert quiet == 1

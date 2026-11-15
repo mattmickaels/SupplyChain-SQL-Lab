@@ -34,9 +34,10 @@ _PROMPT = "Count the plants, then summarize the result in three lines."
 _MODEL_FIRST = "There are 3 plants."
 _MODEL_LAST = "No action is needed."
 _NOTE = "On Databricks: count(*) is spelled the same way on Databricks."
-_JOINS_NOTE = (
-    "On Databricks: date_add(requested_delivery_date, 56) matches "
-    "requested_delivery_date + INTERVAL 56 DAY."
+_DATEDIFF_NOTE = (
+    "On Databricks: Write <code>datediff(DAY, i.confirmed_delivery_date, g.receipt_date)</code> "
+    "or <code>datediff(g.receipt_date, i.confirmed_delivery_date)</code> in place of "
+    "<code>datediff('day', i.confirmed_delivery_date, g.receipt_date)</code>."
 )
 _TIME_UP = "Time is up - finish your answer, then write your summary"
 _LEAD = (
@@ -47,6 +48,7 @@ _ANSWER = "SELECT count(*) AS plant_count FROM plant"
 _START_FIRST = "Start the drill first."
 _CHECK_FIRST = "Try a Check first, then the solution unlocks."
 _WRITE_FIRST = "Write your summary first."
+_CHECK_QUERY_FIRST = "Check your query first."
 _DRILL_HINTS = (
     "Use count.",
     "Count every row.",
@@ -59,6 +61,11 @@ def _remaining(html: str) -> int:
     matched = re.search(r'data-remaining="(\d+)"', html)
     assert matched is not None
     return int(matched.group(1))
+
+
+def _record_check(client) -> None:
+    passed = client.post("/api/check/sample-drill", data={"sql": _ANSWER})
+    assert "Result matches." in passed.text
 
 
 def test_prompt_hidden_before_start(client) -> None:
@@ -179,6 +186,7 @@ def test_draft_survives_expired_reload_without_model(client, monkeypatch) -> Non
     assert "pagehide" in script
     assert "keepalive" in saver
     assert "HX-Request" in saver
+    _record_check(client)
     submitted = client.post("/api/drill/sample-drill/summary", data={"text": draft})
     assert _MODEL_FIRST in submitted.text
     assert _MODEL_LAST in submitted.text
@@ -201,6 +209,7 @@ def test_summary_persists_across_reload(client, monkeypatch) -> None:
     assert "data-summary-box hidden" not in expired.text
     assert _MODEL_FIRST not in expired.text
     text = "Finding: 3 plants.\nNumber: 3.\nAction: <b>none</b>."
+    _record_check(client)
     submitted = client.post("/api/drill/sample-drill/summary", data={"text": text})
     assert _MODEL_FIRST in submitted.text
     assert "&lt;b&gt;none&lt;/b&gt;" in submitted.text
@@ -282,10 +291,30 @@ def test_summary_and_draft_wait_for_start(client) -> None:
     assert store.drill_started_at("sample-drill") is None
 
 
+def test_summary_waits_for_a_recorded_check(client, monkeypatch) -> None:
+    monkeypatch.setattr("sclab.web.app._now", lambda: datetime(2026, 11, 1, 9, 0, 0))
+    started = client.post("/api/drill/sample-drill/start")
+    assert started.status_code == 200
+    text = "There are 3 plants.\nThe number is 3.\nNo change."
+    early = client.post("/api/drill/sample-drill/summary", data={"text": text})
+    assert early.status_code == 200
+    assert _CHECK_QUERY_FIRST in early.text
+    assert _MODEL_FIRST not in early.text
+    assert _MODEL_LAST not in early.text
+    assert "Model summary" not in early.text
+    assert ProgressStore(progress_path()).drill_summary("sample-drill") is None
+    reloaded = client.get("/lessons/00-sample")
+    assert _MODEL_FIRST not in reloaded.text
+    client.post("/api/check/sample-drill", data={"sql": "SELECT 1"})
+    allowed = client.post("/api/drill/sample-drill/summary", data={"text": text})
+    assert _MODEL_FIRST in allowed.text
+
+
 def test_blank_summary_does_not_reveal_model(client, monkeypatch) -> None:
     monkeypatch.setattr("sclab.web.app._now", lambda: datetime(2026, 11, 1, 9, 0, 0))
     started = client.post("/api/drill/sample-drill/start")
     assert started.status_code == 200
+    _record_check(client)
     for blank in ("", "   ", " \n\t "):
         rejected = client.post("/api/drill/sample-drill/summary", data={"text": blank})
         assert rejected.status_code == 200
@@ -320,11 +349,12 @@ def test_databricks_note_rendered(client, monkeypatch) -> None:
     started = client.post("/api/drill/sample-drill/start")
     assert _NOTE in started.text
     assert started.text.index(_PROMPT) < started.text.index(_NOTE)
-    joins = client.get("/lessons/04-joins")
-    assert joins.status_code == 200
-    assert _JOINS_NOTE in joins.text
-    prompt = "confirmed_delivery_date is at least 56 days after requested_delivery_date."
-    assert joins.text.index(prompt) < joins.text.index(_JOINS_NOTE)
+    dates = client.get("/lessons/05-dates-and-time")
+    assert dates.status_code == 200
+    assert _DATEDIFF_NOTE in dates.text
+    prompt = "days_late is the number of days from confirmed_delivery_date to receipt_date."
+    assert dates.text.index(prompt) < dates.text.index(_DATEDIFF_NOTE)
+    assert "`datediff" not in dates.text
 
 
 def test_export_receives_posted_sql_and_script_saves_editors(client, monkeypatch) -> None:

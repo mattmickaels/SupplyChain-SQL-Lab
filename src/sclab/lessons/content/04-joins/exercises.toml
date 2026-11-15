@@ -126,7 +126,7 @@ excel_tip = "Filter the order header to customer C-2003, then list the open line
 id = "join-open-rf-po-lines"
 title = "Open RF generator purchase lines"
 prompt_md = """
-List purchase order lines for the material whose description is RF generator.
+List purchase order lines for the materials whose description starts with RF generator, (with the comma, so the spare kit stays out).
 The order was placed on or before 1 November 2026.
 Received quantity is below order_qty.
 A line with no goods receipt counts as received quantity 0.
@@ -135,9 +135,9 @@ Return po_no, line_no, supplier_name, and confirmed_delivery_date.
 Order by confirmed_delivery_date, then po_no, then line_no.
 """
 hints = [
-  "An open RF generator line is not fully received. A missing receipt counts as zero.",
+  "An open RF generator line is not fully received. A missing receipt counts as zero. The description starts with RF generator, and a comma.",
   "Sum goods_receipt.qty by po_no and line_no before comparing it with order_qty, and join supplier for the name.",
-  "SELECT i.po_no, i.line_no, s.name AS ___, i.confirmed_delivery_date FROM purchase_order_item AS i JOIN purchase_order AS h ON ___ JOIN supplier AS s ON ___ JOIN material AS m ON ___ LEFT JOIN (SELECT po_no, line_no, SUM(___) AS received_qty FROM goods_receipt GROUP BY po_no, line_no) AS r ON ___ WHERE m.description = ___ AND h.order_date <= ___ AND COALESCE(r.received_qty, 0) < ___ ORDER BY i.confirmed_delivery_date, i.po_no, i.line_no",
+  "SELECT i.po_no, i.line_no, s.name AS ___, i.confirmed_delivery_date FROM purchase_order_item AS i JOIN purchase_order AS h ON ___ JOIN supplier AS s ON ___ JOIN material AS m ON ___ LEFT JOIN (SELECT po_no, line_no, SUM(___) AS received_qty FROM goods_receipt GROUP BY po_no, line_no) AS r ON ___ WHERE m.description LIKE ___ AND h.order_date <= ___ AND COALESCE(r.received_qty, 0) < ___ ORDER BY i.confirmed_delivery_date, i.po_no, i.line_no",
 ]
 reference_sql = [
   """
@@ -295,4 +295,3 @@ ORDER BY i.po_no, i.line_no
 order_matters = true
 names_matter = true
 excel_tip = "Filter to supplier V-10017, and keep a confirmed date on or after the requested date plus 56 days."
-databricks_note = "date_add(requested_delivery_date, 56) matches requested_delivery_date + INTERVAL 56 DAY."

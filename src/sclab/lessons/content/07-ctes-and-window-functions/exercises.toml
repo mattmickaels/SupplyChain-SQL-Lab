@@ -246,7 +246,6 @@ ORDER BY month
 ]
 order_matters = true
 names_matter = true
-databricks_note = "On this query, `date_trunc('month', g.receipt_date)` is written `date_trunc('MONTH', g.receipt_date)` on Databricks."
 excel_tip = "A monthly sum, then a running total down that month column."
 
 [[exercise]]
@@ -294,7 +293,6 @@ ORDER BY month
 ]
 order_matters = true
 names_matter = true
-databricks_note = "On this query, `date_trunc('month', h.order_date)` is written `date_trunc('MONTH', h.order_date)` on Databricks."
 excel_tip = "A monthly sum of tool order quantity, then this month minus the cell above."
 
 [[exercise]]

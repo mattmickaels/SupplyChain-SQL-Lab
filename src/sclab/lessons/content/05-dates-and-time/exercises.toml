@@ -29,7 +29,7 @@ ORDER BY days_late DESC, g.po_no, g.line_no
 order_matters = true
 names_matter = true
 excel_tip = "Subtract the confirmed date from the receipt date, then keep the rows where that gap is positive."
-databricks_note = "On this query, `datediff('day', i.confirmed_delivery_date, g.receipt_date)` is written `datediff(g.receipt_date, i.confirmed_delivery_date)` on Databricks."
+databricks_note = "Write `datediff(DAY, i.confirmed_delivery_date, g.receipt_date)` or `datediff(g.receipt_date, i.confirmed_delivery_date)` in place of `datediff('day', i.confirmed_delivery_date, g.receipt_date)`."
 
 [[exercise]]
 id = "dates-late-rate-by-year"
@@ -128,7 +128,7 @@ ORDER BY line.supplier_no
 order_matters = true
 names_matter = true
 excel_tip = "Find the first receipt date per order line with MINIFS, subtract the order date, then average that gap next to the quoted lead time."
-databricks_note = "On this query, `datediff('day', h.order_date, MIN(g.receipt_date))` is written `datediff(MIN(g.receipt_date), h.order_date)` on Databricks."
+databricks_note = "Write `datediff(DAY, h.order_date, MIN(g.receipt_date))` or `datediff(MIN(g.receipt_date), h.order_date)` in place of `datediff('day', h.order_date, MIN(g.receipt_date))`."
 
 [[exercise]]
 id = "dates-lines-booked-by-month"
@@ -164,7 +164,6 @@ ORDER BY booked_month
 order_matters = true
 names_matter = true
 excel_tip = "Group the order date with EOMONTH or the first of the month, then count the lines."
-databricks_note = "On this query, `date_trunc('month', h.order_date)` is written `date_trunc('MONTH', h.order_date)` on Databricks."
 
 [[exercise]]
 id = "dates-open-po-lines-by-week"
@@ -175,6 +174,7 @@ A line is open when received quantity is below order_qty.
 A line with no goods receipt has received quantity 0.
 Due in the next 8 weeks means confirmed_delivery_date is on or after 1 November 2026 and before 27 December 2026.
 27 December 2026 is 1 November 2026 plus 56 days.
+A line confirmed on 27 December 2026 is not due in the next 8 weeks.
 week_start is date_trunc('week', confirmed_delivery_date), the Monday of that week.
 1 November 2026 falls in the week starting 26 October 2026.
 The result has 9 week rows.
@@ -210,10 +210,6 @@ ORDER BY week_start
 order_matters = true
 names_matter = true
 excel_tip = "Sum the receipts with SUMIF, keep lines still short of the order quantity, and group the confirmed date by week."
-databricks_note = """
-On this query, `date_trunc('week', i.confirmed_delivery_date)` is written `date_trunc('WEEK', i.confirmed_delivery_date)` on Databricks.
-`DATE '2026-11-01' + INTERVAL 56 DAY` is written `date_add(DATE '2026-11-01', 56)` on Databricks.
-"""
 
 [[exercise]]
 id = "dates-quiet-tool-customers"
@@ -225,6 +221,7 @@ Use one row per customer, not per product family.
 365 days, 270 days, and 180 days before 1 November 2026 each match no customer.
 Every customer ordered a tool on or after 24 June 2026, so the threshold that still leaves a customer out is 90 days.
 More than 90 days means last_tool_order_date + INTERVAL 90 DAY is still before DATE '2026-11-01'.
+A customer whose last tool order was exactly 90 days before 1 November 2026 is not more than 90 days, so that customer stays out.
 Return customer_no, name, and last_tool_order_date.
 name is customer.name.
 last_tool_order_date is the latest sales_order.order_date among that customer's tool lines.
@@ -253,7 +250,6 @@ ORDER BY last_tool_order_date, c.customer_no
 order_matters = true
 names_matter = true
 excel_tip = "Take the latest tool order date per customer with MAXIFS, then keep dates more than 90 days before 1 November 2026."
-databricks_note = "On this query, `MAX(h.order_date) + INTERVAL 90 DAY` is written `date_add(MAX(h.order_date), 90)` on Databricks."
 
 [[exercise]]
 id = "dates-corvane-on-time-by-quarter"

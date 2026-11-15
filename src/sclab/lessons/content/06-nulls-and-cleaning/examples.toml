@@ -61,8 +61,8 @@ GROUP BY uom, LENGTH(uom)
 ORDER BY uom
 """
 expected_rows = [
-  ["EA", 2, 60714],
-  ["EA ", 3, 779],
+  ["EA", 2, 60713],
+  ["EA ", 3, 778],
   ["ea", 2, 778],
 ]
 order_matters = true
@@ -199,7 +199,7 @@ order_matters = false
 id = "exists-planted-servo-copy"
 sql = """
 SELECT copy.material_no FROM material AS copy
-WHERE copy.material_no = 'M-005351' AND EXISTS (SELECT 1 FROM material AS kept WHERE kept.description = TRIM(copy.description) AND kept.material_no < copy.material_no)
+WHERE copy.material_no = 'M-005351' AND EXISTS (SELECT 1 FROM material AS kept WHERE kept.description = TRIM(copy.description))
 """
 expected_rows = [["M-005351"]]
 order_matters = false

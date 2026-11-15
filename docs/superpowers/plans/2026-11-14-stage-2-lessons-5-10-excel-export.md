@@ -294,3 +294,8 @@ Lesson 10, Interview drills (6 drills, `time_limit_s = 900` each, each with a `s
 - [ ] **Step 2:** Trigger each Review Focus case in the browser; review the drill and note panels in light and dark mode.
 - [ ] **Step 3:** Claude Opus whole-branch review of the stage 2 diff; fixes go back to Grok and through a Codex review.
 - [ ] **Step 4:** CI green on Windows and macOS; README lists all ten lessons; commit `docs: stage 2 quick start`.
+
+## Changes during execution
+
+- Databricks notes apply to the `datediff('day', start, end)` form only, which Databricks spells `datediff(DAY, start, end)` or `datediff(end, start)`.
+  Day intervals and `date_trunc('month' or 'week', d)` run as written on Databricks, so they carry no note.

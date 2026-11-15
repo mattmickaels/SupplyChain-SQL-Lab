@@ -120,7 +120,7 @@ WHERE c.customer_no = 'C-2025'
   AND m.material_type = 'TOOL'
 GROUP BY c.customer_no, c.name
 """
-expected_rows = [["C-2025", "Rowan Semiconductors", "2026-08-25", "2026-11-23"]]
+expected_rows = [["C-2025", "Rowan Semiconductors", "2026-08-03", "2026-11-01"]]
 order_matters = false
 
 [[fact]]

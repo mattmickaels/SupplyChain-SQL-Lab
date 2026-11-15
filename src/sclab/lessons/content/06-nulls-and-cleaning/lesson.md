@@ -69,7 +69,7 @@ WHERE plant_code = 'AU01'
 ```
 
 Purchase order units were typed three ways.
-EA has 60714 lines, ea has 778 lines, and EA with a trailing space has 779 lines.
+EA has 60713 lines, ea has 778 lines, and EA with a trailing space has 778 lines.
 UPPER(TRIM(uom)) turns all three into EA.
 
 ```sql
@@ -121,11 +121,11 @@ A cleaned material list removes only those planted copies.
 Keep the real row: the lower material_no whose description has no extra space.
 For Robot servo motor, variant 15, the kept number is M-002019 and the removed number is M-005351.
 EXISTS keeps an outer row when the inner query finds a match.
-M-005351 stays, because M-002019 holds the trimmed description and has the lower material number.
+M-005351 is listed as a removed row, because M-002019 holds its trimmed description.
 
 ```sql
 SELECT copy.material_no FROM material AS copy
-WHERE copy.material_no = 'M-005351' AND EXISTS (SELECT 1 FROM material AS kept WHERE kept.description = TRIM(copy.description) AND kept.material_no < copy.material_no)
+WHERE copy.material_no = 'M-005351' AND EXISTS (SELECT 1 FROM material AS kept WHERE kept.description = TRIM(copy.description))
 ```
 
 Do not drop every material that shares a trimmed description.

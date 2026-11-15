@@ -10,6 +10,7 @@ from sclab.constants import AS_OF_DATE, HISTORY_START
 from sclab.data.master import HOME_PLANT, TOOL_PRICES, _segment
 from sclab.data.mrp import plan_purchases
 from sclab.data.story import (
+    BOUNDARY_CUSTOMER_NO,
     CORVANE_SUPPLIER_NO,
     HALCYON_CUSTOMER_NO,
     OVERLOAD_RATIO,
@@ -28,6 +29,8 @@ LOT_DAYS = 100
 # That overrun is what steers the Corvane-caused at-risk Etch lines to about 8-10.
 RF_BUFFER_DAYS = SLIP_DAYS - 13
 RECEIPT_BUFFER_DAYS = 7
+# Confirmations stay inside the first weekly bucket, from the snapshot day on.
+CONFIRM_SPREAD_DAYS = 7
 COMPONENT_LOCATION = "RM01"
 TOOL_LOCATION = "FG01"
 BUILD_DAYS = {"DEP": 56, "ETC": 70, "CMP": 84, "INS": 42}
@@ -143,6 +146,7 @@ def _order_lines(rng, master: dict[str, pd.DataFrame], plant_of: pd.Series) -> p
     normal = _normal_tool_lines(
         rng, months, counts, halcyon_n, tool_ids, etch_ids, customers, list_price
     )
+    normal = _pin_ninety_day_customer(normal, customers)
     normal["promised_date"] = normal["order_date"] + pd.to_timedelta(
         rng.integers(90, 366, size=len(normal)), unit="D"
     )
@@ -165,6 +169,35 @@ def _order_lines(rng, master: dict[str, pd.DataFrame], plant_of: pd.Series) -> p
     lines["order_date"] = pd.to_datetime(lines["order_date"])
     lines["requested_date"] = lines["promised_date"]
     return lines
+
+
+def _pin_ninety_day_customer(normal: pd.DataFrame, customers: np.ndarray) -> pd.DataFrame:
+    """Make one customer's last tool order fall exactly 90 days before the snapshot.
+
+    Only the customer on a few order lines changes, never a date, quantity or tool.
+    """
+    frame = normal.copy()
+    boundary = AS_OF_TS - pd.Timedelta(days=90)
+    free = ~frame["protected"]
+    later = free & frame["customer_no"].eq(BOUNDARY_CUSTOMER_NO) & frame["order_date"].gt(boundary)
+    on_day = free & frame["order_date"].eq(boundary)
+    last = frame.groupby("customer_no")["order_date"].max()
+    recipients = [
+        no
+        for no in customers
+        if no != BOUNDARY_CUSTOMER_NO
+        and last.get(no, pd.Timestamp.min) >= AS_OF_TS - pd.Timedelta(days=30)
+    ]
+    frame.loc[later, "customer_no"] = [
+        recipients[i % len(recipients)] for i in range(int(later.sum()))
+    ]
+    if (
+        not frame.loc[free & frame["customer_no"].eq(BOUNDARY_CUSTOMER_NO), "order_date"]
+        .eq(boundary)
+        .any()
+    ):
+        frame.loc[frame.index[on_day][:1], "customer_no"] = BOUNDARY_CUSTOMER_NO
+    return frame
 
 
 def _month_counts(rng, months: pd.DatetimeIndex) -> tuple[np.ndarray, np.ndarray]:
@@ -531,9 +564,28 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
     # Forward requirements remain outstanding at the snapshot; confirmations
     # can use the remaining buffer after it, without moving any business event.
     forward = ~grouped["historical"]
-    grouped.loc[forward, "confirmed"] = grouped.loc[forward, "confirmed"].clip(
-        lower=AS_OF_TS + pd.Timedelta(days=1)
+    first_day = AS_OF_TS + pd.Timedelta(days=1)
+    clipped = forward & grouped["confirmed"].lt(first_day)
+    grouped.loc[forward, "confirmed"] = grouped.loc[forward, "confirmed"].clip(lower=first_day)
+    # Spread the clipped confirmations over the first week, from the snapshot day on,
+    # filling the quietest allowed day first, so no single day holds all of them.
+    # A confirmation never lands after the need date, so no shortage appears.
+    spread = clipped & ~grouped["supplier_no"].eq(CORVANE_SUPPLIER_NO)
+    grouped.loc[spread, "confirmed"] = _level_days(
+        grouped.loc[~spread, "confirmed"],
+        (grouped.loc[spread, "need_date"] - AS_OF_TS).dt.days.to_numpy(),
+        AS_OF_TS,
     )
+    # A few lines are confirmed exactly 56 days after the snapshot, inside the same
+    # weekly bucket as their neighbours, so "before" and "on or before" differ there.
+    edge = AS_OF_TS + pd.Timedelta(days=56)
+    near = grouped.index[
+        forward
+        & ~grouped["supplier_no"].eq(CORVANE_SUPPLIER_NO)
+        & grouped["confirmed"].gt(edge)
+        & grouped["confirmed"].lt(edge + pd.Timedelta(days=6))
+    ]
+    grouped.loc[near[:3], "confirmed"] = edge
     grouped = _set_on_time(rng, grouped)
     # Lots that would require pre-history procurement are opening inventory.
     opening = grouped.loc[grouped["order_date"] < pd.Timestamp(HISTORY_START)].copy()
@@ -652,6 +704,23 @@ def _backlog_order_dates(
     release = np.busday_offset(first, rng.integers(0, working_days))
     actual.loc[future] = pd.to_datetime(release)
     return actual
+
+
+def _level_days(settled: pd.Series, room: np.ndarray, first_day: pd.Timestamp) -> np.ndarray:
+    """Give each line a day in the first week, no later than its room (days from `first_day`).
+
+    Lines with the least room choose first. Each takes its quietest allowed day.
+    """
+    days = pd.date_range(first_day, periods=CONFIRM_SPREAD_DAYS)
+    totals = [int(settled.eq(day).sum()) for day in days]
+    last = np.clip(room, 0, CONFIRM_SPREAD_DAYS - 1)
+    chosen = np.zeros(len(room), dtype=int)
+    for position in np.argsort(last, kind="stable"):
+        allowed = range(int(last[position]) + 1)
+        quietest = min(allowed, key=lambda index: (totals[index], index))
+        totals[quietest] += 1
+        chosen[position] = quietest
+    return (first_day + pd.to_timedelta(chosen, unit="D")).to_numpy()
 
 
 def _set_on_time(rng, grouped: pd.DataFrame) -> pd.DataFrame:

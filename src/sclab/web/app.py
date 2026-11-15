@@ -76,7 +76,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
                         "title": item.title,
                         "is_drill": False,
                         "prompt_html": _markdown(item.prompt_md),
-                        "databricks_note": item.databricks_note,
+                        "databricks_note": _note_html(item.databricks_note),
                         "excel_tip": item.excel_tip,
                         "sql": progress.editor_sql(item.id) or "",
                     }
@@ -253,6 +253,8 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
                 raise HTTPException(status_code=404, detail="That exercise is not a drill.")
             if store().drill_started_at(exercise_id) is None:
                 return _plain_message("Start the drill first.")
+            if store().status(exercise_id) == "new":
+                return _plain_message("Check your query first.")
             text = (await _form(request)).get("text", "")
             if not text.strip():
                 return _plain_message("Write your summary first.")
@@ -398,8 +400,12 @@ def _today() -> str:
     return f"{AS_OF_DATE.day} {AS_OF_DATE.strftime('%B')} {AS_OF_DATE.year}"
 
 
-def _markdown(text: str) -> Markup:
-    return Markup(_MD.render(text))
+def _markdown(text: str, *, inline: bool = False) -> Markup:
+    return Markup(_MD.renderInline(text) if inline else _MD.render(text))
+
+
+def _note_html(note: str | None) -> Markup | None:
+    return _markdown(note, inline=True) if note else None
 
 
 def _lesson_card(lesson, progress: ProgressStore) -> dict:
@@ -480,7 +486,7 @@ def _drill_context(
         "limit_label": _limit_label(limit),
         "started": started,
         "prompt_html": _markdown(exercise.prompt_md) if started else Markup(""),
-        "databricks_note": exercise.databricks_note if started else None,
+        "databricks_note": _note_html(exercise.databricks_note) if started else None,
         "sql": (progress.editor_sql(exercise.id) or "") if started else "",
         "remaining": remaining if started else 0,
         "countdown_text": _countdown_text(remaining) if started else "",
