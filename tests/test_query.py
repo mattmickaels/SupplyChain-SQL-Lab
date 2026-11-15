@@ -189,6 +189,26 @@ def test_runaway_query_interrupted() -> None:
     assert time.perf_counter() - started < 5
 
 
+def test_unguarded_recursive_bom_walk_times_out() -> None:
+    """A recursive BOM walk with no depth guard must stop, not run away."""
+    sql = """
+        WITH RECURSIVE walk AS (
+            SELECT parent_material_no, component_material_no
+            FROM bom_item
+            UNION ALL
+            SELECT b.parent_material_no, b.component_material_no
+            FROM walk AS w
+            CROSS JOIN bom_item AS b
+        )
+        SELECT COUNT(*) FROM walk
+    """
+    started = time.perf_counter()
+    with pytest.raises(QueryError) as caught:
+        run_query(sql, timeout_s=1)
+    assert caught.value.message == _TIMEOUT_MESSAGE
+    assert time.perf_counter() - started < 10
+
+
 def test_sandbox_write_then_reset() -> None:
     try:
         run_query("DELETE FROM plant", target="sandbox")
