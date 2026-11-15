@@ -747,6 +747,34 @@ def test_worked_examples_match_text(lab_home) -> None:
             ]
 
 
+@pytest.mark.parametrize("last_order", [None, "2026-07-31", "2026-08-01"])
+def test_tool_recency_fact_includes_every_customer(last_order) -> None:
+    data = tomllib.loads((_CONTENT / "05-dates-and-time/examples.toml").read_text())
+    fact = next(
+        item for item in data["fact"] if item["id"] == "customers-without-august-tool-order"
+    )
+    with duckdb.connect(":memory:") as connection:
+        connection.execute("CREATE TABLE customer (customer_no VARCHAR)")
+        connection.execute(
+            "CREATE TABLE sales_order (so_no VARCHAR, customer_no VARCHAR, order_date DATE)"
+        )
+        connection.execute("CREATE TABLE sales_order_item (so_no VARCHAR, material_no VARCHAR)")
+        connection.execute("CREATE TABLE material (material_no VARCHAR, material_type VARCHAR)")
+        connection.execute("INSERT INTO customer VALUES ('recent'), ('other')")
+        connection.execute("INSERT INTO material VALUES ('tool', 'TOOL'), ('spare', 'SPARE')")
+        connection.execute(
+            "INSERT INTO sales_order VALUES ('one', 'recent', DATE '2026-08-01'), "
+            "('two', 'other', DATE '2026-10-31')"
+        )
+        connection.execute("INSERT INTO sales_order_item VALUES ('one', 'tool'), ('two', 'spare')")
+        if last_order is not None:
+            connection.execute("INSERT INTO sales_order VALUES ('three', 'other', ?)", [last_order])
+            connection.execute("INSERT INTO sales_order_item VALUES ('three', 'tool')")
+        actual = connection.execute(fact["sql"]).fetchone()[0]
+    matches = normalize_value(actual) == normalize_value(fact["expected"])
+    assert matches == (last_order == "2026-08-01")
+
+
 def test_hints_are_not_reference_queries() -> None:
     for exercise in _exercises():
         for hint in exercise.hints:
@@ -914,6 +942,318 @@ _WRONG_ANSWERS = (
         )
         GROUP BY i.po_no, i.line_no
         ORDER BY i.po_no, i.line_no
+        """,
+    ),
+    (
+        "dates-october-late-receipts",
+        """
+        SELECT g.po_no, g.line_no, g.receipt_date, i.confirmed_delivery_date,
+               datediff('day', i.confirmed_delivery_date, g.receipt_date) AS days_late
+        FROM goods_receipt AS g
+        JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+        WHERE g.receipt_date >= DATE '2026-10-01'
+          AND g.receipt_date <= DATE '2026-10-31'
+        ORDER BY days_late DESC, g.po_no, g.line_no
+        """,
+    ),
+    (
+        "dates-late-rate-by-year",
+        """
+        SELECT EXTRACT(YEAR FROM g.receipt_date) AS receipt_year,
+               COUNT(*) AS receipt_count,
+               SUM(
+                   CASE WHEN g.receipt_date >= i.confirmed_delivery_date THEN 1 ELSE 0 END
+               ) AS late_count,
+               ROUND(
+                   100.0 * SUM(
+                       CASE WHEN g.receipt_date >= i.confirmed_delivery_date THEN 1 ELSE 0 END
+                   )
+                   / COUNT(*),
+                   1
+               ) AS late_pct
+        FROM goods_receipt AS g
+        JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+        WHERE g.receipt_date >= DATE '2022-01-01'
+          AND g.receipt_date < DATE '2027-01-01'
+        GROUP BY EXTRACT(YEAR FROM g.receipt_date)
+        ORDER BY receipt_year
+        """,
+    ),
+    (
+        "dates-actual-vs-quoted-lead-time",
+        """
+        SELECT line.supplier_no,
+               ROUND(AVG(line.actual_days), 1) AS avg_actual_lead_time_days,
+               ROUND(AVG(q.quoted_lead_time_days), 1) AS avg_quoted_lead_time_days,
+               r.receipt_count
+        FROM (
+            SELECT i.po_no,
+                   i.line_no,
+                   i.material_no,
+                   h.supplier_no,
+                   MIN(g.receipt_date) AS first_receipt_date,
+                   datediff('day', h.order_date, MAX(g.receipt_date)) AS actual_days
+            FROM purchase_order_item AS i
+            JOIN purchase_order AS h ON h.po_no = i.po_no
+            JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
+            GROUP BY i.po_no, i.line_no, i.material_no, h.supplier_no, h.order_date
+        ) AS line
+        JOIN (
+            SELECT h.supplier_no, COUNT(*) AS receipt_count
+            FROM goods_receipt AS g
+            JOIN purchase_order AS h ON h.po_no = g.po_no
+            WHERE g.receipt_date >= DATE '2025-11-01'
+              AND g.receipt_date < DATE '2026-11-01'
+            GROUP BY h.supplier_no
+            HAVING COUNT(*) >= 20
+        ) AS r ON r.supplier_no = line.supplier_no
+        LEFT JOIN material_supplier AS q
+          ON q.material_no = line.material_no
+         AND q.supplier_no = line.supplier_no
+        WHERE line.first_receipt_date >= DATE '2025-11-01'
+          AND line.first_receipt_date < DATE '2026-11-01'
+        GROUP BY line.supplier_no, r.receipt_count
+        ORDER BY line.supplier_no
+        """,
+    ),
+    (
+        "dates-actual-vs-quoted-lead-time",
+        """
+        SELECT line.supplier_no,
+               ROUND(AVG(line.actual_days), 1) AS avg_actual_lead_time_days,
+               ROUND(AVG(q.quoted_lead_time_days), 1) AS avg_quoted_lead_time_days,
+               r.receipt_count
+        FROM (
+            SELECT i.po_no,
+                   i.line_no,
+                   i.material_no,
+                   h.supplier_no,
+                   MIN(g.receipt_date) AS first_receipt_date,
+                   datediff('day', h.order_date, MIN(g.receipt_date)) AS actual_days
+            FROM purchase_order_item AS i
+            JOIN purchase_order AS h ON h.po_no = i.po_no
+            JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
+            GROUP BY i.po_no, i.line_no, i.material_no, h.supplier_no, h.order_date
+        ) AS line
+        JOIN (
+            SELECT h.supplier_no, COUNT(*) AS receipt_count
+            FROM goods_receipt AS g
+            JOIN purchase_order AS h ON h.po_no = g.po_no
+            WHERE g.receipt_date >= DATE '2025-11-01'
+              AND g.receipt_date < DATE '2026-11-01'
+            GROUP BY h.supplier_no
+        ) AS r ON r.supplier_no = line.supplier_no
+        LEFT JOIN material_supplier AS q
+          ON q.material_no = line.material_no
+         AND q.supplier_no = line.supplier_no
+        WHERE line.first_receipt_date >= DATE '2025-11-01'
+          AND line.first_receipt_date < DATE '2026-11-01'
+        GROUP BY line.supplier_no, r.receipt_count
+        ORDER BY line.supplier_no
+        """,
+    ),
+    (
+        "dates-lines-booked-by-month",
+        """
+        SELECT date_trunc('month', i.requested_date) AS booked_month,
+               COUNT(*) AS line_count
+        FROM sales_order_item AS i
+        WHERE i.requested_date >= DATE '2025-01-01'
+          AND i.requested_date < DATE '2026-01-01'
+        GROUP BY date_trunc('month', i.requested_date)
+        ORDER BY booked_month
+        """,
+    ),
+    (
+        "dates-open-po-lines-by-week",
+        """
+        SELECT date_trunc('week', i.confirmed_delivery_date) AS week_start,
+               COUNT(*) AS open_line_count
+        FROM purchase_order_item AS i
+        LEFT JOIN (
+            SELECT po_no, line_no, SUM(qty) AS received_qty
+            FROM goods_receipt
+            GROUP BY po_no, line_no
+        ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+        WHERE i.confirmed_delivery_date >= DATE '2026-11-01'
+          AND i.confirmed_delivery_date < DATE '2026-11-01' + INTERVAL 56 DAY
+          AND COALESCE(r.received_qty, 0) = 0
+        GROUP BY date_trunc('week', i.confirmed_delivery_date)
+        ORDER BY week_start
+        """,
+    ),
+    (
+        "dates-open-po-lines-by-week",
+        """
+        SELECT date_trunc('week', i.confirmed_delivery_date) AS week_start,
+               COUNT(*) AS open_line_count
+        FROM purchase_order_item AS i
+        LEFT JOIN (
+            SELECT po_no, line_no, SUM(qty) AS received_qty
+            FROM goods_receipt
+            GROUP BY po_no, line_no
+        ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+        WHERE i.confirmed_delivery_date >= DATE '2026-11-01'
+          AND i.confirmed_delivery_date < DATE '2026-11-01' + INTERVAL 8 DAY
+          AND COALESCE(r.received_qty, 0) < i.order_qty
+        GROUP BY date_trunc('week', i.confirmed_delivery_date)
+        ORDER BY week_start
+        """,
+    ),
+    (
+        "dates-quiet-tool-customers",
+        """
+        SELECT c.customer_no,
+               c.name,
+               MAX(h.order_date) AS last_tool_order_date
+        FROM customer AS c
+        JOIN sales_order AS h ON h.customer_no = c.customer_no
+        JOIN sales_order_item AS i ON i.so_no = h.so_no
+        JOIN material AS m ON m.material_no = i.material_no
+        WHERE m.material_type = 'TOOL'
+        GROUP BY c.customer_no, c.name
+        HAVING MAX(h.order_date) + INTERVAL 180 DAY < DATE '2026-11-01'
+        ORDER BY last_tool_order_date, c.customer_no
+        """,
+    ),
+    (
+        "dates-quiet-tool-customers",
+        """
+        SELECT c.customer_no,
+               c.name,
+               MAX(h.order_date) AS last_tool_order_date
+        FROM customer AS c
+        JOIN sales_order AS h ON h.customer_no = c.customer_no
+        GROUP BY c.customer_no, c.name
+        HAVING MAX(h.order_date) + INTERVAL 90 DAY < DATE '2026-11-01'
+        ORDER BY last_tool_order_date, c.customer_no
+        """,
+    ),
+    (
+        "dates-corvane-on-time-by-quarter",
+        """
+        SELECT EXTRACT(YEAR FROM g.receipt_date) AS receipt_year,
+               EXTRACT(QUARTER FROM g.receipt_date) AS receipt_quarter,
+               COUNT(*) AS receipt_count,
+               ROUND(
+                   100.0 * SUM(
+                       CASE WHEN g.receipt_date <= i.confirmed_delivery_date THEN 1 ELSE 0 END
+                   )
+                   / COUNT(*),
+                   1
+               ) AS on_time_pct
+        FROM goods_receipt AS g
+        JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+        JOIN purchase_order AS h ON h.po_no = g.po_no
+        WHERE g.receipt_date >= DATE '2025-01-01'
+          AND g.receipt_date < DATE '2027-01-01'
+        GROUP BY EXTRACT(YEAR FROM g.receipt_date), EXTRACT(QUARTER FROM g.receipt_date)
+        ORDER BY receipt_year, receipt_quarter
+        """,
+    ),
+    (
+        "clean-duplicate-materials",
+        """
+        SELECT material_no, description, TRIM(description) AS trimmed_description
+        FROM material
+        WHERE description LIKE '% '
+        ORDER BY trimmed_description, material_no
+        """,
+    ),
+    (
+        "clean-lead-time-counts",
+        """
+        SELECT plant_code,
+               SUM(CASE WHEN planned_lead_time_days IS NULL THEN 1 ELSE 0 END) AS null_count,
+               SUM(CASE WHEN planned_lead_time_days = 0 THEN 1 ELSE 0 END) AS zero_count,
+               SUM(CASE WHEN planned_lead_time_days >= 0 THEN 1 ELSE 0 END) AS valid_count
+        FROM material_plant
+        GROUP BY plant_code
+        ORDER BY plant_code
+        """,
+    ),
+    (
+        "clean-lead-time-counts",
+        """
+        SELECT plant_code,
+               SUM(CASE WHEN planned_lead_time_days IS NULL THEN 1 ELSE 0 END) AS null_count,
+               SUM(
+                   CASE WHEN COALESCE(planned_lead_time_days, 0) = 0 THEN 1 ELSE 0 END
+               ) AS zero_count,
+               SUM(CASE WHEN planned_lead_time_days > 0 THEN 1 ELSE 0 END) AS valid_count
+        FROM material_plant
+        GROUP BY plant_code
+        ORDER BY plant_code
+        """,
+    ),
+    (
+        "clean-lead-time-averages",
+        """
+        SELECT ROUND(AVG(planned_lead_time_days), 1) AS avg_ignoring_null,
+               ROUND(AVG(planned_lead_time_days), 1) AS avg_null_as_zero,
+               ROUND(AVG(CASE WHEN planned_lead_time_days > 0
+                              THEN planned_lead_time_days END), 1) AS avg_excluding_null_and_zero
+        FROM material_plant
+        """,
+    ),
+    (
+        "clean-lead-time-averages",
+        """
+        SELECT ROUND(AVG(planned_lead_time_days), 1) AS avg_ignoring_null,
+               ROUND(AVG(COALESCE(planned_lead_time_days, 0)), 1) AS avg_null_as_zero,
+               ROUND(AVG(planned_lead_time_days), 1) AS avg_excluding_null_and_zero
+        FROM material_plant
+        """,
+    ),
+    (
+        "clean-uom",
+        """
+        SELECT uom, COUNT(*) AS line_count
+        FROM purchase_order_item
+        GROUP BY uom
+        ORDER BY uom
+        """,
+    ),
+    (
+        "clean-country-trim",
+        """
+        SELECT country AS country_raw,
+               country,
+               COUNT(*) AS raw_count,
+               COUNT(*) AS trimmed_count
+        FROM customer
+        GROUP BY country
+        ORDER BY country, country_raw
+        """,
+    ),
+    (
+        "clean-fill-lead-time",
+        """
+        SELECT p.material_no,
+               p.plant_code,
+               p.planned_lead_time_days,
+               s.quoted_lead_time_days,
+               COALESCE(p.planned_lead_time_days, 0) AS filled_lead_time_days
+        FROM material_plant AS p
+        LEFT JOIN material_supplier AS s
+          ON s.material_no = p.material_no
+         AND s.is_primary = true
+        WHERE p.planned_lead_time_days IS NULL
+        ORDER BY p.material_no, p.plant_code
+        """,
+    ),
+    (
+        "clean-removed-material-rows",
+        """
+        SELECT COUNT(*) - COUNT(DISTINCT TRIM(description)) AS removed_rows
+        FROM material
+        """,
+    ),
+    (
+        "clean-removed-material-rows",
+        """
+        SELECT COUNT(*) - COUNT(DISTINCT description) AS removed_rows
+        FROM material
         """,
     ),
     (

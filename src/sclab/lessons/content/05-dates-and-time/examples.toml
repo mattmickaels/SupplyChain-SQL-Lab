@@ -1,0 +1,299 @@
+[[example]]
+id = "one-day-late-receipt"
+sql = """
+SELECT datediff('day', i.confirmed_delivery_date, g.receipt_date) AS days_late
+FROM goods_receipt AS g
+JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+WHERE g.gr_no = 'GR-0000036'
+"""
+expected_rows = [[1]]
+order_matters = false
+
+[[example]]
+id = "day-after-confirmed"
+sql = """
+SELECT confirmed_delivery_date + INTERVAL 1 DAY AS day_after_confirmed
+FROM purchase_order_item
+WHERE po_no = 'PO-0017001'
+  AND line_no = 2
+"""
+expected_rows = [["2021-11-21"]]
+order_matters = false
+
+[[example]]
+id = "actual-lead-time-one-line"
+sql = """
+SELECT datediff('day', h.order_date, MIN(g.receipt_date)) AS actual_lead_time_days
+FROM purchase_order_item AS i
+JOIN purchase_order AS h ON h.po_no = i.po_no
+JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
+WHERE i.po_no = 'PO-0017001'
+  AND i.line_no = 2
+GROUP BY h.order_date
+"""
+expected_rows = [[19]]
+order_matters = false
+
+[[example]]
+id = "late-rate-one-line"
+sql = """
+SELECT COUNT(*) AS receipt_count,
+       ROUND(
+           100.0 * SUM(CASE WHEN g.receipt_date > i.confirmed_delivery_date THEN 1 ELSE 0 END)
+           / COUNT(*),
+           1
+       ) AS late_pct
+FROM goods_receipt AS g
+JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+WHERE g.po_no = 'PO-0017001'
+  AND g.line_no = 2
+"""
+expected_rows = [[3, 100.0]]
+order_matters = false
+
+[[example]]
+id = "january-2025-bookings"
+sql = """
+SELECT date_trunc('month', h.order_date) AS booked_month,
+       COUNT(*) AS line_count
+FROM sales_order_item AS i
+JOIN sales_order AS h ON h.so_no = i.so_no
+WHERE h.order_date >= DATE '2025-01-01'
+  AND h.order_date < DATE '2025-02-01'
+GROUP BY date_trunc('month', h.order_date)
+"""
+expected_rows = [["2025-01-01", 385]]
+order_matters = false
+
+[[example]]
+id = "week-of-1-november-2026"
+sql = """
+SELECT date_trunc('week', confirmed_delivery_date) AS week_start
+FROM purchase_order_item
+WHERE po_no = 'PO-0002536'
+  AND line_no = 1
+"""
+expected_rows = [["2026-10-26"]]
+order_matters = false
+
+[[example]]
+id = "quarter-of-one-receipt"
+sql = """
+SELECT EXTRACT(YEAR FROM receipt_date) AS receipt_year,
+       EXTRACT(QUARTER FROM receipt_date) AS receipt_quarter
+FROM goods_receipt
+WHERE gr_no = 'GR-0000036'
+"""
+expected_rows = [[2021, 4]]
+order_matters = false
+
+[[example]]
+id = "harbor-tool-recency"
+sql = """
+SELECT c.customer_no,
+       c.name,
+       MAX(h.order_date) AS last_tool_order_date,
+       MAX(h.order_date) + INTERVAL 90 DAY AS plus_90_days
+FROM customer AS c
+JOIN sales_order AS h ON h.customer_no = c.customer_no
+JOIN sales_order_item AS i ON i.so_no = h.so_no
+JOIN material AS m ON m.material_no = i.material_no
+WHERE c.customer_no = 'C-2002'
+  AND m.material_type = 'TOOL'
+GROUP BY c.customer_no, c.name
+"""
+expected_rows = [["C-2002", "Harbor Foundry", "2026-08-01", "2026-10-30"]]
+order_matters = false
+
+[[fact]]
+id = "po-0017001-order-date"
+sql = """
+SELECT order_date
+FROM purchase_order
+WHERE po_no = 'PO-0017001'
+"""
+expected = "2021-11-02"
+
+[[fact]]
+id = "po-0017001-line-2-confirmed"
+sql = """
+SELECT confirmed_delivery_date
+FROM purchase_order_item
+WHERE po_no = 'PO-0017001'
+  AND line_no = 2
+"""
+expected = "2021-11-20"
+
+[[fact]]
+id = "gr-0000036-po"
+sql = """
+SELECT po_no
+FROM goods_receipt
+WHERE gr_no = 'GR-0000036'
+"""
+expected = "PO-0017001"
+
+[[fact]]
+id = "gr-0000036-line"
+sql = """
+SELECT line_no
+FROM goods_receipt
+WHERE gr_no = 'GR-0000036'
+"""
+expected = 2
+
+[[fact]]
+id = "gr-0000036-receipt-date"
+sql = """
+SELECT receipt_date
+FROM goods_receipt
+WHERE gr_no = 'GR-0000036'
+"""
+expected = "2021-11-21"
+
+[[fact]]
+id = "po-0002536-line-1-confirmed"
+sql = """
+SELECT confirmed_delivery_date
+FROM purchase_order_item
+WHERE po_no = 'PO-0002536'
+  AND line_no = 1
+"""
+expected = "2026-11-01"
+
+[[fact]]
+id = "corvane-supplier-name"
+sql = """
+SELECT name
+FROM supplier
+WHERE supplier_no = 'V-10017'
+"""
+expected = "Corvane RF Systems"
+
+[[fact]]
+id = "earliest-latest-customer-order"
+sql = """
+SELECT MIN(last_order_date)
+FROM (
+    SELECT MAX(order_date) AS last_order_date
+    FROM sales_order
+    GROUP BY customer_no
+)
+"""
+expected = "2026-10-26"
+
+[[fact]]
+id = "customers-without-a-late-october-order"
+sql = """
+SELECT COUNT(*)
+FROM (
+    SELECT customer_no
+    FROM sales_order
+    GROUP BY customer_no
+    HAVING MAX(order_date) < DATE '2026-10-26'
+)
+"""
+expected = 0
+
+[[fact]]
+id = "customers-without-august-tool-order"
+sql = """
+SELECT COUNT(*)
+FROM customer AS c
+LEFT JOIN (
+    SELECT h.customer_no, MAX(h.order_date) AS last_tool_order_date
+    FROM sales_order AS h
+    JOIN sales_order_item AS i ON i.so_no = h.so_no
+    JOIN material AS m ON m.material_no = i.material_no
+    WHERE m.material_type = 'TOOL'
+    GROUP BY h.customer_no
+) AS latest ON latest.customer_no = c.customer_no
+WHERE latest.last_tool_order_date IS NULL
+   OR latest.last_tool_order_date < DATE '2026-08-01'
+"""
+expected = 0
+
+[[fact]]
+id = "tool-customers-quiet-365-days"
+sql = """
+SELECT COUNT(*)
+FROM (
+    SELECT h.customer_no
+    FROM sales_order AS h
+    JOIN sales_order_item AS i ON i.so_no = h.so_no
+    JOIN material AS m ON m.material_no = i.material_no
+    WHERE m.material_type = 'TOOL'
+    GROUP BY h.customer_no
+    HAVING MAX(h.order_date) + INTERVAL 365 DAY < DATE '2026-11-01'
+)
+"""
+expected = 0
+
+[[fact]]
+id = "tool-customers-quiet-270-days"
+sql = """
+SELECT COUNT(*)
+FROM (
+    SELECT h.customer_no
+    FROM sales_order AS h
+    JOIN sales_order_item AS i ON i.so_no = h.so_no
+    JOIN material AS m ON m.material_no = i.material_no
+    WHERE m.material_type = 'TOOL'
+    GROUP BY h.customer_no
+    HAVING MAX(h.order_date) + INTERVAL 270 DAY < DATE '2026-11-01'
+)
+"""
+expected = 0
+
+[[fact]]
+id = "harbor-tool-order-plus-180-days"
+sql = """
+SELECT MAX(h.order_date) + INTERVAL 180 DAY
+FROM sales_order AS h
+JOIN sales_order_item AS i ON i.so_no = h.so_no
+JOIN material AS m ON m.material_no = i.material_no
+WHERE h.customer_no = 'C-2002'
+  AND m.material_type = 'TOOL'
+"""
+expected = "2027-01-28"
+
+[[fact]]
+id = "tool-customers-quiet-180-days"
+sql = """
+SELECT COUNT(*)
+FROM (
+    SELECT h.customer_no
+    FROM sales_order AS h
+    JOIN sales_order_item AS i ON i.so_no = h.so_no
+    JOIN material AS m ON m.material_no = i.material_no
+    WHERE m.material_type = 'TOOL'
+    GROUP BY h.customer_no
+    HAVING MAX(h.order_date) + INTERVAL 180 DAY < DATE '2026-11-01'
+)
+"""
+expected = 0
+
+[[example]]
+id = "corvane-late-2026-quarters"
+sql = """
+SELECT EXTRACT(QUARTER FROM g.receipt_date) AS receipt_quarter,
+       COUNT(*) AS receipt_count,
+       ROUND(
+           100.0 * SUM(CASE WHEN g.receipt_date <= i.confirmed_delivery_date THEN 1 ELSE 0 END)
+           / COUNT(*),
+           1
+       ) AS on_time_pct
+FROM goods_receipt AS g
+JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+JOIN purchase_order AS h ON h.po_no = g.po_no
+WHERE h.supplier_no = 'V-10017'
+  AND g.receipt_date >= DATE '2026-07-01'
+  AND g.receipt_date < DATE '2027-01-01'
+GROUP BY EXTRACT(QUARTER FROM g.receipt_date)
+ORDER BY receipt_quarter
+"""
+expected_rows = [
+  [3, 23, 43.5],
+  [4, 2, 0.0],
+]
+order_matters = true
