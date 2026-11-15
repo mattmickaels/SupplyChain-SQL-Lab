@@ -190,6 +190,18 @@
     downloadExport(button);
   });
 
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-copy-sql]");
+    if (!button) {
+      return;
+    }
+    var code = button.closest(".sql-panel").querySelector("code");
+    if (navigator.clipboard && code) {
+      navigator.clipboard.writeText(code.textContent);
+      button.textContent = "Copied";
+    }
+  });
+
   function saveDrillDrafts() {
     document.querySelectorAll("textarea[name='text'][hx-post]").forEach(function (area) {
       var form = area.form;

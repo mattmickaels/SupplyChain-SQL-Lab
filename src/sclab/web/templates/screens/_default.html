@@ -1,0 +1,15 @@
+{% extends "screens/_layout.html" %}
+{% block screen_body %}
+{% for name, run in data.runs.items() %}
+<h2>{{ run.query.title }}</h2>
+{% if run.error %}
+<p class="message">{{ run.error }}</p>
+{% elif run.result.rows %}
+{% with columns=run.result.columns, rows=run.result.rows, types=run.result.column_types %}
+{% include "_grid.html" %}
+{% endwith %}
+{% else %}
+<p class="empty">Nothing to show.</p>
+{% endif %}
+{% endfor %}
+{% endblock %}
