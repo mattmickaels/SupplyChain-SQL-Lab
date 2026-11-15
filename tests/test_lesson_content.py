@@ -23,6 +23,7 @@ _FORBIDDEN = re.compile(
     r"GROUP\s+BY\s+ALL|\bEXCLUDE\b|\bQUALIFY\b|\bCURRENT_DATE\b|\blist_|\bstrftime\b|\bdate_diff\b",
     re.IGNORECASE,
 )
+PORTABILITY_EXCEPTIONS: tuple[str, ...] = ("datediff(", "interval", "date_trunc(")
 
 
 def _exercises() -> list[Exercise]:
@@ -201,11 +202,72 @@ def test_reference_results_match_snapshot(request, reference_results) -> None:
     assert found == saved
 
 
+def _source_span_has_interval(sql: str) -> bool:
+    """INTERVAL is rewritten to to_days before DuckDB serializes the tree back."""
+
+    def walk(value: object) -> bool:
+        if isinstance(value, dict):
+            if value.get("kind") == "STRING":
+                return False
+            length = value.get("query_location_length")
+            loc = value.get("query_location")
+            if isinstance(loc, int) and isinstance(length, int) and 0 < length < 10**6:
+                span = sql[loc : loc + length].casefold().lstrip()
+                if span.startswith("interval"):
+                    return True
+            return any(walk(child) for child in value.values())
+        if isinstance(value, list):
+            return any(walk(child) for child in value)
+        return False
+
+    return walk(_parse_sql(sql))
+
+
+def _portability_exception_hits(sql: str) -> tuple[str, ...]:
+    folded = _portable_sql(sql).casefold()
+    hits = [token for token in PORTABILITY_EXCEPTIONS if token != "interval" and token in folded]
+    if "interval" in PORTABILITY_EXCEPTIONS and (
+        "interval" in folded or _source_span_has_interval(sql)
+    ):
+        hits.append("interval")
+    return tuple(hits)
+
+
+def _has_databricks_note(exercise: Exercise) -> bool:
+    note = exercise.databricks_note
+    return isinstance(note, str) and bool(note.strip())
+
+
 def test_reference_sql_is_portable() -> None:
     for exercise in _exercises():
         for sql in exercise.reference_sql:
             assert _FORBIDDEN.search(_portable_sql(sql)) is None, (
                 f"{exercise.id} uses non-portable SQL"
+            )
+            hits = _portability_exception_hits(sql)
+            if hits and not _has_databricks_note(exercise):
+                pytest.fail(f"{exercise.id} uses {hits[0]} without a databricks_note")
+
+
+def test_exception_forms_need_databricks_note() -> None:
+    for exercise in _exercises():
+        for sql in exercise.reference_sql:
+            hits = _portability_exception_hits(sql)
+            if not hits:
+                continue
+            assert _has_databricks_note(exercise), (
+                f"{exercise.id} uses {hits[0]} and needs a databricks_note"
+            )
+
+
+def test_recursive_queries_have_depth_guard() -> None:
+    for exercise in _exercises():
+        for sql in exercise.reference_sql:
+            portable = _portable_sql(sql).casefold().replace('"', "")
+            if "with recursive" not in portable:
+                continue
+            assert "level <" in portable, (
+                f"{exercise.id} recursive query needs a level < depth guard"
             )
 
 

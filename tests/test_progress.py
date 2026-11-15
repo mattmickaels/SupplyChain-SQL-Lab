@@ -1,4 +1,5 @@
 import threading
+from datetime import datetime
 from pathlib import Path
 
 from sclab.lessons.progress import ProgressStore
@@ -151,3 +152,34 @@ def test_eight_threads_keep_every_attempt(tmp_path: Path) -> None:
         assert saved.status(f"ex-{index}") == expected
         assert saved.last_sql(f"ex-{index}") == f"SELECT {index}"
     assert saved.status("shared") == "passed"
+
+
+def test_start_drill_keeps_first_start(tmp_path: Path) -> None:
+    path = tmp_path / "progress.json"
+    store = ProgressStore(path)
+    first = datetime(2026, 11, 1, 9, 0, 0)
+    later = datetime(2026, 11, 1, 9, 5, 0)
+    assert store.drill_started_at("sample-drill") is None
+    store.start_drill("sample-drill", first)
+    store.start_drill("sample-drill", later)
+    assert store.drill_started_at("sample-drill") == first
+    store.record_attempt("sample-drill", "SELECT 1", False)
+    assert store.drill_started_at("sample-drill") == first
+    reloaded = ProgressStore(path)
+    assert reloaded.drill_started_at("sample-drill") == first
+    assert reloaded.last_sql("sample-drill") == "SELECT 1"
+    assert reloaded.status("sample-drill") == "attempted"
+
+
+def test_drill_summary_round_trip(tmp_path: Path) -> None:
+    path = tmp_path / "progress.json"
+    store = ProgressStore(path)
+    text = "There are 3 plants.\nThe number that matters is 3.\nNo action is needed."
+    assert store.drill_summary("sample-drill") is None
+    store.save_drill_summary("sample-drill", text)
+    assert store.drill_summary("sample-drill") == text
+    store.record_attempt("sample-drill", "SELECT count(*) AS plant_count FROM plant", True)
+    reloaded = ProgressStore(path)
+    assert reloaded.drill_summary("sample-drill") == text
+    assert reloaded.status("sample-drill") == "passed"
+    assert reloaded.last_sql("sample-drill") == "SELECT count(*) AS plant_count FROM plant"

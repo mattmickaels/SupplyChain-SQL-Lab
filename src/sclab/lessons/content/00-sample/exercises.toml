@@ -27,3 +27,25 @@ hints = [
 reference_sql = ["SELECT count(*) AS plant_count FROM plant"]
 order_matters = false
 names_matter = true
+
+[[exercise]]
+id = "sample-drill"
+title = "Timed plant count"
+prompt_md = "Count the plants, then summarize the result in three lines."
+hints = [
+  "Use count.",
+  "Count every row.",
+  "Then write the three-line summary.",
+]
+reference_sql = ["SELECT count(*) AS plant_count FROM plant"]
+order_matters = false
+names_matter = true
+databricks_note = "count(*) is spelled the same way on Databricks."
+time_limit_s = 900
+summary_prompt = "Write three lines: the finding, the number that matters, and what you would do."
+model_summary = "There are 3 plants.\nThe number that matters is 3.\nNo action is needed."
+summary_checklist = [
+  "Names the number that matters",
+  "Recommends an action",
+  "Three lines or fewer",
+]

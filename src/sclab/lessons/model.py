@@ -24,6 +24,15 @@ class Exercise:
     order_matters: bool
     names_matter: bool
     excel_tip: str | None
+    databricks_note: str | None = None
+    time_limit_s: int | None = None
+    summary_prompt: str | None = None
+    model_summary: str | None = None
+    summary_checklist: tuple[str, ...] = ()
+
+    @property
+    def is_drill(self) -> bool:
+        return self.time_limit_s is not None
 
 
 @dataclass(frozen=True)
@@ -165,7 +174,7 @@ def _parse_exercise(row: object, folder_name: str) -> Exercise:
     prompt = row.get("prompt_md")
     if not isinstance(title, str) or not isinstance(prompt, str):
         raise ValueError(f"Exercise {exercise_id} needs a title and prompt_md.")
-    return Exercise(
+    exercise = Exercise(
         id=exercise_id,
         title=title,
         prompt_md=prompt,
@@ -173,8 +182,15 @@ def _parse_exercise(row: object, folder_name: str) -> Exercise:
         reference_sql=_reference_sql(row.get("reference_sql"), exercise_id),
         order_matters=_flag(row.get("order_matters", False), exercise_id, "order_matters"),
         names_matter=_flag(row.get("names_matter", False), exercise_id, "names_matter"),
-        excel_tip=_optional_text(row.get("excel_tip"), exercise_id),
+        excel_tip=_optional_text(row.get("excel_tip"), exercise_id, "excel_tip"),
+        databricks_note=_optional_text(row.get("databricks_note"), exercise_id, "databricks_note"),
+        time_limit_s=_optional_int(row.get("time_limit_s"), exercise_id, "time_limit_s"),
+        summary_prompt=_optional_text(row.get("summary_prompt"), exercise_id, "summary_prompt"),
+        model_summary=_optional_text(row.get("model_summary"), exercise_id, "model_summary"),
+        summary_checklist=_checklist(row.get("summary_checklist"), exercise_id),
     )
+    _require_drill(exercise)
+    return exercise
 
 
 def _three_hints(value: object, exercise_id: str) -> tuple[str, str, str]:
@@ -203,9 +219,40 @@ def _flag(value: object, exercise_id: str, label: str) -> bool:
     return value
 
 
-def _optional_text(value: object, exercise_id: str) -> str | None:
+def _optional_text(value: object, exercise_id: str, label: str) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):
-        raise ValueError(f"Exercise {exercise_id} excel_tip must be text.")
+        raise ValueError(f"Exercise {exercise_id} {label} must be text.")
     return value
+
+
+def _optional_int(value: object, exercise_id: str, label: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"Exercise {exercise_id} {label} must be a whole number.")
+    return value
+
+
+def _checklist(value: object, exercise_id: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"Exercise {exercise_id} summary_checklist must be a list of text.")
+    return tuple(value)
+
+
+def _require_drill(exercise: Exercise) -> None:
+    if not exercise.is_drill:
+        return
+    prompt_ok = bool(exercise.summary_prompt and exercise.summary_prompt.strip())
+    summary_ok = bool(exercise.model_summary and exercise.model_summary.strip())
+    items = exercise.summary_checklist
+    list_ok = 3 <= len(items) <= 5 and all(item.strip() for item in items)
+    if prompt_ok and summary_ok and list_ok:
+        return
+    raise ValueError(
+        f"Exercise {exercise.id} is a drill and needs a summary_prompt, "
+        "a model_summary, and 3 to 5 summary_checklist items."
+    )
