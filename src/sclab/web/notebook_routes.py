@@ -17,7 +17,7 @@ from starlette.concurrency import run_in_threadpool
 from sclab.engine.query import QueryError, run_query
 from sclab.engine.types import QueryResult
 from sclab.notebook.store import Cell, Notebook, NotebookStore
-from sclab.paths import notebooks_dir
+from sclab.paths import notebooks_dir, sandbox_db_path
 from sclab.web import export as excel
 from sclab.web.cells import display_text
 
@@ -26,6 +26,7 @@ _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 _COLUMN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 _UNEXPECTED = "Something went wrong. Try again."
 _MISSING = "That notebook is not in the lab."
+_SANDBOX_CHART = "Run this cell to create the practice database and draw the chart."
 
 
 def register_notebook_routes(app: FastAPI, render) -> None:
@@ -334,6 +335,8 @@ async def _views(notebook: Notebook) -> list[dict]:
 def _chart_html(cell: Cell, target: str) -> Markup:
     if not cell.chart:
         return Markup("")
+    if target == "sandbox" and not sandbox_db_path().is_file():
+        return Markup(f'<p class="message">{html.escape(_SANDBOX_CHART)}</p>')
     try:
         result = run_query(cell.source, target=target, read_only=True)
     except QueryError as exc:

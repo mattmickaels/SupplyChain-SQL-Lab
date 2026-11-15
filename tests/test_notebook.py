@@ -15,7 +15,7 @@ from openpyxl import load_workbook
 
 from sclab.engine.query import QueryError, reset_sandbox, run_query
 from sclab.notebook.store import Cell, NotebookStore
-from sclab.paths import notebooks_dir
+from sclab.paths import notebooks_dir, sandbox_db_path
 from sclab.web.app import create_app
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -344,6 +344,31 @@ def test_chart_reload_does_not_write(client: TestClient) -> None:
         assert loaded.status_code == 200
         with pytest.raises(QueryError):
             run_query("SELECT n FROM nb_chart_get_probe", target="sandbox")
+    finally:
+        reset_sandbox()
+
+
+def test_chart_before_sandbox_exists_stays_plain(client: TestClient) -> None:
+    created = client.post("/notebooks", data={"title": "No sandbox"})
+    notebook_id = created.headers["HX-Redirect"].rsplit("/", 1)[-1]
+    client.post(f"/notebooks/{notebook_id}/target", data={"target": "sandbox"})
+    page = client.get(f"/notebooks/{notebook_id}")
+    cell_id = re.search(r'data-cell="([^"]+)"', page.text).group(1)
+    saved = client.post(
+        f"/notebooks/{notebook_id}/cells/{cell_id}",
+        data={"source": "SELECT 1 AS n", "chart_type": "bar", "chart_x": "n", "chart_y": "n"},
+    )
+    assert saved.status_code == 204
+    sandbox = sandbox_db_path()
+    sandbox.unlink()
+    Path(f"{sandbox}.wal").unlink(missing_ok=True)
+    try:
+        loaded = client.get(f"/notebooks/{notebook_id}")
+        assert loaded.status_code == 200
+        message = "Run this cell to create the practice database and draw the chart."
+        assert message in loaded.text
+        assert "IO Error" not in loaded.text
+        assert not sandbox.is_file()
     finally:
         reset_sandbox()
 
