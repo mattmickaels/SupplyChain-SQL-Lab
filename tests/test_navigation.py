@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from sclab.data.sap_views import SAP_VIEWS
 from sclab.engine.query import run_query
 from sclab.lessons.model import load_lessons
 from sclab.screens.framework import all_screens
@@ -32,7 +31,10 @@ _BLURBS = {
     "XK03": "Supplier master, lead times, and on-time history.",
 }
 _LINKED_SCREEN = re.compile(r"/screens/([A-Z][A-Z0-9]+)")
-_IDENT = re.compile(r"\b[a-z_][a-z0-9_]*\b")
+_SAP_LINKS = {
+    "04-joins": ["ekbe", "ekko", "ekpo", "lfa1"],
+    "09-planning-analytics": ["afko", "ekbe", "ekko", "ekpo", "mara", "mard", "stpo", "vbap"],
+}
 
 
 @pytest.fixture
@@ -73,13 +75,17 @@ def test_transaction_code_box_is_on_every_page(client) -> None:
 
 
 def test_home_lists_each_screen(client) -> None:
+    import sclab.screens  # noqa: F401  # registers every screen
+
     page = client.get("/")
     assert "Kestrel ERP" in page.text
-    for code, blurb in _BLURBS.items():
-        assert f"/screens/{code}" in page.text
-        assert blurb in page.text
-    listed = {screen.code: screen.summary for screen in all_screens() if screen.summary}
-    assert listed == _BLURBS
+    screens = all_screens()
+    assert {screen.code for screen in screens} == set(_BLURBS)
+    for screen in screens:
+        assert screen.summary.strip(), screen.code
+        assert screen.summary == _BLURBS[screen.code]
+        assert f"/screens/{screen.code}" in page.text
+        assert screen.summary in page.text
 
 
 def test_lesson_screen_codes_exist() -> None:
@@ -114,15 +120,10 @@ def test_lesson_pages_link_screens_and_sap_views(client) -> None:
     assert "MD04?key=M-001324" in planning.text
     assert "plant_code=SC01" in planning.text
     assert 'href="/screens/CM01?key=SC01"' in planning.text
-    for lesson in load_lessons():
-        named = {name for name in _IDENT.findall(lesson.body_md) if name in set(SAP_VIEWS.values())}
-        if not named:
-            continue
-        page = client.get(f"/lessons/{lesson.id}")
+    for lesson_id, expected in _SAP_LINKS.items():
+        page = client.get(f"/lessons/{lesson_id}")
         assert page.status_code == 200
-        for base in named:
-            view = next(view_name for view_name, table in SAP_VIEWS.items() if table == base)
-            assert f'href="/schema/{view}"' in page.text, lesson.id
+        assert re.findall(r'href="/schema/([a-z0-9_]+)"', page.text) == expected
 
 
 def test_schema_view_page_lists_the_base_table(client) -> None:

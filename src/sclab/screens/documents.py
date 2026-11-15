@@ -15,8 +15,8 @@ def _screen(
     queries: tuple[ScreenQuery, ...],
     exists_sql: str,
     not_found: str,
+    summary: str,
     params: tuple[str, ...] = (),
-    summary: str = "",
 ) -> Screen:
     screen = Screen(
         code=code,

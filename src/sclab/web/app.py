@@ -443,11 +443,18 @@ def _today() -> str:
 
 
 def _sap_links(body_md: str) -> list[tuple[str, str]]:
-    names = set(re.findall(r"\b[a-z_][a-z0-9_]*\b", body_md))
+    """Views for SAP names, or for table names written in code in the lesson body."""
+    code = "\n".join(re.findall(r"```(?:[^\n]*)\n(.*?)```", body_md, flags=re.DOTALL))
+    code += "\n" + "\n".join(re.findall(r"`([^`\n]*)`", body_md))
+    named = set(re.findall(r"\b[a-z_][a-z0-9_]*\b", code))
+    sap_names = {view_name.upper() for view_name in SAP_VIEWS}
+    named.update(
+        token.lower() for token in re.findall(r"\b[A-Z][A-Z0-9]+\b", body_md) if token in sap_names
+    )
     return sorted(
         (view_name, base_name)
         for view_name, base_name in SAP_VIEWS.items()
-        if base_name in names or view_name in names
+        if base_name in named or view_name in named
     )
 
 

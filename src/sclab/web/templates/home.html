@@ -25,13 +25,11 @@
 <p>Display screens over the same tables. They are read-only.</p>
 <ul class="schema-list">
   {% for item in screens %}
-  {% if item.summary %}
   <li>
     <a href="/screens/{{ item.code }}">{{ item.code }}</a>
     <span>{{ item.title }}</span>
     <small>{{ item.summary }}</small>
   </li>
-  {% endif %}
   {% endfor %}
 </ul>
 {% endblock %}

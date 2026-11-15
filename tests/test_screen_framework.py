@@ -31,6 +31,7 @@ _SAMPLE = Screen(
     ),
     exists_sql="SELECT count(*) FROM plant WHERE plant_code = $1",
     not_found="Plant {key} was not found.",
+    summary="Sample plant display.",
 )
 
 _SCOPED = Screen(
@@ -48,6 +49,7 @@ _SCOPED = Screen(
     exists_sql=("SELECT count(*) FROM material_plant WHERE material_no = $1 AND plant_code = $2"),
     not_found="Material {key} was not found.",
     params=("plant_code",),
+    summary="Sample material in one plant.",
 )
 
 _BROKEN = Screen(
@@ -57,6 +59,7 @@ _BROKEN = Screen(
     queries=(),
     exists_sql="SELECT count(*) FROM no_such_table WHERE x = $1",
     not_found="Plant {key} was not found.",
+    summary="Sample screen whose query fails.",
 )
 
 
@@ -202,6 +205,7 @@ def test_declared_params_bind_in_declared_order(lab_home) -> None:
         exists_sql="SELECT 1",
         not_found="{key}",
         params=("zeta", "alpha"),
+        summary="Sample screen with two extra parameters.",
     )
     register(multi)
     data = render_screen("ZT04", "k", {"alpha": "A", "zeta": "Z", "extra": "x"})
@@ -251,6 +255,7 @@ def test_render_screen_with_non_ascii_literal_before_param(lab_home) -> None:
         ),
         exists_sql="SELECT count(*) FROM plant WHERE plant_code = $1",
         not_found="Plant {key} was not found.",
+        summary="Sample screen with a non-ASCII literal.",
     )
     register(screen)
     data = render_screen("ZT05", plant, {})
