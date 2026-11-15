@@ -53,5 +53,16 @@
   </li>
   {% endfor %}
 </ul>
+<h2>SAP views</h2>
+<p>These views use SAP table and field names for the same rows.</p>
+<ul class="schema-list">
+  {% for view_name, base_name in sap_views %}
+  <li>
+    <span>{{ base_name }}</span>
+    <span>{{ view_name }}</span>
+    <small>SAP field names.</small>
+  </li>
+  {% endfor %}
+</ul>
 {% endif %}
 {% endblock %}
