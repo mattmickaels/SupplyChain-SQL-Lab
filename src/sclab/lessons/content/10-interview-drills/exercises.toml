@@ -104,11 +104,14 @@ Use the weekly start-slot method from lesson 9, including all 13 ISO weeks from 
 Return one row per bay: bay_id, total_starts, total_slots (weekly_slots times all 13 calendar weeks), excess_starts (sum of positive weekly starts minus slots), load_pct (100 times total starts / total slots, rounded to 2 decimals).
 family_code on build_bay shows which bays can build the same tools.
 Each production order is one start slot.
+Count only status Planned or Released, and only when planned_start is after 1 November 2026.
+A Released order that already started on or before the snapshot is treated as already issued and is excluded.
+This quarter begins on 1 December 2026, so that date rule is already inside the window.
 Sort by load_pct descending then bay_id and return all bays.
 Use excess_starts to describe how many starts need moving, even when average utilization hides peak weeks.
 """
 hints = [
-  "Include quiet weeks so an average does not exaggerate load.",
+  "Include quiet weeks, and count only Planned or Released starts after 1 November 2026.",
   "Make the bay-week grid first; sum positive weekly overload rather than netting peaks against spare weeks.",
   "WITH RECURSIVE weeks(level) AS (___), calendar AS (___), loads AS (___), grid AS (___) SELECT bay_id, SUM(___), SUM(___), SUM(CASE WHEN ___ THEN ___ ELSE 0 END), ROUND(___, 2) AS load_pct FROM grid GROUP BY ___ ORDER BY ___"
 ]
@@ -124,7 +127,9 @@ WITH RECURSIVE weeks(level) AS (
     SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
            COUNT(*) AS starts
     FROM production_order
-    WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+    WHERE status IN ('Planned', 'Released')
+      AND planned_start > DATE '2026-11-01'
+      AND planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
     GROUP BY bay_id, CAST(date_trunc('week', planned_start) AS DATE)
 ), grid AS (
     SELECT b.bay_id, w.week_start, COALESCE(l.starts, 0) AS starts, b.weekly_slots
@@ -143,7 +148,7 @@ databricks_note = "On this query, `date_trunc('week', planned_start)` is written
 time_limit_s = 900
 summary_prompt = "Summarize which bay is overloaded in Dec-Feb, and whether a same-family bay at that plant has spare slots for rebalancing."
 model_summary = """
-SC01-B3, an Etch bay with 6 slots a week, is at 133.33 percent: 104 starts against 78 slots, with 26 starts above the weekly caps.
+SC01-B3, an Etch bay with 6 slots a week, is at 133.33 percent on Planned and Released starts: 104 starts against 78 slots, with 26 starts above the weekly caps.
 SC01-B2 is the other Etch bay at SC01, with 4 slots a week, 34 starts, 52 slots, and 65.38 percent load, and some weeks still have open slots.
 Rebalance Etch starts from SC01-B3 onto SC01-B2 in the weeks B2 is not already full.
 """

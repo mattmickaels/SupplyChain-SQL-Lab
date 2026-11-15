@@ -3601,3 +3601,48 @@ def test_c1_booking_and_quantity_wrong_answers_fail(lab_home) -> None:
     for exercise_id, sql in _C1_WRONG_ANSWERS:
         outcome = check_answer(exercises[exercise_id], sql, runner=_run)
         assert outcome.passed is False, exercise_id
+
+
+_BAY_ANY_STATUS = """
+WITH RECURSIVE weeks(level) AS (
+    SELECT 0
+    UNION ALL
+    SELECT level + 1 FROM weeks WHERE level < 12
+), calendar AS (
+    SELECT CAST(DATE '2026-11-30' + level * INTERVAL 7 DAY AS DATE) AS week_start
+    FROM weeks
+), loads AS (
+    SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
+           COUNT(*) AS starts
+    FROM production_order
+    WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+    GROUP BY bay_id, CAST(date_trunc('week', planned_start) AS DATE)
+), grid AS (
+    SELECT b.bay_id, w.week_start, COALESCE(l.starts, 0) AS starts, b.weekly_slots
+    FROM build_bay b CROSS JOIN calendar w
+    LEFT JOIN loads l ON l.bay_id = b.bay_id AND l.week_start = w.week_start
+)
+SELECT bay_id, SUM(starts) AS total_starts, SUM(weekly_slots) AS total_slots,
+       SUM(CASE WHEN starts > weekly_slots THEN starts - weekly_slots ELSE 0 END)
+           AS excess_starts,
+       ROUND(100.0 * SUM(starts) / SUM(weekly_slots), 2) AS load_pct
+FROM grid GROUP BY bay_id ORDER BY load_pct DESC, bay_id
+"""
+
+
+def test_c1_bay_any_status_wrong_answer_fails(planning_scenario) -> None:
+    """Completed starts in the quarter are not Planned or Released demand."""
+    planning_scenario.execute("""
+        INSERT INTO production_order
+            (prod_order_no, material_no, plant_code, bay_id, qty,
+             planned_start, planned_finish, status)
+        VALUES ('P-DONE', 'TOOL1', 'SC01', 'TEST-B1', 1,
+                DATE '2026-12-08', DATE '2027-01-08', 'Completed')
+    """)
+    exercise = next(
+        item for _lesson_id, item in _c1_exercises() if item.id == "drill-bay-bottleneck"
+    )
+    run = _scenario_runner(planning_scenario)
+    assert run(exercise.reference_sql[0]).rows == [("TEST-B1", 1, 26, 0, 3.85)]
+    outcome = check_answer(exercise, _BAY_ANY_STATUS, runner=run)
+    assert outcome.passed is False

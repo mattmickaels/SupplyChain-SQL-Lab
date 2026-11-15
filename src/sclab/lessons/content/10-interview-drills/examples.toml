@@ -245,7 +245,9 @@ WITH RECURSIVE weeks(level) AS (
     SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
            COUNT(*) AS starts
     FROM production_order
-    WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+    WHERE status IN ('Planned', 'Released')
+      AND planned_start > DATE '2026-11-01'
+      AND planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
     GROUP BY bay_id, CAST(date_trunc('week', planned_start) AS DATE)
 ), grid AS (
     SELECT b.bay_id, w.week_start, COALESCE(l.starts, 0) AS starts, b.weekly_slots
