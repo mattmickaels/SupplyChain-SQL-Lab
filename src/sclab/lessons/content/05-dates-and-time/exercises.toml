@@ -1,0 +1,290 @@
+[[exercise]]
+id = "dates-october-late-receipts"
+title = "October receipts that arrived late"
+prompt_md = """
+List goods receipts in October 2026 that arrived after the confirmed date.
+October is receipt_date from 1 October 2026 through 31 October 2026.
+A receipt on the confirmed date is not late.
+Return po_no, line_no, receipt_date, confirmed_delivery_date, and days_late.
+days_late is the number of days from confirmed_delivery_date to receipt_date.
+Order by days_late descending, then po_no, then line_no.
+"""
+hints = [
+  "Late means the receipt date is after the confirmed date.",
+  "Join goods_receipt to purchase_order_item and use datediff('day', confirmed_delivery_date, receipt_date).",
+  "SELECT g.po_no, g.line_no, g.receipt_date, i.confirmed_delivery_date, datediff('day', ___, ___) AS days_late FROM goods_receipt AS g JOIN purchase_order_item AS i ON ___ WHERE g.receipt_date >= ___ AND g.receipt_date <= ___ AND g.receipt_date > ___ ORDER BY days_late DESC, g.po_no, g.line_no",
+]
+reference_sql = [
+  """
+SELECT g.po_no, g.line_no, g.receipt_date, i.confirmed_delivery_date,
+       datediff('day', i.confirmed_delivery_date, g.receipt_date) AS days_late
+FROM goods_receipt AS g
+JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+WHERE g.receipt_date >= DATE '2026-10-01'
+  AND g.receipt_date <= DATE '2026-10-31'
+  AND g.receipt_date > i.confirmed_delivery_date
+ORDER BY days_late DESC, g.po_no, g.line_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Subtract the confirmed date from the receipt date, then keep the rows where that gap is positive."
+databricks_note = "datediff(receipt_date, confirmed_delivery_date) matches datediff('day', confirmed_delivery_date, receipt_date)."
+
+[[exercise]]
+id = "dates-late-rate-by-year"
+title = "Late receipt rate by year"
+prompt_md = """
+For each year from 2022 through 2026, show the late receipt rate.
+Use receipt_date from 1 January 2022 up to but not including 1 January 2027.
+A receipt is late when receipt_date is after confirmed_delivery_date.
+Return receipt_year, receipt_count, late_count, and late_pct.
+late_pct is 100 times late_count divided by receipt_count, rounded to 1 decimal.
+Order by receipt_year.
+"""
+hints = [
+  "Group the receipts by year, then divide the late ones by the total.",
+  "Multiply by 100.0 before you round to 1 decimal, and keep years 2022 through 2026.",
+  "SELECT EXTRACT(YEAR FROM g.receipt_date) AS ___, COUNT(*) AS receipt_count, SUM(CASE WHEN g.receipt_date > i.confirmed_delivery_date THEN 1 ELSE 0 END) AS ___, ROUND(100.0 * ___ / COUNT(*), 1) AS late_pct FROM goods_receipt AS g JOIN purchase_order_item AS i ON ___ WHERE g.receipt_date >= ___ AND g.receipt_date < ___ GROUP BY ___ ORDER BY receipt_year",
+]
+reference_sql = [
+  """
+SELECT EXTRACT(YEAR FROM g.receipt_date) AS receipt_year,
+       COUNT(*) AS receipt_count,
+       SUM(CASE WHEN g.receipt_date > i.confirmed_delivery_date THEN 1 ELSE 0 END) AS late_count,
+       ROUND(
+           100.0 * SUM(CASE WHEN g.receipt_date > i.confirmed_delivery_date THEN 1 ELSE 0 END)
+           / COUNT(*),
+           1
+       ) AS late_pct
+FROM goods_receipt AS g
+JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+WHERE g.receipt_date >= DATE '2022-01-01'
+  AND g.receipt_date < DATE '2027-01-01'
+GROUP BY EXTRACT(YEAR FROM g.receipt_date)
+ORDER BY receipt_year
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "This is a pivot of receipts by year, with a count of late rows divided by the count of all rows."
+
+[[exercise]]
+id = "dates-actual-vs-quoted-lead-time"
+title = "Actual lead time versus the quote"
+prompt_md = """
+Compare actual lead time with the supplier's quoted lead time.
+The last 12 months are receipt_date from 1 November 2025 up to but not including 1 November 2026.
+Keep a supplier only when that supplier has at least 20 goods receipts in that window.
+Actual lead time is the days from purchase_order.order_date to the first receipt_date on the line.
+Include a line only when that first receipt falls in the same 12 month window.
+Quoted lead time is material_supplier.quoted_lead_time_days for that line's material and the purchase order's supplier.
+Average both numbers per supplier and round each average to 1 decimal.
+The quoted average skips blank quotes and still includes a quote of 0.
+Return supplier_no, avg_actual_lead_time_days, avg_quoted_lead_time_days, and receipt_count.
+Order by supplier_no.
+"""
+hints = [
+  "Take the earliest receipt on each line, then average those day counts by supplier.",
+  "Count goods receipts in the last 12 months, keep suppliers with at least 20, and round both averages to 1 decimal.",
+  "SELECT line.supplier_no, ROUND(AVG(line.actual_days), 1) AS ___, ROUND(AVG(q.quoted_lead_time_days), 1) AS ___, r.receipt_count FROM (SELECT ... MIN(g.receipt_date) ... datediff('day', h.order_date, MIN(g.receipt_date)) AS actual_days ...) AS line JOIN (SELECT h.supplier_no, COUNT(*) AS receipt_count ... HAVING COUNT(*) >= ___) AS r ON ___ LEFT JOIN material_supplier AS q ON ___ WHERE line.first_receipt_date >= ___ AND line.first_receipt_date < ___ GROUP BY line.supplier_no, r.receipt_count ORDER BY line.supplier_no",
+]
+reference_sql = [
+  """
+SELECT line.supplier_no,
+       ROUND(AVG(line.actual_days), 1) AS avg_actual_lead_time_days,
+       ROUND(AVG(q.quoted_lead_time_days), 1) AS avg_quoted_lead_time_days,
+       r.receipt_count
+FROM (
+    SELECT i.po_no,
+           i.line_no,
+           i.material_no,
+           h.supplier_no,
+           MIN(g.receipt_date) AS first_receipt_date,
+           datediff('day', h.order_date, MIN(g.receipt_date)) AS actual_days
+    FROM purchase_order_item AS i
+    JOIN purchase_order AS h ON h.po_no = i.po_no
+    JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
+    GROUP BY i.po_no, i.line_no, i.material_no, h.supplier_no, h.order_date
+) AS line
+JOIN (
+    SELECT h.supplier_no, COUNT(*) AS receipt_count
+    FROM goods_receipt AS g
+    JOIN purchase_order AS h ON h.po_no = g.po_no
+    WHERE g.receipt_date >= DATE '2025-11-01'
+      AND g.receipt_date < DATE '2026-11-01'
+    GROUP BY h.supplier_no
+    HAVING COUNT(*) >= 20
+) AS r ON r.supplier_no = line.supplier_no
+LEFT JOIN material_supplier AS q
+  ON q.material_no = line.material_no
+ AND q.supplier_no = line.supplier_no
+WHERE line.first_receipt_date >= DATE '2025-11-01'
+  AND line.first_receipt_date < DATE '2026-11-01'
+GROUP BY line.supplier_no, r.receipt_count
+ORDER BY line.supplier_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Find the first receipt date per order line with MINIFS, subtract the order date, then average that gap next to the quoted lead time."
+databricks_note = "datediff(first_receipt_date, order_date) matches datediff('day', order_date, first_receipt_date)."
+
+[[exercise]]
+id = "dates-lines-booked-by-month"
+title = "Sales lines booked by month in 2025"
+prompt_md = """
+Count sales order lines booked in each month of 2025.
+A line is booked on sales_order.order_date, not on the requested date.
+Keep order_date from 1 January 2025 up to but not including 1 January 2026.
+Count every line, including cancelled lines.
+Return booked_month and line_count.
+booked_month is date_trunc('month', order_date).
+Order by booked_month.
+"""
+hints = [
+  "The booking month comes from the sales order header.",
+  "Join the line to sales_order, keep 2025, and group by date_trunc('month', order_date).",
+  "SELECT date_trunc('month', h.order_date) AS ___, COUNT(*) AS line_count FROM sales_order_item AS i JOIN sales_order AS h ON ___ WHERE h.order_date >= ___ AND h.order_date < ___ GROUP BY ___ ORDER BY booked_month",
+]
+reference_sql = [
+  """
+SELECT date_trunc('month', h.order_date) AS booked_month,
+       COUNT(*) AS line_count
+FROM sales_order_item AS i
+JOIN sales_order AS h ON h.so_no = i.so_no
+WHERE h.order_date >= DATE '2025-01-01'
+  AND h.order_date < DATE '2026-01-01'
+GROUP BY date_trunc('month', h.order_date)
+ORDER BY booked_month
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Group the order date with EOMONTH or the first of the month, then count the lines."
+databricks_note = "date_trunc('MONTH', order_date) matches date_trunc('month', order_date)."
+
+[[exercise]]
+id = "dates-open-po-lines-by-week"
+title = "Open purchase lines due in the next 8 weeks"
+prompt_md = """
+Count open purchase order lines by the week of the confirmed delivery date.
+A line is open when received quantity is below order_qty.
+A line with no goods receipt has received quantity 0.
+Due in the next 8 weeks means confirmed_delivery_date is on or after 1 November 2026 and before 27 December 2026.
+27 December 2026 is 1 November 2026 plus 56 days.
+week_start is date_trunc('week', confirmed_delivery_date), the Monday of that week.
+1 November 2026 falls in the week starting 26 October 2026.
+Return week_start and open_line_count.
+Order by week_start.
+"""
+hints = [
+  "Add the receipts up first, then keep lines that are still short and due in the next 56 days.",
+  "Group by date_trunc('week', confirmed_delivery_date) and count the open lines.",
+  "SELECT date_trunc('week', i.confirmed_delivery_date) AS ___, COUNT(*) AS open_line_count FROM purchase_order_item AS i LEFT JOIN (SELECT po_no, line_no, SUM(___) AS received_qty FROM goods_receipt GROUP BY po_no, line_no) AS r ON ___ WHERE i.confirmed_delivery_date >= ___ AND i.confirmed_delivery_date < ___ AND COALESCE(r.received_qty, 0) < ___ GROUP BY ___ ORDER BY week_start",
+]
+reference_sql = [
+  """
+SELECT date_trunc('week', i.confirmed_delivery_date) AS week_start,
+       COUNT(*) AS open_line_count
+FROM purchase_order_item AS i
+LEFT JOIN (
+    SELECT po_no, line_no, SUM(qty) AS received_qty
+    FROM goods_receipt
+    GROUP BY po_no, line_no
+) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+WHERE i.confirmed_delivery_date >= DATE '2026-11-01'
+  AND i.confirmed_delivery_date < DATE '2026-11-01' + INTERVAL 56 DAY
+  AND COALESCE(r.received_qty, 0) < i.order_qty
+GROUP BY date_trunc('week', i.confirmed_delivery_date)
+ORDER BY week_start
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Sum the receipts with SUMIF, keep lines still short of the order quantity, and group the confirmed date by week."
+databricks_note = """
+date_trunc('WEEK', confirmed_delivery_date) matches date_trunc('week', confirmed_delivery_date).
+date_add(DATE '2026-11-01', 56) matches DATE '2026-11-01' + INTERVAL 56 DAY.
+"""
+
+[[exercise]]
+id = "dates-quiet-tool-families"
+title = "Tool families with no recent order"
+prompt_md = """
+Find each customer and product family whose latest tool order is more than 180 days before 1 November 2026.
+Every customer has some order in late October 2026, so do not test the customer's latest order of any kind.
+Use tool lines only, material_type = 'TOOL', and group by customer and family_code.
+More than 180 days before today means last_order_date + INTERVAL 180 DAY is still before DATE '2026-11-01'.
+Return customer_no, customer_name, family_code, and last_order_date.
+customer_name is customer.name.
+last_order_date is the latest sales_order.order_date in that group.
+Order by last_order_date, then customer_no, then family_code.
+"""
+hints = [
+  "The latest tool order has to be computed inside each customer and family, not across the whole customer.",
+  "Join the order to the tool, group by customer and family, and keep groups where MAX(order_date) + INTERVAL 180 DAY is before 1 November 2026.",
+  "SELECT c.customer_no, c.name AS ___, m.family_code, MAX(h.order_date) AS last_order_date FROM customer AS c JOIN sales_order AS h ON ___ JOIN sales_order_item AS i ON ___ JOIN material AS m ON ___ WHERE m.material_type = ___ GROUP BY c.customer_no, c.name, m.family_code HAVING MAX(h.order_date) + INTERVAL 180 DAY < ___ ORDER BY last_order_date, c.customer_no, m.family_code",
+]
+reference_sql = [
+  """
+SELECT c.customer_no,
+       c.name AS customer_name,
+       m.family_code,
+       MAX(h.order_date) AS last_order_date
+FROM customer AS c
+JOIN sales_order AS h ON h.customer_no = c.customer_no
+JOIN sales_order_item AS i ON i.so_no = h.so_no
+JOIN material AS m ON m.material_no = i.material_no
+WHERE m.material_type = 'TOOL'
+GROUP BY c.customer_no, c.name, m.family_code
+HAVING MAX(h.order_date) + INTERVAL 180 DAY < DATE '2026-11-01'
+ORDER BY last_order_date, c.customer_no, m.family_code
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Take the latest tool order date per customer and family with MAXIFS, then keep dates more than 180 days before 1 November 2026."
+databricks_note = "date_add(last_order_date, 180) matches last_order_date + INTERVAL 180 DAY."
+
+[[exercise]]
+id = "dates-corvane-on-time-by-quarter"
+title = "Corvane on-time rate by quarter"
+prompt_md = """
+Show Corvane RF Systems on-time rate by quarter for 2025 and 2026.
+Corvane is supplier V-10017.
+Use receipt_date from 1 January 2025 up to but not including 1 January 2027.
+A receipt is on time when receipt_date is on or before confirmed_delivery_date.
+Return receipt_year, receipt_quarter, receipt_count, and on_time_pct.
+on_time_pct is 100 times the on-time receipts divided by receipt_count, rounded to 1 decimal.
+Order by receipt_year, then receipt_quarter.
+The fourth quarter of 2026 only contains receipts through the end of October 2026.
+"""
+hints = [
+  "On time includes a receipt that lands on the confirmed date.",
+  "Filter supplier V-10017, group by year and quarter, and round 100.0 times the on-time share to 1 decimal.",
+  "SELECT EXTRACT(YEAR FROM g.receipt_date) AS ___, EXTRACT(QUARTER FROM g.receipt_date) AS ___, COUNT(*) AS receipt_count, ROUND(100.0 * SUM(CASE WHEN g.receipt_date <= i.confirmed_delivery_date THEN 1 ELSE 0 END) / COUNT(*), 1) AS on_time_pct FROM goods_receipt AS g JOIN purchase_order_item AS i ON ___ JOIN purchase_order AS h ON ___ WHERE h.supplier_no = ___ AND g.receipt_date >= ___ AND g.receipt_date < ___ GROUP BY ___ ORDER BY receipt_year, receipt_quarter",
+]
+reference_sql = [
+  """
+SELECT EXTRACT(YEAR FROM g.receipt_date) AS receipt_year,
+       EXTRACT(QUARTER FROM g.receipt_date) AS receipt_quarter,
+       COUNT(*) AS receipt_count,
+       ROUND(
+           100.0 * SUM(CASE WHEN g.receipt_date <= i.confirmed_delivery_date THEN 1 ELSE 0 END)
+           / COUNT(*),
+           1
+       ) AS on_time_pct
+FROM goods_receipt AS g
+JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+JOIN purchase_order AS h ON h.po_no = g.po_no
+WHERE h.supplier_no = 'V-10017'
+  AND g.receipt_date >= DATE '2025-01-01'
+  AND g.receipt_date < DATE '2027-01-01'
+GROUP BY EXTRACT(YEAR FROM g.receipt_date), EXTRACT(QUARTER FROM g.receipt_date)
+ORDER BY receipt_year, receipt_quarter
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Filter to supplier V-10017, pivot receipts by year and quarter, and divide the on-time count by the receipt count."

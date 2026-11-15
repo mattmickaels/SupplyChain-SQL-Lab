@@ -1,0 +1,128 @@
+[[example]]
+id = "one-day-late-receipt"
+sql = """
+SELECT datediff('day', i.confirmed_delivery_date, g.receipt_date) AS days_late
+FROM goods_receipt AS g
+JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+WHERE g.gr_no = 'GR-0000036'
+"""
+expected_rows = [[1]]
+order_matters = false
+
+[[example]]
+id = "day-after-confirmed"
+sql = """
+SELECT confirmed_delivery_date + INTERVAL 1 DAY AS day_after_confirmed
+FROM purchase_order_item
+WHERE po_no = 'PO-0017001'
+  AND line_no = 2
+"""
+expected_rows = [["2021-11-21"]]
+order_matters = false
+
+[[example]]
+id = "actual-lead-time-one-line"
+sql = """
+SELECT datediff('day', h.order_date, MIN(g.receipt_date)) AS actual_lead_time_days
+FROM purchase_order_item AS i
+JOIN purchase_order AS h ON h.po_no = i.po_no
+JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
+WHERE i.po_no = 'PO-0017001'
+  AND i.line_no = 2
+GROUP BY h.order_date
+"""
+expected_rows = [[19]]
+order_matters = false
+
+[[example]]
+id = "late-rate-one-line"
+sql = """
+SELECT COUNT(*) AS receipt_count,
+       ROUND(
+           100.0 * SUM(CASE WHEN g.receipt_date > i.confirmed_delivery_date THEN 1 ELSE 0 END)
+           / COUNT(*),
+           1
+       ) AS late_pct
+FROM goods_receipt AS g
+JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+WHERE g.po_no = 'PO-0017001'
+  AND g.line_no = 2
+"""
+expected_rows = [[3, 100.0]]
+order_matters = false
+
+[[example]]
+id = "january-2025-bookings"
+sql = """
+SELECT date_trunc('month', h.order_date) AS booked_month,
+       COUNT(*) AS line_count
+FROM sales_order_item AS i
+JOIN sales_order AS h ON h.so_no = i.so_no
+WHERE h.order_date >= DATE '2025-01-01'
+  AND h.order_date < DATE '2025-02-01'
+GROUP BY date_trunc('month', h.order_date)
+"""
+expected_rows = [["2025-01-01", 385]]
+order_matters = false
+
+[[example]]
+id = "week-of-1-november-2026"
+sql = """
+SELECT date_trunc('week', confirmed_delivery_date) AS week_start
+FROM purchase_order_item
+WHERE po_no = 'PO-0002536'
+  AND line_no = 1
+"""
+expected_rows = [["2026-10-26"]]
+order_matters = false
+
+[[example]]
+id = "quarter-of-one-receipt"
+sql = """
+SELECT EXTRACT(YEAR FROM receipt_date) AS receipt_year,
+       EXTRACT(QUARTER FROM receipt_date) AS receipt_quarter
+FROM goods_receipt
+WHERE gr_no = 'GR-0000036'
+"""
+expected_rows = [[2021, 4]]
+order_matters = false
+
+[[example]]
+id = "meadow-deposition-recency"
+sql = """
+SELECT MAX(h.order_date) AS last_order_date,
+       MAX(h.order_date) + INTERVAL 180 DAY AS plus_180_days
+FROM sales_order AS h
+JOIN sales_order_item AS i ON i.so_no = h.so_no
+JOIN material AS m ON m.material_no = i.material_no
+WHERE h.customer_no = 'C-2021'
+  AND m.material_type = 'TOOL'
+  AND m.family_code = 'DEP'
+"""
+expected_rows = [["2025-11-18", "2026-05-17"]]
+order_matters = false
+
+[[example]]
+id = "corvane-late-2026-quarters"
+sql = """
+SELECT EXTRACT(QUARTER FROM g.receipt_date) AS receipt_quarter,
+       COUNT(*) AS receipt_count,
+       ROUND(
+           100.0 * SUM(CASE WHEN g.receipt_date <= i.confirmed_delivery_date THEN 1 ELSE 0 END)
+           / COUNT(*),
+           1
+       ) AS on_time_pct
+FROM goods_receipt AS g
+JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+JOIN purchase_order AS h ON h.po_no = g.po_no
+WHERE h.supplier_no = 'V-10017'
+  AND g.receipt_date >= DATE '2026-07-01'
+  AND g.receipt_date < DATE '2027-01-01'
+GROUP BY EXTRACT(QUARTER FROM g.receipt_date)
+ORDER BY receipt_quarter
+"""
+expected_rows = [
+  [3, 23, 43.5],
+  [4, 2, 0.0],
+]
+order_matters = true

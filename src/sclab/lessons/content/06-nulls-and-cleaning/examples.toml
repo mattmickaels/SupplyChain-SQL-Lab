@@ -1,0 +1,139 @@
+[[example]]
+id = "spindle-description-lengths"
+sql = """
+SELECT material_no, description, LENGTH(description) AS description_length
+FROM material
+WHERE material_no IN ('M-004744', 'M-005363')
+ORDER BY material_no
+"""
+expected_rows = [
+  ["M-004744", "Aligner spindle, variant 103", 28],
+  ["M-005363", "Aligner spindle, variant 103 ", 29],
+]
+order_matters = true
+
+[[example]]
+id = "spindle-trimmed-description"
+sql = """
+SELECT material_no, TRIM(description) AS trimmed_description
+FROM material
+WHERE material_no IN ('M-004744', 'M-005363')
+ORDER BY material_no
+"""
+expected_rows = [
+  ["M-004744", "Aligner spindle, variant 103"],
+  ["M-005363", "Aligner spindle, variant 103"],
+]
+order_matters = true
+
+[[example]]
+id = "austin-lead-time-buckets"
+sql = """
+SELECT plant_code,
+       SUM(CASE WHEN planned_lead_time_days IS NULL THEN 1 ELSE 0 END) AS null_count,
+       SUM(CASE WHEN planned_lead_time_days = 0 THEN 1 ELSE 0 END) AS zero_count,
+       SUM(CASE WHEN planned_lead_time_days > 0 THEN 1 ELSE 0 END) AS valid_count
+FROM material_plant
+WHERE plant_code = 'AU01'
+GROUP BY plant_code
+"""
+expected_rows = [["AU01", 164, 44, 5112]]
+order_matters = false
+
+[[example]]
+id = "austin-three-averages"
+sql = """
+SELECT ROUND(AVG(planned_lead_time_days), 1) AS avg_ignoring_null,
+       ROUND(AVG(COALESCE(planned_lead_time_days, 0)), 1) AS avg_null_as_zero,
+       ROUND(AVG(CASE WHEN planned_lead_time_days > 0 THEN planned_lead_time_days END), 1) AS avg_excluding_null_and_zero
+FROM material_plant
+WHERE plant_code = 'AU01'
+"""
+expected_rows = [[56.8, 55.1, 57.3]]
+order_matters = false
+
+[[example]]
+id = "raw-uom-spellings"
+sql = """
+SELECT uom, LENGTH(uom) AS uom_length, COUNT(*) AS line_count
+FROM purchase_order_item
+GROUP BY uom, LENGTH(uom)
+ORDER BY uom
+"""
+expected_rows = [
+  ["EA", 2, 59892],
+  ["EA ", 3, 768],
+  ["ea", 2, 767],
+]
+order_matters = true
+
+[[example]]
+id = "nl-country-split"
+sql = """
+SELECT country AS country_raw,
+       TRIM(country) AS country,
+       COUNT(*) AS raw_count
+FROM customer
+WHERE TRIM(country) = 'NL'
+GROUP BY country, TRIM(country)
+ORDER BY country_raw
+"""
+expected_rows = [
+  ["NL", "NL", 2],
+  ["NL ", "NL", 1],
+]
+order_matters = true
+
+[[fact]]
+id = "dusky-country-has-trailing-space"
+sql = """
+SELECT country
+FROM customer
+WHERE customer_no = 'C-2016'
+"""
+expected = "NL "
+
+[[fact]]
+id = "nl-customers-after-trim"
+sql = """
+SELECT COUNT(*)
+FROM customer
+WHERE TRIM(country) = 'NL'
+"""
+expected = 3
+
+[[example]]
+id = "coalesce-three-lead-times"
+sql = """
+SELECT p.material_no,
+       p.plant_code,
+       p.planned_lead_time_days,
+       s.quoted_lead_time_days,
+       COALESCE(p.planned_lead_time_days, s.quoted_lead_time_days) AS filled_lead_time_days
+FROM material_plant AS p
+LEFT JOIN material_supplier AS s
+  ON s.material_no = p.material_no
+ AND s.is_primary = true
+WHERE (p.material_no = 'M-000002' AND p.plant_code = 'SC01')
+   OR (p.material_no = 'M-001334' AND p.plant_code = 'AU01')
+   OR (p.material_no = 'M-001344' AND p.plant_code = 'SC01')
+ORDER BY p.material_no
+"""
+expected_rows = [
+  ["M-000002", "SC01", "NULL", "NULL", "NULL"],
+  ["M-001334", "AU01", "NULL", 0, 0],
+  ["M-001344", "SC01", "NULL", 131, 131],
+]
+order_matters = true
+
+[[example]]
+id = "kept-spindle-material"
+sql = """
+SELECT MIN(material_no) AS material_no,
+       TRIM(description) AS trimmed_description
+FROM material
+WHERE TRIM(description) = 'Aligner spindle, variant 103'
+GROUP BY TRIM(description)
+"""
+expected_rows = [["M-004744", "Aligner spindle, variant 103"]]
+order_matters = false

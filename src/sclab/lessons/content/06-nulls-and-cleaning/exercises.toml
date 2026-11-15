@@ -1,0 +1,226 @@
+[[exercise]]
+id = "clean-duplicate-materials"
+title = "Materials that match after trim"
+prompt_md = """
+Find materials whose descriptions match once spaces at the ends are removed.
+Return every material_no in such a group, not only the copy with the extra space.
+Return material_no, description, and trimmed_description.
+trimmed_description is TRIM(description).
+Keep the stored description, including any trailing space.
+Order by trimmed_description, then material_no.
+"""
+hints = [
+  "A trailing space makes two descriptions look different until you trim them.",
+  "Group by TRIM(description), keep groups with more than one material, and list every material in those groups.",
+  "SELECT m.material_no, m.description, TRIM(m.description) AS ___ FROM material AS m JOIN (SELECT TRIM(description) AS trimmed_description FROM material GROUP BY ___ HAVING COUNT(*) > ___) AS d ON ___ ORDER BY trimmed_description, m.material_no",
+]
+reference_sql = [
+  """
+SELECT m.material_no,
+       m.description,
+       TRIM(m.description) AS trimmed_description
+FROM material AS m
+JOIN (
+    SELECT TRIM(description) AS trimmed_description
+    FROM material
+    GROUP BY TRIM(description)
+    HAVING COUNT(*) > 1
+) AS d ON d.trimmed_description = TRIM(m.description)
+ORDER BY trimmed_description, m.material_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Use TRIM on the description, then a pivot that keeps descriptions with a count above 1."
+
+[[exercise]]
+id = "clean-lead-time-counts"
+title = "Null, zero, and valid lead times"
+prompt_md = """
+Count planned lead times that are NULL, 0, and valid, for each plant.
+Valid means planned_lead_time_days is greater than 0.
+Return one row per plant_code.
+Return plant_code, null_count, zero_count, and valid_count.
+Use CASE inside SUM so the three counts come from one pass.
+Order by plant_code.
+"""
+hints = [
+  "NULL and 0 are different, so count them with separate tests.",
+  "SUM a CASE that returns 1 when the test matches and 0 otherwise, then group by plant_code.",
+  "SELECT plant_code, SUM(CASE WHEN planned_lead_time_days IS NULL THEN 1 ELSE 0 END) AS ___, SUM(CASE WHEN planned_lead_time_days = 0 THEN 1 ELSE 0 END) AS ___, SUM(CASE WHEN planned_lead_time_days > 0 THEN 1 ELSE 0 END) AS ___ FROM material_plant GROUP BY ___ ORDER BY plant_code",
+]
+reference_sql = [
+  """
+SELECT plant_code,
+       SUM(CASE WHEN planned_lead_time_days IS NULL THEN 1 ELSE 0 END) AS null_count,
+       SUM(CASE WHEN planned_lead_time_days = 0 THEN 1 ELSE 0 END) AS zero_count,
+       SUM(CASE WHEN planned_lead_time_days > 0 THEN 1 ELSE 0 END) AS valid_count
+FROM material_plant
+GROUP BY plant_code
+ORDER BY plant_code
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "COUNTIF the planned lead time three ways: blanks, zeros, and numbers above zero."
+
+[[exercise]]
+id = "clean-lead-time-averages"
+title = "Three averages of the same lead time"
+prompt_md = """
+Average planned_lead_time_days in three ways, for all plants together.
+Return one row with avg_ignoring_null, avg_null_as_zero, and avg_excluding_null_and_zero.
+avg_ignoring_null uses AVG, which skips NULL and keeps 0.
+avg_null_as_zero uses AVG(COALESCE(planned_lead_time_days, 0)).
+avg_excluding_null_and_zero averages only values greater than 0.
+Round each average to 1 decimal.
+"""
+hints = [
+  "The three averages start from the same column and treat NULL and 0 differently.",
+  "Round AVG, AVG of COALESCE to 0, and AVG of a CASE that keeps only values above 0.",
+  "SELECT ROUND(AVG(planned_lead_time_days), 1) AS ___, ROUND(AVG(COALESCE(planned_lead_time_days, ___)), 1) AS ___, ROUND(AVG(CASE WHEN planned_lead_time_days > 0 THEN planned_lead_time_days END), 1) AS ___ FROM material_plant",
+]
+reference_sql = [
+  """
+SELECT ROUND(AVG(planned_lead_time_days), 1) AS avg_ignoring_null,
+       ROUND(AVG(COALESCE(planned_lead_time_days, 0)), 1) AS avg_null_as_zero,
+       ROUND(AVG(CASE WHEN planned_lead_time_days > 0 THEN planned_lead_time_days END), 1) AS avg_excluding_null_and_zero
+FROM material_plant
+""",
+]
+order_matters = false
+names_matter = true
+excel_tip = "AVERAGE skips blanks, AVERAGE of a column where blanks were filled with 0 does not, and a third average can ignore zeros too."
+
+[[exercise]]
+id = "clean-uom"
+title = "One unit after trim and upper"
+prompt_md = """
+Clean the purchase order unit and count lines per cleaned unit.
+The cleaned unit is UPPER(TRIM(uom)).
+Return uom and line_count.
+uom here is the cleaned unit, not the raw text.
+Order by uom.
+"""
+hints = [
+  "The raw unit is stored as EA, ea, and EA with a trailing space.",
+  "Group by UPPER(TRIM(uom)) and count the lines.",
+  "SELECT UPPER(TRIM(uom)) AS ___, COUNT(*) AS line_count FROM purchase_order_item GROUP BY ___ ORDER BY uom",
+]
+reference_sql = [
+  """
+SELECT UPPER(TRIM(uom)) AS uom,
+       COUNT(*) AS line_count
+FROM purchase_order_item
+GROUP BY UPPER(TRIM(uom))
+ORDER BY uom
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Use UPPER(TRIM()) on the unit column, then count the rows."
+
+[[exercise]]
+id = "clean-country-trim"
+title = "Customer countries before and after trim"
+prompt_md = """
+Show how customer counts by country change once trailing spaces are removed.
+Return country_raw, country, raw_count, and trimmed_count.
+country_raw is customer.country as stored.
+country is TRIM(country).
+raw_count is the number of customers with that exact stored country.
+trimmed_count is the number of customers with that trimmed country.
+Where a space was the only difference, several raw rows share one trimmed_count.
+Order by country, then country_raw.
+"""
+hints = [
+  "Group the raw country and the trimmed country separately, then join them.",
+  "The trimmed count is bigger than the raw count only for a country that was split by a trailing space.",
+  "SELECT raw.country AS ___, TRIM(raw.country) AS country, raw.raw_count, cleaned.trimmed_count FROM (SELECT country, COUNT(*) AS raw_count FROM customer GROUP BY country) AS raw JOIN (SELECT TRIM(country) AS country, COUNT(*) AS trimmed_count FROM customer GROUP BY ___) AS cleaned ON ___ ORDER BY country, country_raw",
+]
+reference_sql = [
+  """
+SELECT raw.country AS country_raw,
+       TRIM(raw.country) AS country,
+       raw.raw_count,
+       cleaned.trimmed_count
+FROM (
+    SELECT country, COUNT(*) AS raw_count
+    FROM customer
+    GROUP BY country
+) AS raw
+JOIN (
+    SELECT TRIM(country) AS country, COUNT(*) AS trimmed_count
+    FROM customer
+    GROUP BY TRIM(country)
+) AS cleaned ON cleaned.country = TRIM(raw.country)
+ORDER BY country, country_raw
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Count the country as stored, then count TRIM(country), and put the two counts side by side."
+
+[[exercise]]
+id = "clean-fill-lead-time"
+title = "Fill a missing lead time from the primary quote"
+prompt_md = """
+Fill a missing planned lead time from the primary supplier quote.
+Keep rows where planned_lead_time_days IS NULL.
+The quote comes from material_supplier where is_primary is true.
+There is at most one primary supplier per material.
+Return material_no, plant_code, planned_lead_time_days, quoted_lead_time_days, and filled_lead_time_days.
+filled_lead_time_days is COALESCE(planned_lead_time_days, quoted_lead_time_days).
+Keep the row when the quote is missing or 0.
+A missing quote leaves filled_lead_time_days NULL.
+A quote of 0 fills the planned lead time with 0.
+Order by material_no, then plant_code.
+"""
+hints = [
+  "COALESCE replaces NULL only, so a quote of 0 is copied and a missing quote stays blank.",
+  "Left join the primary material_supplier row and coalesce the planned lead time to quoted_lead_time_days.",
+  "SELECT p.material_no, p.plant_code, p.planned_lead_time_days, s.quoted_lead_time_days, COALESCE(p.planned_lead_time_days, s.quoted_lead_time_days) AS ___ FROM material_plant AS p LEFT JOIN material_supplier AS s ON ___ AND s.is_primary = ___ WHERE p.planned_lead_time_days IS ___ ORDER BY p.material_no, p.plant_code",
+]
+reference_sql = [
+  """
+SELECT p.material_no,
+       p.plant_code,
+       p.planned_lead_time_days,
+       s.quoted_lead_time_days,
+       COALESCE(p.planned_lead_time_days, s.quoted_lead_time_days) AS filled_lead_time_days
+FROM material_plant AS p
+LEFT JOIN material_supplier AS s
+  ON s.material_no = p.material_no
+ AND s.is_primary = true
+WHERE p.planned_lead_time_days IS NULL
+ORDER BY p.material_no, p.plant_code
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "VLOOKUP the primary quote, then use IF to keep the planned lead time when it is filled in."
+
+[[exercise]]
+id = "clean-removed-material-rows"
+title = "Rows dropped by a cleaned material list"
+prompt_md = """
+A cleaned material list keeps one row per trimmed description.
+The kept row is the one with the lowest material_no.
+Return one row with removed_rows.
+removed_rows is how many material rows that rule drops.
+That number is the material count minus the number of distinct trimmed descriptions.
+"""
+hints = [
+  "Keeping one row per trimmed description drops the extra copies, including copies that differ only by a trailing space.",
+  "Subtract COUNT(DISTINCT TRIM(description)) from COUNT(*).",
+  "SELECT COUNT(*) - COUNT(DISTINCT TRIM(description)) AS ___ FROM material",
+]
+reference_sql = [
+  """
+SELECT COUNT(*) - COUNT(DISTINCT TRIM(description)) AS removed_rows
+FROM material
+""",
+]
+order_matters = false
+names_matter = true
+excel_tip = "Count the material rows, count the unique TRIM(description) values, and subtract."
