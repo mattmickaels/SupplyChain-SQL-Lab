@@ -2,6 +2,65 @@
 
 from __future__ import annotations
 
+
+def test_purchased_positive_stock_has_priced_source(lab_conn) -> None:
+    """Components, including retired parts, are bought; tools/modules/subassemblies are made."""
+    missing = lab_conn.execute("""
+        SELECT DISTINCT i.material_no
+        FROM inventory i
+        JOIN material m ON m.material_no = i.material_no
+        WHERE i.qty_on_hand > 0 AND m.material_type = 'COMPONENT'
+          AND NOT EXISTS (
+              SELECT 1 FROM material_supplier s
+              WHERE s.material_no = i.material_no AND s.unit_price IS NOT NULL
+          )
+        ORDER BY i.material_no
+    """).fetchall()
+    assert missing == []
+
+
+def test_idle_stock_has_one_historical_primary_source(lab_conn) -> None:
+    rows = lab_conn.execute("""
+        SELECT m.material_no, COUNT(s.supplier_no) AS sources,
+               SUM(CASE WHEN s.is_primary AND s.unit_price > 0
+                         AND s.quoted_lead_time_days > 0 THEN 1 ELSE 0 END) AS priced_primary
+        FROM material m
+        LEFT JOIN material_supplier s ON s.material_no = m.material_no
+        WHERE m.description LIKE '%, retired configuration'
+        GROUP BY m.material_no
+        ORDER BY m.material_no
+    """).fetchall()
+    assert len(rows) == 30
+    assert all(sources == 1 and primary == 1 for _, sources, primary in rows)
+
+
+def test_historical_sources_fit_stocked_materials(lab_conn) -> None:
+    assert (
+        lab_conn.execute("""
+        SELECT m.material_no FROM material m
+        JOIN material_supplier s ON s.material_no = m.material_no
+        WHERE m.description LIKE '%, retired configuration'
+          AND NOT EXISTS (
+              SELECT 1 FROM material active JOIN material_supplier qualified
+                ON qualified.material_no = active.material_no
+              WHERE active.description = REPLACE(m.description, ', retired configuration', '')
+                AND qualified.supplier_no = s.supplier_no
+          )
+    """).fetchall()
+        == []
+    )
+
+
+def test_manufactured_materials_have_no_supplier_quotes(lab_conn) -> None:
+    manufactured = lab_conn.execute("""
+        SELECT m.material_no, m.material_type
+        FROM material m JOIN material_supplier s ON s.material_no = m.material_no
+        WHERE m.material_type IN ('TOOL', 'MODULE', 'SUBASSY')
+        ORDER BY m.material_no
+    """).fetchall()
+    assert manufactured == []
+
+
 # Levels count every node from the tool down to the leaf, including the tool.
 _BOM_EXPLOSION = """
     WITH RECURSIVE down AS (

@@ -11,8 +11,32 @@
     "md5": "fcc575016b5ca8f9c97809e8e9992e94",
     "row_count": 30
   },
+  "drill-bay-bottleneck": {
+    "md5": "014af11545f17d4dd61fb81ceefcb01a",
+    "row_count": 15
+  },
+  "drill-excess-inventory": {
+    "md5": "72653221b80c64a77eec30dc065188cc",
+    "row_count": 10
+  },
+  "drill-halcyon-demand": {
+    "md5": "e666e2c4d9cd2554d249381689e9b147",
+    "row_count": 1
+  },
+  "drill-late-suppliers": {
+    "md5": "710cfc0255084e73b4c65245ae874620",
+    "row_count": 138
+  },
+  "drill-single-source": {
+    "md5": "f3c030d9ee2125f6264ed19ac88e06da",
+    "row_count": 12
+  },
+  "drill-spare-otd": {
+    "md5": "3a53ea918d56de0dee9ced559d7b25db",
+    "row_count": 3
+  },
   "group-avg-quoted-lead-time": {
-    "md5": "54d02c2a3b4add0e652f958df324a204",
+    "md5": "4b98ecf7403572880253bd533e1880e7",
     "row_count": 138
   },
   "group-lines-by-order-year": {
@@ -80,8 +104,8 @@
     "row_count": 617
   },
   "join-single-source-long-lead": {
-    "md5": "4bb5b4d18b2e22b0f8fbdeae3af6e74d",
-    "row_count": 1246
+    "md5": "8e043549daabb939131851e7bff4a09b",
+    "row_count": 1276
   },
   "long-lead-materials": {
     "md5": "571d7c160843f2c65d8a2aebf847b22d",
@@ -90,6 +114,38 @@
   "material-list": {
     "md5": "1181df41af06213bf84be1c2f78f63a7",
     "row_count": 5431
+  },
+  "plan-at-risk-orders": {
+    "md5": "55a35db62f0371f41bcd04691b28afef",
+    "row_count": 7
+  },
+  "plan-bay-load": {
+    "md5": "dc1a987b7f5576900e179d8280aaa272",
+    "row_count": 195
+  },
+  "plan-corvane-what-if": {
+    "md5": "e430d007fd8df05b0c09132dd3a19690",
+    "row_count": 1
+  },
+  "plan-forecast-coverage": {
+    "md5": "ae20f9a9caabdf57bd6a856cf48fdf42",
+    "row_count": 12
+  },
+  "plan-forecast-waterfall": {
+    "md5": "d6ed756984bd8c0758c6f02be7732bf7",
+    "row_count": 24
+  },
+  "plan-open-demand": {
+    "md5": "a0f260bfaaca357c132b5496d4922e48",
+    "row_count": 24
+  },
+  "plan-shortages": {
+    "md5": "e7e110bdeb60cfa3ef2c0b7cf39ba914",
+    "row_count": 446
+  },
+  "plan-weekly-balance": {
+    "md5": "1f2e03f9b22618972d2235faddf0bf04",
+    "row_count": 26
   },
   "plant-columns": {
     "md5": "448bcbff81bce19a21647fdd3af337d5",
