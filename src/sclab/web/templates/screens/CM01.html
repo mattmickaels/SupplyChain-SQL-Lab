@@ -1,0 +1,68 @@
+{% extends "screens/_layout.html" %}
+{% block screen_body %}
+{% set head = data.runs['header'] %}
+{% set load = data.runs['load'] %}
+{% set orders = data.runs['orders'] %}
+<style>
+  .cm01-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.4rem 1.2rem; padding: 0.7rem 0.9rem; background: var(--paper); border: 1px solid var(--line); border-radius: 0.5rem; }
+  .cm01-head dt { color: var(--muted); font-size: 0.85rem; }
+  .cm01-head dd { margin: 0; font-weight: 600; }
+  .cm01 td.num, .cm01 th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .cm01 tr.over td { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
+</style>
+{% if head.error %}
+<p class="message">{{ head.error }}</p>
+{% elif head.result.rows %}
+{% set h = head.result.rows[0] %}
+{% set hc = head.result.columns %}
+<dl class="cm01-head">
+  <div><dt>Plant</dt><dd>{{ h[hc.index('plant_code')] }}, {{ h[hc.index('name')] }}</dd></div>
+  <div><dt>Build bays</dt><dd>{{ h[hc.index('bays')] }}</dd></div>
+  <div><dt>Slots a week</dt><dd>{{ h[hc.index('weekly_slots')] }}</dd></div>
+  <div><dt>Horizon</dt><dd>26 weeks from the snapshot</dd></div>
+</dl>
+{% endif %}
+<h2>{{ load.query.title }}</h2>
+{% if load.error %}
+<p class="message">{{ load.error }}</p>
+{% else %}
+{% set c = load.result.columns %}
+<div class="grid-wrap">
+  <table class="grid cm01">
+    <thead>
+      <tr>
+        <th>Bay</th>
+        <th>Week of</th>
+        <th class="num">Starts</th>
+        <th class="num">Slots</th>
+        <th class="num">Load %</th>
+        <th>Flag</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in load.result.rows %}
+      {% set over = row[c.index('overloaded')] %}
+      <tr{% if over %} class="over"{% endif %}>
+        <td>{{ row[c.index('bay_id')] }}</td>
+        <td>{{ row[c.index('week_start')] | cell('DATE') }}</td>
+        <td class="num">{{ row[c.index('starts')] }}</td>
+        <td class="num">{{ row[c.index('weekly_slots')] }}</td>
+        <td class="num">{{ row[c.index('load_pct')] }}</td>
+        <td>{% if over %}OVER 100%{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+<h2>{{ orders.query.title }}</h2>
+{% if orders.error %}
+<p class="message">{{ orders.error }}</p>
+{% elif orders.result.rows %}
+{% with columns=orders.result.columns, rows=orders.result.rows, types=orders.result.column_types %}
+{% include "_grid.html" %}
+{% endwith %}
+{% else %}
+<p class="empty">No bay is over 100% in the next 26 weeks.</p>
+{% endif %}
+{% endblock %}
