@@ -1,6 +1,10 @@
 """Material, supplier, purchase order and sales order display screens."""
 
+from sclab.constants import AS_OF_DATE, ON_TIME_WINDOW_START
 from sclab.screens.framework import Screen, ScreenQuery, register
+
+_AS_OF = f"DATE '{AS_OF_DATE.isoformat()}'"
+_WINDOW_START = f"DATE '{ON_TIME_WINDOW_START.isoformat()}'"
 
 
 def _screen(
@@ -27,7 +31,7 @@ def _screen(
 
 
 # Lesson 5 uses this window: 2025 Q1 through 2026 Q4, receipts before the lab as-of date.
-_ON_TIME = """
+_ON_TIME = f"""
 SELECT CAST(date_trunc('quarter', g.receipt_date) AS DATE) AS quarter_start,
        EXTRACT(YEAR FROM g.receipt_date) AS receipt_year,
        EXTRACT(QUARTER FROM g.receipt_date) AS receipt_quarter,
@@ -42,12 +46,28 @@ FROM goods_receipt AS g
 JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
 JOIN purchase_order AS h ON h.po_no = g.po_no
 WHERE h.supplier_no = $1
-  AND g.receipt_date >= DATE '2025-01-01'
-  AND g.receipt_date < DATE '2026-11-01'
+  AND g.receipt_date >= {_WINDOW_START}
+  AND g.receipt_date < {_AS_OF}
 GROUP BY CAST(date_trunc('quarter', g.receipt_date) AS DATE),
          EXTRACT(YEAR FROM g.receipt_date),
          EXTRACT(QUARTER FROM g.receipt_date)
 ORDER BY quarter_start
+"""
+
+_ON_TIME_90 = f"""
+SELECT COUNT(*) AS receipt_count,
+       ROUND(
+           100.0 * SUM(
+               CASE WHEN g.receipt_date <= i.confirmed_delivery_date THEN 1 ELSE 0 END
+           ) / COUNT(*),
+           1
+       ) AS on_time_pct
+FROM goods_receipt AS g
+JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+JOIN purchase_order AS h ON h.po_no = g.po_no
+WHERE h.supplier_no = $1
+  AND g.receipt_date >= {_AS_OF} - INTERVAL 90 DAY
+  AND g.receipt_date < {_AS_OF}
 """
 
 _OPEN_PO = """
@@ -65,23 +85,26 @@ JOIN purchase_order AS h ON h.po_no = i.po_no
 JOIN material AS m ON m.material_no = i.material_no
 LEFT JOIN received AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
 WHERE {where_sql}
-  AND h.order_date <= DATE '2026-11-01'
+  AND h.order_date <= {as_of}
   AND i.order_qty > COALESCE(r.received_qty, 0)
 ORDER BY h.po_no, i.line_no
 """
 
 _USED_PLANT = """
 LEFT JOIN (
-    SELECT material_no, MIN(plant_code) AS plant_code
+    SELECT material_no,
+           COALESCE(
+               MIN(CASE WHEN safety_stock > 0 THEN plant_code END),
+               MIN(plant_code)
+           ) AS plant_code
     FROM material_plant
-    WHERE safety_stock > 0
     GROUP BY material_no
 ) AS used ON used.material_no = {material_sql}
 """
 
 
 def _open_po(where_sql: str) -> str:
-    return _OPEN_PO.format(where_sql=where_sql)
+    return _OPEN_PO.format(where_sql=where_sql, as_of=_AS_OF)
 
 
 SCREENS = {
@@ -187,6 +210,7 @@ SCREENS = {
                 """,
             ),
             ScreenQuery("on_time", "On-time rate by quarter", _ON_TIME),
+            ScreenQuery("on_time_90", "On-time rate, last 90 days", _ON_TIME_90),
             ScreenQuery(
                 "open_po",
                 "Open purchase order lines",
@@ -286,11 +310,15 @@ SCREENS = {
                 "Items",
                 """
                 SELECT i.line_no, i.material_no, m.description, i.qty, i.requested_date,
-                       i.promised_date, i.status, i.shipped_date, p.prod_order_no, p.plant_code
+                       i.promised_date, i.status, i.shipped_date, p.prod_order_no,
+                       COALESCE(p.plant_code, used.plant_code) AS plant_code
                 FROM sales_order_item AS i
                 JOIN material AS m ON m.material_no = i.material_no
                 LEFT JOIN production_order AS p
                   ON p.so_no = i.so_no AND p.so_line_no = i.line_no
+                """
+                + _USED_PLANT.format(material_sql="i.material_no")
+                + """
                 WHERE i.so_no = $1
                 ORDER BY i.line_no, p.prod_order_no
                 """,

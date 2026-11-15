@@ -15,8 +15,6 @@
 <a class="drill" href="/screens/ME23N?key={{ value | urlencode }}">{{ value | cell(type_name) }}</a>
 {% elif column == 'so_no' %}
 <a class="drill" href="/screens/VA03?key={{ value | urlencode }}">{{ value | cell(type_name) }}</a>
-{% elif column == 'prod_order_no' %}
-<a class="drill" href="/screens/CO03?key={{ value | urlencode }}">{{ value | cell(type_name) }}</a>
 {% else %}
 {{ value | cell(type_name) }}
 {% endif %}

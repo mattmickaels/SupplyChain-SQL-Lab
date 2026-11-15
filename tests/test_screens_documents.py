@@ -136,16 +136,28 @@ def test_xk03_renders_corvane_and_shows_the_slip(client) -> None:
     assert data.found is True
     assert data.runs["materials"].result.rows
     assert data.runs["open_po"].result.rows
+    assert "2026 Q4 covers October only, up to the lab&#39;s today." in text
+    assert "On-time rate, last 90 days" in text
     rows = data.runs["on_time"].result.rows
     assert len(rows) == 8
     assert [(row[1], row[2]) for row in rows[-2:]] == [(2026, 3), (2026, 4)]
     # Lesson 5 pins these rates. Q3 stays at 53.6 because July receipts are still on time.
-    # Q4 is the slip: receipts from August through October, under 45%.
+    # Q4 is October only, through the day before the lab's today.
     assert rows[-2][3] == 28
     assert float(rows[-2][4]) == 53.6
     assert rows[-1][3] == 2
     assert float(rows[-1][4]) < 45
     assert float(rows[-3][4]) > float(rows[-2][4])
+    quarters_2025 = [row for row in rows if row[1] == 2025]
+    assert quarters_2025
+    assert all(float(row[4]) >= 90 for row in quarters_2025)
+    recent = data.runs["on_time_90"].result.rows
+    assert len(recent) == 1
+    assert recent[0][0] > 0
+    assert float(recent[0][1]) < 45
+    assert "DATE '2025-01-01'" in data.runs["on_time"].display_sql
+    assert "DATE '2026-11-01'" in data.runs["on_time"].display_sql
+    assert "DATE '2026-11-01' - INTERVAL 90 DAY" in data.runs["on_time_90"].display_sql
     missing = client.get("/screens/XK03", params={"key": "V-99999"})
     assert missing.status_code == 200
     assert "Supplier V-99999 was not found." in missing.text
@@ -179,11 +191,12 @@ def test_va03_renders_at_risk_sales_order(client) -> None:
     assert "/screens/MM03?key=" in text
     assert "&amp;plant=" in text
     assert 'class="drill"' in text
-    assert "/screens/CO03?key=" in text
+    assert "/screens/CO03" not in text
     data = render_screen("VA03", so_no, {})
     assert data.found is True
     assert data.runs["items"].result.rows
-    assert any(row[8] for row in data.runs["items"].result.rows)
+    prod_order = next(row[8] for row in data.runs["items"].result.rows if row[8])
+    assert prod_order in text
     missing = client.get("/screens/VA03", params={"key": "SO-9999999"})
     assert "Sales order SO-9999999 was not found." in missing.text
 
@@ -205,6 +218,45 @@ def test_displayed_sql_reproduces_rows(lab_home) -> None:
             again = run_query(run.display_sql)
             assert again.columns == run.result.columns
             assert again.rows == run.result.rows
+
+
+def _spare_sales_line() -> tuple[str, str]:
+    rows = run_query(
+        """
+        SELECT h.so_no, i.material_no
+        FROM sales_order_item AS i
+        JOIN sales_order AS h ON h.so_no = i.so_no
+        JOIN material AS m ON m.material_no = i.material_no
+        LEFT JOIN production_order AS p
+          ON p.so_no = i.so_no AND p.so_line_no = i.line_no
+        WHERE m.material_type = 'COMPONENT'
+          AND p.prod_order_no IS NULL
+        ORDER BY h.so_no, i.line_no
+        LIMIT 1
+        """
+    ).rows
+    assert rows, "expected a spare-part sales line with no production order"
+    return rows[0]
+
+
+def test_va03_spare_material_link_opens_mm03(client) -> None:
+    so_no, material = _spare_sales_line()
+    text = client.get("/screens/VA03", params={"key": so_no}).text
+    marker = f"/screens/MM03?key={material}&amp;plant="
+    assert marker in text
+    href = text[text.index(marker) : text.index('"', text.index(marker))].replace("&amp;", "&")
+    opened = client.get(href)
+    assert opened.status_code == 200
+    assert "Enter a plant." not in opened.text
+    assert "was not found" not in opened.text
+    assert "Plant data" in opened.text
+
+
+def test_planning_screens_are_reachable(client) -> None:
+    for code in ("MD04", "CM01"):
+        response = client.get(f"/screens/{code}")
+        assert response.status_code == 200
+        assert code in response.text
 
 
 def test_screens_index_lists_document_screens(client) -> None:
