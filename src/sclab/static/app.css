@@ -334,3 +334,10 @@ input[type="text"], select {
   .schema-list li, .lesson-list a, .summary-review, .chart-fields { grid-template-columns: 1fr; }
   .top { flex-direction: column; align-items: flex-start; }
 }
+
+.screen-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.8rem; }
+.screen-brand { color: var(--accent); }
+.tcode-box { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.tcode-box input { font-family: var(--mono); padding: 0.25rem 0.4rem; border: 1px solid var(--line); border-radius: 0.3rem; }
+.sql-panel { margin-top: 0.8rem; }
+.sql-panel summary { cursor: pointer; }

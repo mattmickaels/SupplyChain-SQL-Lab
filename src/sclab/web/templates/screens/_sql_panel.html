@@ -1,0 +1,8 @@
+<details class="sql-panel">
+  <summary>Show the SQL: {{ run.query.title }}</summary>
+  <pre class="solution"><code>{{ run.display_sql }}</code></pre>
+  <p class="actions">
+    <button type="button" data-copy-sql>Copy</button>
+    <a href="/playground?sql={{ run.display_sql | urlencode }}">Open in playground</a>
+  </p>
+</details>

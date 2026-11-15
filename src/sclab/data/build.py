@@ -14,6 +14,7 @@ import pandas as pd
 from sclab.constants import AS_OF_DATE, GENERATOR_VERSION, SEED
 from sclab.data.master import generate_master
 from sclab.data.messiness import apply_messiness
+from sclab.data.sap_views import create_sap_views
 from sclab.data.schema import TABLES, create_all, table
 from sclab.data.transactions import generate_transactions
 from sclab.paths import lab_db_path, sandbox_db_path
@@ -65,6 +66,7 @@ def build_database(
                 "('generator_version', ?), ('seed', ?), ('as_of_date', ?)",
                 [GENERATOR_VERSION, str(seed), AS_OF_DATE.isoformat()],
             )
+            create_sap_views(connection)
             connection.execute("CHECKPOINT")
             counts = _row_counts(connection)
         finally:

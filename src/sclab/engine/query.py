@@ -3,6 +3,7 @@
 import shutil
 import threading
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
@@ -37,10 +38,14 @@ def run_query(
     target: Literal["lesson", "sandbox"] = "lesson",
     max_rows: int = MAX_ROWS,
     timeout_s: float = TIMEOUT_S,
+    params: Sequence[object] | None = None,
     *,
     read_only: bool = False,
 ) -> QueryResult:
-    """Run one statement, optionally forcing the sandbox to be read-only too."""
+    """Run one statement, optionally forcing the sandbox to be read-only too.
+
+    With params, DuckDB binds positional $1, $2 placeholders; learner paths never pass params.
+    """
     _statements(sql)
     if target not in ("lesson", "sandbox"):
         raise QueryError("Choose the lesson database or the practice database.")
@@ -65,7 +70,7 @@ def run_query(
     timer.start()
     try:
         columns, column_types, rows, total_rows, truncated = _collect(
-            connection, sql, max_rows, deadline
+            connection, sql, max_rows, deadline, params
         )
         if interrupted or time.perf_counter() >= deadline:
             raise QueryError(_TIMEOUT_MESSAGE)
@@ -131,8 +136,10 @@ def _column_info(description) -> tuple[list[str], list[str]]:
     return columns, column_types
 
 
-def _collect(connection, sql: str, max_rows: int, deadline: float):
-    pending = connection.execute(sql)
+def _collect(
+    connection, sql: str, max_rows: int, deadline: float, params: Sequence[object] | None = None
+):
+    pending = connection.execute(sql, list(params)) if params else connection.execute(sql)
     columns, column_types = _column_info(pending.description)
     rows: list[tuple] = []
     remaining = max_rows

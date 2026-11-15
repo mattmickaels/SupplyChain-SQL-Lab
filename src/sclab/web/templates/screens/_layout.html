@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ screen.title }}{% endblock %}
+{% block content %}
+<section class="screen">
+  <div class="screen-bar">
+    <h1><span class="screen-brand">Kestrel ERP</span> &middot; {{ screen.title }}</h1>
+    <form class="tcode-box" action="/screens/go" method="get">
+      <label for="tcode">Transaction code</label>
+      <input id="tcode" name="tcode" value="{{ screen.code }}" size="6" autocomplete="off">
+      <label for="tcode-key">{{ screen.key_label }}</label>
+      <input id="tcode-key" name="key" value="{{ key }}" size="14" autocomplete="off">
+      <button type="submit">Go</button>
+    </form>
+  </div>
+  <p class="muted">Transaction code {{ screen.code }}. Read-only.</p>
+  {% if not data.found %}
+  {% include "screens/not_found.html" %}
+  {% else %}
+  {% block screen_body %}{% endblock %}
+  {% for name, run in data.runs.items() %}
+  {% include "screens/_sql_panel.html" %}
+  {% endfor %}
+  {% endif %}
+</section>
+{% endblock %}
