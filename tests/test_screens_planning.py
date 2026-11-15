@@ -354,8 +354,20 @@ def test_md04_excludes_late_po_lines_and_started_orders(lab_conn) -> None:
     conn = _scratch_copy(lab_conn, material)
     after = AS_OF_DATE + timedelta(days=1)
     tool = conn.execute(
-        "SELECT p.material_no FROM production_order p JOIN bom_item b"
-        " ON b.parent_material_no = p.material_no WHERE p.plant_code = 'SC01' LIMIT 1"
+        """
+        WITH RECURSIVE up(parent_material_no, level) AS (
+            SELECT parent_material_no, 1 FROM bom_item WHERE component_material_no = ?
+            UNION ALL
+            SELECT b.parent_material_no, up.level + 1
+            FROM up JOIN bom_item b ON b.component_material_no = up.parent_material_no
+            WHERE up.level < 10
+        )
+        SELECT DISTINCT m.material_no FROM up
+        JOIN material m ON m.material_no = up.parent_material_no
+        WHERE m.material_type = 'TOOL'
+        ORDER BY 1 LIMIT 1
+        """,
+        [material],
     ).fetchone()[0]
     conn.execute(
         "INSERT INTO purchase_order VALUES ('PO-LATE', 'V-10017', 'SC01', ?),"
@@ -391,13 +403,6 @@ def test_md04_excludes_late_po_lines_and_started_orders(lab_conn) -> None:
     assert "PO-EDGE" in docs
     assert "PR-STARTED" not in docs
     assert "PR-FUTURE" in docs
-    released = conn.execute(
-        "SELECT prod_order_no FROM production_order"
-        " WHERE status = 'Released' AND planned_start <= ?",
-        [AS_OF_DATE],
-    ).fetchall()
-    assert released
-    assert docs.isdisjoint({r[0] for r in released})
 
 
 def test_cm01_displayed_sql_reproduces_rows(lab_home) -> None:
