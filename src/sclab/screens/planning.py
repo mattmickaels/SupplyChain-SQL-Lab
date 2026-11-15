@@ -16,9 +16,11 @@ CM01_WEEKS = 26
 _AS_OF = f"DATE '{AS_OF_DATE.isoformat()}'"
 _MD04_END = f"DATE '{(AS_OF_DATE + timedelta(weeks=MD04_WEEKS)).isoformat()}'"
 _CM01_LAST_LEVEL = CM01_WEEKS - 1
+# The first CM01 week is the Monday on or after AS_OF_DATE + 1 day (the first day after the
+# snapshot). tests/test_screens_planning.py pins this to AS_OF_DATE being a Sunday.
 
-MD04_HEADER_SQL = """
-SELECT m.material_no, m.description, p.plant_code, p.safety_stock,
+MD04_HEADER_SQL = f"""
+SELECT m.material_no, m.description, p.plant_code, p.safety_stock, {MD04_WEEKS} AS horizon_weeks,
        p.planned_lead_time_days AS lead_time_days,
        src.names || CASE WHEN src.suppliers = 1 THEN ' (sole)' ELSE '' END AS sources
 FROM material m
@@ -111,8 +113,9 @@ JOIN material_plant p ON p.material_no = $1 AND p.plant_code = $2
 ORDER BY r.element_date, r.element_order, r.doc_no, r.doc_line
 """
 
-CM01_HEADER_SQL = """
-SELECT p.plant_code, p.name, p.city, COUNT(*) AS bays, SUM(b.weekly_slots) AS weekly_slots
+CM01_HEADER_SQL = f"""
+SELECT p.plant_code, p.name, p.city, COUNT(*) AS bays, SUM(b.weekly_slots) AS weekly_slots,
+       {CM01_WEEKS} AS horizon_weeks
 FROM plant p JOIN build_bay b ON b.plant_code = p.plant_code
 WHERE p.plant_code = $1
 GROUP BY p.plant_code, p.name, p.city
@@ -156,14 +159,13 @@ ORDER BY bay_id, week_start
 CM01_ORDERS_SQL = (
     _CM01_GRID_CTES
     + """
-SELECT g.bay_id, g.week_start, g.starts, g.weekly_slots, p.prod_order_no, p.material_no,
-       p.planned_start, p.status
+SELECT g.bay_id, g.week_start, g.starts, g.weekly_slots, g.starts > g.weekly_slots AS overloaded,
+       p.prod_order_no, p.material_no, p.planned_start, p.status
 FROM grid g
 JOIN production_order p
   ON p.bay_id = g.bay_id
  AND CAST(date_trunc('week', p.planned_start) AS DATE) = g.week_start
-WHERE g.starts > g.weekly_slots
-  AND p.status IN ('Planned', 'Released') AND p.planned_start > """
+WHERE p.status IN ('Planned', 'Released') AND p.planned_start > """
     + _AS_OF
     + """
 ORDER BY g.bay_id, g.week_start, p.planned_start, p.prod_order_no
@@ -190,7 +192,7 @@ CM01 = Screen(
     queries=(
         ScreenQuery("header", "Plant", CM01_HEADER_SQL),
         ScreenQuery("load", "Weekly bay load", CM01_LOAD_SQL),
-        ScreenQuery("orders", "Production orders in overloaded weeks", CM01_ORDERS_SQL),
+        ScreenQuery("orders", "Production orders by bay and week", CM01_ORDERS_SQL),
     ),
     exists_sql="SELECT count(*) FROM build_bay WHERE plant_code = $1",
     not_found="Plant {key} was not found.",

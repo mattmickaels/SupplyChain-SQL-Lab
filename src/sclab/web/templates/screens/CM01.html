@@ -19,8 +19,9 @@
   <div><dt>Plant</dt><dd>{{ h[hc.index('plant_code')] }}, {{ h[hc.index('name')] }}</dd></div>
   <div><dt>Build bays</dt><dd>{{ h[hc.index('bays')] }}</dd></div>
   <div><dt>Slots a week</dt><dd>{{ h[hc.index('weekly_slots')] }}</dd></div>
-  <div><dt>Horizon</dt><dd>26 weeks from the snapshot</dd></div>
+  <div><dt>Horizon</dt><dd>{{ h[hc.index('horizon_weeks')] }} weeks from the snapshot</dd></div>
 </dl>
+<p class="muted">Weeks run Monday to Sunday and count every start in the week. Lesson 10 counts starts from 1 December only, so a bay can differ by the starts on 30 November.</p>
 {% endif %}
 <h2>{{ load.query.title }}</h2>
 {% if load.error %}
@@ -63,6 +64,6 @@
 {% include "_grid.html" %}
 {% endwith %}
 {% else %}
-<p class="empty">No bay is over 100% in the next 26 weeks.</p>
+<p class="empty">No bay has production starts in the next {{ h[hc.index('horizon_weeks')] }} weeks.</p>
 {% endif %}
 {% endblock %}

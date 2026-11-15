@@ -20,6 +20,7 @@
   <div><dt>Material</dt><dd>{{ h[hc.index('material_no')] }}</dd></div>
   <div><dt>Description</dt><dd>{{ h[hc.index('description')] }}</dd></div>
   <div><dt>Plant</dt><dd>{{ h[hc.index('plant_code')] }}</dd></div>
+  <div><dt>Horizon</dt><dd>{{ h[hc.index('horizon_weeks')] }} weeks</dd></div>
   <div><dt>Safety stock</dt><dd>{{ h[hc.index('safety_stock')] }}</dd></div>
   <div><dt>Lead time</dt><dd>{% if h[hc.index('lead_time_days')] %}{{ h[hc.index('lead_time_days')] }} days{% else %}Not set{% endif %}</dd></div>
   <div><dt>Source</dt><dd>{{ h[hc.index('sources')] or 'No supplier' }}</dd></div>
@@ -60,7 +61,7 @@
   </table>
 </div>
 {% if list.result.rows | length == 1 %}
-<p class="empty">No open requirements or receipts in the next 52 weeks.</p>
+<p class="empty">No open requirements or receipts in the next {{ h[hc.index('horizon_weeks')] }} weeks.</p>
 {% endif %}
 {% endif %}
 {% endblock %}

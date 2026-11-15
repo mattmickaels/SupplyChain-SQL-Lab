@@ -281,17 +281,123 @@ def test_cm01_covers_26_weeks_and_matches_drill_totals(lab_conn) -> None:
     assert round(100 * 34 / 52, 2) == 65.38
 
 
-def test_cm01_drill_lists_orders_of_overloaded_weeks() -> None:
+def test_cm01_drill_lists_orders_of_every_bay_week() -> None:
     data = _cm01()
     orders = _dicts(data.runs["orders"])
-    overloaded = [r for r in _dicts(data.runs["load"]) if r["overloaded"]]
+    grid = [r for r in _dicts(data.runs["load"]) if r["starts"]]
     assert orders
-    assert len(orders) == sum(r["starts"] for r in overloaded)
+    assert len(orders) == sum(r["starts"] for r in grid)
     assert {(r["bay_id"], r["week_start"]) for r in orders} == {
-        (r["bay_id"], r["week_start"]) for r in overloaded
+        (r["bay_id"], r["week_start"]) for r in grid
     }
+    assert any(not r["overloaded"] for r in orders)
+    assert any(r["overloaded"] for r in orders)
+    assert all(r["overloaded"] == (r["starts"] > r["weekly_slots"]) for r in orders)
     assert all(r["status"] in ("Planned", "Released") for r in orders)
     assert all(r["planned_start"] > AS_OF_DATE for r in orders)
+
+
+def test_cm01_first_week_assumes_snapshot_is_a_sunday() -> None:
+    # The grid starts on the Monday after the snapshot; revisit CM01 if AS_OF_DATE moves.
+    assert AS_OF_DATE.weekday() == 6
+
+
+def test_md04_spare_lines_sit_at_the_spare_plant(lab_conn) -> None:
+    material = "M-001327"
+    spare_by_plant = {}
+    for plant in ("AU01", "SC01", "SG01"):
+        _, rows = _md04(material, plant)
+        spare_by_plant[plant] = [r for r in rows if r["element_order"] == SPARE_ORDER]
+    holders = [plant for plant, rows in spare_by_plant.items() if rows]
+    assert len(holders) == 1
+    spare = spare_by_plant[holders[0]]
+    expected = lab_conn.execute(
+        "SELECT so_no, line_no, promised_date, qty FROM sales_order_item"
+        " WHERE material_no = ? AND status = 'Open' AND promised_date > ?"
+        "   AND promised_date < ? ORDER BY so_no, line_no",
+        [material, AS_OF_DATE, AS_OF_DATE + timedelta(weeks=52)],
+    ).fetchall()
+    assert expected
+    assert len(spare) == len(expected)
+    by_doc = {(r["doc_no"], r["doc_line"]): r for r in spare}
+    for so_no, line_no, promised, qty in expected:
+        row = by_doc[(so_no, line_no)]
+        assert row["date"] == promised
+        assert row["requirement_qty"] == -qty
+
+
+def _scratch_copy(lab_conn, material: str):
+    """Copy the tables MD04 reads for one material into memory so rows can be added."""
+    conn = duckdb.connect()
+    queries = {
+        "material": "SELECT * FROM material",
+        "bom_item": "SELECT * FROM bom_item",
+        "material_plant": "SELECT * FROM material_plant WHERE material_no = ?",
+        "inventory": "SELECT * FROM inventory WHERE material_no = ?",
+        "purchase_order_item": "SELECT * FROM purchase_order_item WHERE material_no = ?",
+        "purchase_order": "SELECT * FROM purchase_order WHERE po_no IN"
+        " (SELECT po_no FROM purchase_order_item WHERE material_no = ?)",
+        "goods_receipt": "SELECT * FROM goods_receipt WHERE po_no IN"
+        " (SELECT po_no FROM purchase_order_item WHERE material_no = ?)",
+        "production_order": "SELECT * FROM production_order",
+        "sales_order_item": "SELECT * FROM sales_order_item WHERE material_no = ?",
+    }
+    for name, sql in queries.items():
+        frame = lab_conn.execute(sql, [material] if "?" in sql else []).df()
+        conn.register(f"src_{name}", frame)
+        conn.execute(f"CREATE TABLE {name} AS SELECT * FROM src_{name}")
+    return conn
+
+
+def test_md04_excludes_late_po_lines_and_started_orders(lab_conn) -> None:
+    material = _rf_material()
+    conn = _scratch_copy(lab_conn, material)
+    after = AS_OF_DATE + timedelta(days=1)
+    tool = conn.execute(
+        "SELECT p.material_no FROM production_order p JOIN bom_item b"
+        " ON b.parent_material_no = p.material_no WHERE p.plant_code = 'SC01' LIMIT 1"
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO purchase_order VALUES ('PO-LATE', 'V-10017', 'SC01', ?),"
+        " ('PO-EDGE', 'V-10017', 'SC01', ?)",
+        [after, AS_OF_DATE],
+    )
+    template = conn.execute("SELECT * FROM purchase_order_item LIMIT 1").df()
+    for po_no in ("PO-LATE", "PO-EDGE"):
+        row = template.copy()
+        row["po_no"] = po_no
+        row["line_no"] = 1
+        row["material_no"] = material
+        row["order_qty"] = 99
+        row["confirmed_delivery_date"] = AS_OF_DATE + timedelta(days=10)
+        conn.register("late_item", row)
+        conn.execute("INSERT INTO purchase_order_item SELECT * FROM late_item")
+    started = conn.execute("SELECT * FROM production_order LIMIT 1").df()
+    for order_no, start, status in (
+        ("PR-STARTED", AS_OF_DATE, "Planned"),
+        ("PR-FUTURE", after, "Planned"),
+    ):
+        row = started.copy()
+        row["prod_order_no"] = order_no
+        row["material_no"] = tool
+        row["plant_code"] = "SC01"
+        row["planned_start"] = start
+        row["status"] = status
+        conn.register("new_order", row)
+        conn.execute("INSERT INTO production_order SELECT * FROM new_order")
+    rows = conn.execute(planning.MD04_LIST_SQL, [material, "SC01"]).fetchall()
+    docs = {row[3] for row in rows}
+    assert "PO-LATE" not in docs
+    assert "PO-EDGE" in docs
+    assert "PR-STARTED" not in docs
+    assert "PR-FUTURE" in docs
+    released = conn.execute(
+        "SELECT prod_order_no FROM production_order"
+        " WHERE status = 'Released' AND planned_start <= ?",
+        [AS_OF_DATE],
+    ).fetchall()
+    assert released
+    assert docs.isdisjoint({r[0] for r in released})
 
 
 def test_cm01_displayed_sql_reproduces_rows(lab_home) -> None:
