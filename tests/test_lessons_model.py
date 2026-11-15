@@ -43,8 +43,8 @@ def test_load_sample_lesson() -> None:
     assert lesson.title == "Sample lesson"
     assert lesson.summary == "A tiny lesson used to test the loader."
     assert "This sample is not part of the course." in lesson.body_md
-    assert len(lesson.exercises) == 2
-    plants, counted = lesson.exercises
+    assert len(lesson.exercises) == 3
+    plants, counted, drill = lesson.exercises
     assert plants.id == "sample-plants"
     assert plants.title == "List the plants"
     assert plants.hints == (
@@ -64,6 +64,8 @@ def test_load_sample_lesson() -> None:
     assert counted.names_matter is True
     assert counted.excel_tip is None
     assert counted.reference_sql == counted_sql
+    assert drill.id == "sample-drill"
+    assert drill.is_drill is True
     assert "00-sample" not in {item.id for item in load_lessons()}
 
 
@@ -94,6 +96,87 @@ def test_exercise_requires_three_hints(tmp_path: Path) -> None:
     write_lesson(tmp_path / "01-bad", "Bad", "bad-hints", ["only one", "only two"])
     with pytest.raises(ValueError, match="bad-hints"):
         load_lessons(tmp_path)
+
+
+def test_drill_fields_parsed() -> None:
+    lessons = load_lessons(include_sample=True)
+    lesson = next(item for item in lessons if item.id == "00-sample")
+    drill = next(item for item in lesson.exercises if item.id == "sample-drill")
+    assert drill.is_drill is True
+    assert drill.time_limit_s == 900
+    assert drill.databricks_note == "count(*) is spelled the same way on Databricks."
+    assert drill.summary_prompt == (
+        "Write three lines: the finding, the number that matters, and what you would do."
+    )
+    assert drill.model_summary == (
+        "There are 3 plants.\nThe number that matters is 3.\nNo action is needed."
+    )
+    assert drill.summary_checklist == (
+        "Names the number that matters",
+        "Recommends an action",
+        "Three lines or fewer",
+    )
+    plants = next(item for item in lesson.exercises if item.id == "sample-plants")
+    assert plants.is_drill is False
+    assert plants.time_limit_s is None
+    assert plants.databricks_note is None
+    assert plants.summary_prompt is None
+    assert plants.model_summary is None
+    assert plants.summary_checklist == ()
+
+
+def _write_drill(
+    folder: Path,
+    *,
+    summary_prompt: str | None = "Write three lines.",
+    model_summary: str | None = "There are 3 plants.\nThe number is 3.\nNo action.",
+    checklist_count: int = 3,
+) -> None:
+    folder.mkdir(parents=True)
+    (folder / "lesson.md").write_text(
+        '+++\ntitle = "Timed"\nsummary = "A drill."\n+++\n\nBody.\n',
+        encoding="utf-8",
+    )
+    prompt_line = "" if summary_prompt is None else f'summary_prompt = "{summary_prompt}"\n'
+    summary_line = "" if model_summary is None else 'model_summary = "A summary."\n'
+    items = ", ".join(f'"Item {index}"' for index in range(checklist_count))
+    (folder / "exercises.toml").write_text(
+        "[[exercise]]\n"
+        'id = "timed-plants"\n'
+        'title = "Timed plant count"\n'
+        'prompt_md = "Count the plants."\n'
+        'hints = ["Use count.", "Count every row.", "Then summarize."]\n'
+        'reference_sql = ["SELECT count(*) AS plant_count FROM plant"]\n'
+        "order_matters = false\n"
+        "names_matter = true\n"
+        "time_limit_s = 900\n"
+        f"{prompt_line}"
+        f"{summary_line}"
+        f"summary_checklist = [{items}]\n",
+        encoding="utf-8",
+    )
+
+
+def test_drill_without_model_summary_rejected(tmp_path: Path) -> None:
+    missing_summary = tmp_path / "missing-summary"
+    _write_drill(missing_summary / "01-timed", model_summary=None)
+    with pytest.raises(ValueError, match="timed-plants"):
+        load_lessons(missing_summary)
+
+    missing_prompt = tmp_path / "missing-prompt"
+    _write_drill(missing_prompt / "01-timed", summary_prompt=None)
+    with pytest.raises(ValueError, match="timed-plants"):
+        load_lessons(missing_prompt)
+
+    short_list = tmp_path / "short-list"
+    _write_drill(short_list / "01-timed", checklist_count=2)
+    with pytest.raises(ValueError, match="timed-plants"):
+        load_lessons(short_list)
+
+    long_list = tmp_path / "long-list"
+    _write_drill(long_list / "01-timed", checklist_count=6)
+    with pytest.raises(ValueError, match="timed-plants"):
+        load_lessons(long_list)
 
 
 def test_check_answer_passes_equivalent_query() -> None:

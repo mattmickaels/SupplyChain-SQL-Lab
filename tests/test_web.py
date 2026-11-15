@@ -89,7 +89,7 @@ def test_check_records_progress(client) -> None:
     assert "Result matches." in response.text
     assert ProgressStore(progress_path()).status("sample-plants") == "passed"
     home = client.get("/")
-    assert "1 of 2 passed" in home.text
+    assert "1 of 3 passed" in home.text
 
 
 def test_solution_hidden_before_first_attempt(client) -> None:

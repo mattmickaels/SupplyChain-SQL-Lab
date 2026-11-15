@@ -21,12 +21,23 @@ def _lock_for(path: Path) -> threading.Lock:
         return lock
 
 
+def _valid_timestamp(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
 def _valid_entry(entry: object) -> bool:
     if not isinstance(entry, dict):
         return False
     has_attempt = "sql" in entry or "passed" in entry or "checked_at" in entry
     has_draft = "draft_sql" in entry or "draft_at" in entry
-    if not has_attempt and not has_draft:
+    has_drill = "drill_started_at" in entry or "drill_summary" in entry
+    if not has_attempt and not has_draft and not has_drill:
         return False
     if has_attempt and (
         not isinstance(entry.get("sql"), str) or not isinstance(entry.get("passed"), bool)
@@ -37,6 +48,10 @@ def _valid_entry(entry: object) -> bool:
     if has_draft and (
         not isinstance(entry.get("draft_sql"), str) or not isinstance(entry.get("draft_at"), int)
     ):
+        return False
+    if "drill_started_at" in entry and not _valid_timestamp(entry.get("drill_started_at")):
+        return False
+    if "drill_summary" in entry and not isinstance(entry.get("drill_summary"), str):
         return False
     return True
 
@@ -63,6 +78,12 @@ class ProgressStore:
             if isinstance(draft_sql, str) and isinstance(draft_at, int):
                 updated["draft_sql"] = current["draft_sql"]
                 updated["draft_at"] = current["draft_at"]
+            started = current.get("drill_started_at")
+            if isinstance(started, str):
+                updated["drill_started_at"] = started
+            summary = current.get("drill_summary")
+            if isinstance(summary, str):
+                updated["drill_summary"] = summary
             self._data["exercises"][exercise_id] = updated
             self._save()
 
@@ -118,6 +139,51 @@ class ProgressStore:
             if checked_at is None or draft_at > checked_at:
                 return draft
             return sql
+
+    def start_drill(self, exercise_id: str, now: datetime) -> None:
+        with _lock_for(self.path):
+            self._data = self._load()
+            current = self._data["exercises"].get(exercise_id)
+            if not isinstance(current, dict):
+                current = {}
+            updated = dict(current)
+            if not isinstance(updated.get("drill_started_at"), str):
+                updated["drill_started_at"] = now.isoformat()
+            self._data["exercises"][exercise_id] = updated
+            self._save()
+
+    def drill_started_at(self, exercise_id: str) -> datetime | None:
+        with _lock_for(self.path):
+            self._data = self._load()
+            entry = self._data["exercises"].get(exercise_id)
+            if not isinstance(entry, dict):
+                return None
+            raw = entry.get("drill_started_at")
+            if not isinstance(raw, str):
+                return None
+            return datetime.fromisoformat(raw)
+
+    def save_drill_summary(self, exercise_id: str, text: str) -> None:
+        with _lock_for(self.path):
+            self._data = self._load()
+            current = self._data["exercises"].get(exercise_id)
+            if not isinstance(current, dict):
+                current = {}
+            updated = dict(current)
+            updated["drill_summary"] = text
+            self._data["exercises"][exercise_id] = updated
+            self._save()
+
+    def drill_summary(self, exercise_id: str) -> str | None:
+        with _lock_for(self.path):
+            self._data = self._load()
+            entry = self._data["exercises"].get(exercise_id)
+            if not isinstance(entry, dict):
+                return None
+            text = entry.get("drill_summary")
+            if not isinstance(text, str):
+                return None
+            return text
 
     def summary(self) -> dict[str, int]:
         with _lock_for(self.path):

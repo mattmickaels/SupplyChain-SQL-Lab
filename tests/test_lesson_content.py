@@ -20,8 +20,27 @@ _CONTENT = Path(__file__).parents[1] / "src" / "sclab" / "lessons" / "content"
 _SNAPSHOT = Path(__file__).parent / "snapshots" / "exercises.json"
 _MAX_ROWS = 200_000
 _FORBIDDEN = re.compile(
-    r"GROUP\s+BY\s+ALL|\bEXCLUDE\b|\bQUALIFY\b|\bCURRENT_DATE\b|\blist_|\bstrftime\b|\bdate_diff\b",
+    r"GROUP\s+BY\s+ALL|\bEXCLUDE\b|\bQUALIFY\b|\bCURRENT_DATE\b|\blist_|\bstrftime\b",
     re.IGNORECASE,
+)
+_DAY_UNITS = frozenset({"day"})
+_TRUNC_UNITS = frozenset({"month", "week"})
+_DAY_INTERVALS = frozenset({"to_days"})
+_OTHER_INTERVALS = frozenset(
+    {
+        "to_hours",
+        "to_minutes",
+        "to_seconds",
+        "to_milliseconds",
+        "to_microseconds",
+        "to_weeks",
+        "to_months",
+        "to_quarters",
+        "to_years",
+        "to_decades",
+        "to_centuries",
+        "to_millennia",
+    }
 )
 
 
@@ -201,12 +220,297 @@ def test_reference_results_match_snapshot(request, reference_results) -> None:
     assert found == saved
 
 
+def _walk(value: object):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _walk(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk(child)
+
+
+def _function_name(node: dict) -> str:
+    name = node.get("function_name")
+    return name.casefold() if isinstance(name, str) else ""
+
+
+def _function_expressions(node: dict) -> list[dict]:
+    expressions: list[dict] = []
+    for argument in node.get("arguments") or []:
+        if isinstance(argument, dict) and isinstance(argument.get("expression"), dict):
+            expressions.append(argument["expression"])
+    return expressions
+
+
+def _string_constant(node: object) -> str | None:
+    if not isinstance(node, dict) or node.get("class") != "CONSTANT":
+        return None
+    literal = node.get("literal")
+    if not isinstance(literal, dict) or literal.get("kind") != "STRING":
+        return None
+    text = literal.get("text")
+    if not isinstance(text, str):
+        return None
+    return text.casefold()
+
+
+def _is_interval_literal(node: dict) -> bool:
+    if node.get("class") not in {"CAST", "CONSTANT"}:
+        return False
+    return (
+        node.get("type_expr", {}).get("type_name", "").casefold() == "interval"
+        or node.get("literal", {}).get("kind", "").casefold() == "interval"
+    )
+
+
+def _interval_literal_is_whole_days(node: dict) -> bool:
+    constant = node.get("child") if node.get("class") == "CAST" else node
+    if not isinstance(constant, dict) or constant.get("class") != "CONSTANT":
+        return False
+    text = constant.get("literal", {}).get("text")
+    if not isinstance(text, str):
+        return False
+    # Keep months separate: Python timedeltas would flatten months into days.
+    with duckdb.connect(":memory:") as connection:
+        try:
+            return connection.execute(
+                "SELECT datepart('year', i) = 0 AND datepart('month', i) = 0 "
+                "AND (datepart('hour', i) * 3600000000 "
+                "+ datepart('minute', i) * 60000000 "
+                "+ datepart('microseconds', i)) % 86400000000 = 0 "
+                "FROM (SELECT CAST(? AS INTERVAL) AS i)",
+                [text],
+            ).fetchone()[0]
+        except duckdb.Error:
+            return False
+
+
+def _date_exception_forms(sql: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Split controlled date forms into allowed units and rejected units."""
+    allowed: list[str] = []
+    rejected: list[str] = []
+    for node in _walk(_parse_sql(sql)):
+        if _is_interval_literal(node):
+            if _interval_literal_is_whole_days(node):
+                allowed.append("interval")
+            else:
+                rejected.append("interval")
+            continue
+        if node.get("class") != "FUNCTION":
+            continue
+        name = _function_name(node)
+        expressions = _function_expressions(node)
+        unit = _string_constant(expressions[0]) if expressions else None
+        if name in {"datediff", "date_diff"}:
+            if unit in _DAY_UNITS:
+                allowed.append(name)
+            else:
+                rejected.append(name)
+        elif name == "date_trunc":
+            if unit in _TRUNC_UNITS:
+                allowed.append(name)
+            else:
+                rejected.append(name)
+        elif name in _DAY_INTERVALS:
+            allowed.append("interval")
+        elif name in _OTHER_INTERVALS:
+            rejected.append(name)
+    return tuple(allowed), tuple(rejected)
+
+
+def _has_databricks_note(note: str | None) -> bool:
+    return isinstance(note, str) and bool(note.strip())
+
+
+def _date_exception_problem(sql: str, note: str | None) -> str | None:
+    allowed, rejected = _date_exception_forms(sql)
+    if rejected:
+        return f"unsupported date form: {rejected[0]}"
+    if allowed and not _has_databricks_note(note):
+        return f"{allowed[0]} needs a databricks_note"
+    return None
+
+
+def _integer_constant(node: object) -> int | None:
+    if not isinstance(node, dict) or node.get("class") != "CONSTANT":
+        return None
+    literal = node.get("literal")
+    if not isinstance(literal, dict) or literal.get("kind") != "INTEGER":
+        return None
+    text = literal.get("text")
+    if not isinstance(text, str):
+        return None
+    return int(text)
+
+
+def _is_level_guard(node: dict) -> bool:
+    if node.get("class") != "COMPARISON" or node.get("type") != "COMPARE_LESSTHAN":
+        return False
+    left = node.get("left")
+    if not isinstance(left, dict) or left.get("class") != "COLUMN_REF":
+        return False
+    names = left.get("column_names")
+    if not isinstance(names, list) or not names or str(names[-1]).casefold() != "level":
+        return False
+    limit = _integer_constant(node.get("right"))
+    return limit is not None and limit <= 10
+
+
+def _where_has_level_guard(where: object) -> bool:
+    if not isinstance(where, dict):
+        return False
+    if _is_level_guard(where):
+        return True
+    if where.get("class") != "CONJUNCTION":
+        return False
+    children = where.get("children", [])
+    if where.get("type") == "CONJUNCTION_AND":
+        return any(_where_has_level_guard(child) for child in children)
+    if where.get("type") == "CONJUNCTION_OR":
+        return bool(children) and all(_where_has_level_guard(child) for child in children)
+    return False
+
+
+def _recursive_guard_problem(sql: str) -> str | None:
+    for node in _walk(_parse_sql(sql)):
+        if node.get("type") != "RECURSIVE_CTE_NODE":
+            continue
+        right = node.get("right")
+        where = right.get("where_clause") if isinstance(right, dict) else None
+        if not _where_has_level_guard(where):
+            return "recursive term needs WHERE level < an integer of at most 10"
+    return None
+
+
 def test_reference_sql_is_portable() -> None:
     for exercise in _exercises():
         for sql in exercise.reference_sql:
             assert _FORBIDDEN.search(_portable_sql(sql)) is None, (
                 f"{exercise.id} uses non-portable SQL"
             )
+            problem = _date_exception_problem(sql, exercise.databricks_note)
+            assert problem is None, f"{exercise.id}: {problem}"
+
+
+def test_exception_forms_need_databricks_note() -> None:
+    for exercise in _exercises():
+        for sql in exercise.reference_sql:
+            allowed, rejected = _date_exception_forms(sql)
+            assert not rejected, f"{exercise.id} uses an unsupported date form"
+            if allowed:
+                assert _has_databricks_note(exercise.databricks_note), (
+                    f"{exercise.id} uses {allowed[0]} and needs a databricks_note"
+                )
+
+
+def test_recursive_queries_have_depth_guard() -> None:
+    for exercise in _exercises():
+        for sql in exercise.reference_sql:
+            problem = _recursive_guard_problem(sql)
+            assert problem is None, f"{exercise.id}: {problem}"
+
+
+_GUARDED_RECURSIVE = (
+    "WITH RECURSIVE bom AS ("
+    "SELECT 0 AS level "
+    "UNION ALL "
+    "SELECT level + 1 FROM bom WHERE level < 10"
+    ") SELECT level FROM bom"
+)
+_OUTER_ONLY_RECURSIVE = (
+    "WITH RECURSIVE t(level) AS ("
+    "SELECT 1 UNION ALL SELECT level + 1 FROM t"
+    ") SELECT * FROM t WHERE level < 10"
+)
+_UNGUARDED_RECURSIVE = (
+    "WITH RECURSIVE t(level) AS (SELECT 1 UNION ALL SELECT level + 1 FROM t) SELECT * FROM t"
+)
+
+
+def test_recursive_guard_in_recursive_term() -> None:
+    assert _recursive_guard_problem(_GUARDED_RECURSIVE) is None
+
+
+@pytest.mark.parametrize(
+    ("predicate", "guarded"),
+    [
+        ("level < 10 AND x > 0", True),
+        ("level < 10 OR true", False),
+        ("NOT (level >= 10)", False),
+        ("NOT (level < 10)", False),
+        ("(level < 10 AND x > 0) OR (level < 5 AND x < 0)", True),
+        ("(level < 10 AND x > 0) OR x < 0", False),
+        ("(level < 10 OR true) AND x > 0", False),
+        ("(x > 0 OR x < 0) AND level < 10", True),
+    ],
+)
+def test_recursive_guard_boolean_structure(predicate: str, guarded: bool) -> None:
+    sql = _GUARDED_RECURSIVE.replace("level < 10", predicate)
+    assert (_recursive_guard_problem(sql) is None) is guarded
+
+
+def test_recursive_outer_filter_is_not_a_guard() -> None:
+    assert _recursive_guard_problem(_OUTER_ONLY_RECURSIVE) is not None
+
+
+def test_recursive_query_without_filter_fails() -> None:
+    assert _recursive_guard_problem(_UNGUARDED_RECURSIVE) is not None
+
+
+def test_recursive_guard_constant_is_at_most_10() -> None:
+    too_deep = _GUARDED_RECURSIVE.replace("level < 10", "level < 11")
+    not_less_than = _GUARDED_RECURSIVE.replace("level < 10", "level <= 10")
+    assert _recursive_guard_problem(too_deep) is not None
+    assert _recursive_guard_problem(not_less_than) is not None
+
+
+_ALLOWED_DATE_SQL = (
+    "SELECT datediff('day', a, b) FROM t",
+    "SELECT date_diff('day', a, b) FROM t",
+    "SELECT date_trunc('month', d) FROM t",
+    "SELECT date_trunc('week', d) FROM t",
+    "SELECT d + INTERVAL 7 DAY FROM t",
+    "SELECT d + INTERVAL '1 day' FROM t",
+    "SELECT CAST('7 days' AS INTERVAL)",
+)
+
+
+@pytest.mark.parametrize("sql", _ALLOWED_DATE_SQL)
+def test_allowed_date_forms_pass_with_note(sql: str) -> None:
+    assert _date_exception_problem(sql, "date_add or datediff equivalent.") is None
+
+
+@pytest.mark.parametrize("sql", _ALLOWED_DATE_SQL)
+def test_allowed_date_forms_fail_without_note(sql: str) -> None:
+    assert _date_exception_problem(sql, None) is not None
+    assert _date_exception_problem(sql, "  ") is not None
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT datediff('month', a, b) FROM t",
+        "SELECT date_trunc('year', d) FROM t",
+        "SELECT d + INTERVAL 2 YEAR FROM t",
+        "SELECT d + INTERVAL '2 years' FROM t",
+        "SELECT INTERVAL '36 hours'",
+        "SELECT INTERVAL '1 day 1 microsecond'",
+        "SELECT CAST('1 month 2 days' AS INTERVAL)",
+    ],
+)
+def test_disallowed_date_units_fail_with_note(sql: str) -> None:
+    assert _date_exception_problem(sql, "A note does not allow this unit.") is not None
+
+
+def test_non_ascii_day_interval_needs_note() -> None:
+    sql = "SELECT 'é', DATE '2026-01-01' + INTERVAL 1 DAY"
+    assert _date_exception_problem(sql, None) is not None
+    assert _date_exception_problem(sql, "date_add(DATE '2026-01-01', 1).") is None
+
+
+def test_interval_column_is_not_a_date_exception() -> None:
+    assert _date_exception_problem("SELECT interval_col FROM t", None) is None
 
 
 def test_ordered_exercises_have_order_by() -> None:
@@ -347,7 +651,6 @@ def test_portability_ignores_comments_and_strings() -> None:
         "SELECT CURRENT_DATE",
         "SELECT list_sum(x) FROM t",
         "SELECT strftime(x, '%Y') FROM t",
-        "SELECT date_diff('day', x, y) FROM t",
     ],
 )
 def test_portability_round_trip_preserves_banned_constructs(sql: str) -> None:

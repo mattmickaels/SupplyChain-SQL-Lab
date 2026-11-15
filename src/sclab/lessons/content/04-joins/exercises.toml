@@ -295,3 +295,4 @@ ORDER BY i.po_no, i.line_no
 order_matters = true
 names_matter = true
 excel_tip = "Filter to supplier V-10017, and keep a confirmed date on or after the requested date plus 56 days."
+databricks_note = "date_add(requested_delivery_date, 56) matches requested_delivery_date + INTERVAL 56 DAY."
