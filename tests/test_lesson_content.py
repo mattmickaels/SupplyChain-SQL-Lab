@@ -2616,7 +2616,30 @@ GROUP BY material_no, plant_code ORDER BY material_no, plant_code
             HAVING COUNT(*) >= 20
         )
         SELECT supplier_no, supplier_name, receipts, on_time_pct,
-               ROW_NUMBER() OVER (ORDER BY on_time_pct DESC, supplier_no) AS rank_no
+               ROW_NUMBER() OVER (ORDER BY on_time_pct DESC) AS rank_no
+        FROM rates
+        ORDER BY rank_no, supplier_no
+        """,
+    ),
+    (
+        "cte-supplier-on-time-rank",
+        """
+        WITH rates AS (
+            SELECT s.supplier_no, s.name AS supplier_name, COUNT(*) AS receipts,
+                   ROUND(100.0 * AVG(CASE
+                       WHEN g.receipt_date <= i.confirmed_delivery_date THEN 1.0
+                       ELSE 0.0 END), 1) AS on_time_pct
+            FROM goods_receipt AS g
+            JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+            JOIN purchase_order AS h ON h.po_no = g.po_no
+            JOIN supplier AS s ON s.supplier_no = h.supplier_no
+            WHERE g.receipt_date >= DATE '2025-11-01'
+              AND g.receipt_date < DATE '2026-11-01'
+            GROUP BY s.supplier_no, s.name
+            HAVING COUNT(*) >= 20
+        )
+        SELECT supplier_no, supplier_name, receipts, on_time_pct,
+               RANK() OVER (ORDER BY on_time_pct DESC, supplier_no) AS rank_no
         FROM rates
         ORDER BY rank_no, supplier_no
         """,
@@ -2628,7 +2651,27 @@ GROUP BY material_no, plant_code ORDER BY material_no, plant_code
             SELECT i.po_no, i.line_no, g.gr_no, g.receipt_date, g.qty,
                    ROW_NUMBER() OVER (
                        PARTITION BY i.po_no, i.line_no
-                       ORDER BY g.receipt_date, g.gr_no
+                       ORDER BY g.receipt_date, g.gr_no DESC
+                   ) AS rn
+            FROM purchase_order_item AS i
+            JOIN purchase_order AS h ON h.po_no = i.po_no
+            JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
+            WHERE h.order_date >= DATE '2026-10-01'
+              AND h.order_date <= DATE '2026-10-31'
+        )
+        SELECT po_no, line_no, gr_no, receipt_date, qty
+        FROM numbered WHERE rn = 1
+        ORDER BY po_no, line_no
+        """,
+    ),
+    (
+        "cte-latest-receipt",
+        """
+        WITH numbered AS (
+            SELECT i.po_no, i.line_no, g.gr_no, g.receipt_date, g.qty,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY i.po_no, i.line_no
+                       ORDER BY g.receipt_date DESC, g.gr_no
                    ) AS rn
             FROM purchase_order_item AS i
             JOIN purchase_order AS h ON h.po_no = i.po_no
@@ -2910,6 +2953,39 @@ GROUP BY material_no, plant_code ORDER BY material_no, plant_code
         )
         SELECT p.material_no, c.description, SUM(p.qty_per_tool) AS required_qty
         FROM per_tool AS p
+        JOIN sales_order_item AS i ON i.material_no = p.tool_no
+        JOIN material AS c ON c.material_no = p.material_no
+        WHERE i.status = 'Open'
+        GROUP BY p.material_no, c.description
+        ORDER BY p.material_no
+        """,
+    ),
+    (
+        "bom-rf-for-open-orders",
+        """
+        WITH RECURSIVE tree AS (
+            SELECT m.material_no AS tool_no, b.component_material_no AS material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)) AS extended_qty, 1 AS level
+            FROM material AS m
+            JOIN bom_item AS b ON b.parent_material_no = m.material_no
+            WHERE m.material_type = 'TOOL'
+            UNION ALL
+            SELECT t.tool_no, b.component_material_no,
+                   CAST(t.extended_qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+            FROM tree AS t
+            JOIN bom_item AS b ON b.parent_material_no = t.material_no
+            WHERE t.level < 10
+        ),
+        per_tool AS (
+            SELECT t.tool_no, t.material_no, SUM(t.extended_qty) AS qty_per_tool
+            FROM tree AS t
+            JOIN material AS c ON c.material_no = t.material_no
+            WHERE c.material_type = 'COMPONENT' AND c.description = 'RF generator'
+            GROUP BY t.tool_no, t.material_no
+        )
+        SELECT p.material_no, c.description, SUM(p.qty_per_tool * i.qty) AS required_qty
+        FROM per_tool AS p
+        JOIN sales_order_item AS i ON i.material_no = p.tool_no
         JOIN material AS c ON c.material_no = p.material_no
         GROUP BY p.material_no, c.description
         ORDER BY p.material_no
@@ -2918,12 +2994,78 @@ GROUP BY material_no, plant_code ORDER BY material_no, plant_code
 )
 
 
-def test_common_wrong_answers_fail(lab_home, reference_results) -> None:
+@pytest.fixture
+def latest_receipt_scenario():
+    """Separate latest-date ties from the October order-date requirement."""
+    with duckdb.connect(":memory:") as connection:
+        connection.execute("""
+            CREATE TABLE purchase_order (po_no VARCHAR, order_date DATE);
+            CREATE TABLE purchase_order_item (po_no VARCHAR, line_no INTEGER);
+            CREATE TABLE goods_receipt (
+                po_no VARCHAR, line_no INTEGER, gr_no VARCHAR, receipt_date DATE, qty INTEGER
+            );
+            INSERT INTO purchase_order VALUES
+                ('PO-OCT', DATE '2026-10-01'), ('PO-SEP', DATE '2026-09-30');
+            INSERT INTO purchase_order_item VALUES ('PO-OCT', 1), ('PO-SEP', 1);
+            INSERT INTO goods_receipt VALUES
+                ('PO-OCT', 1, 'GR-1', DATE '2026-10-02', 1),
+                ('PO-OCT', 1, 'GR-2', DATE '2026-11-01', 2),
+                ('PO-OCT', 1, 'GR-3', DATE '2026-11-01', 3),
+                ('PO-SEP', 1, 'GR-4', DATE '2026-10-03', 4);
+        """)
+        yield connection
+
+
+def test_latest_receipt_reference_keeps_latest_tie_on_october_order(latest_receipt_scenario):
+    exercise = next(item for item in _exercises() if item.id == "cte-latest-receipt")
+    run = _scenario_runner(latest_receipt_scenario)
+    for sql in exercise.reference_sql:
+        assert run(sql).rows == [("PO-OCT", 1, "GR-3", date(2026, 11, 1), 3)]
+
+
+@pytest.fixture
+def rf_open_order_scenario():
+    """Open quantities above one and closed lines expose separate demand mistakes."""
+    with duckdb.connect(":memory:") as connection:
+        connection.execute("""
+            CREATE TABLE material (
+                material_no VARCHAR, description VARCHAR, material_type VARCHAR
+            );
+            CREATE TABLE bom_item (
+                parent_material_no VARCHAR, component_material_no VARCHAR, qty_per INTEGER
+            );
+            CREATE TABLE sales_order_item (material_no VARCHAR, qty INTEGER, status VARCHAR);
+            INSERT INTO material VALUES
+                ('TOOL', 'Test tool', 'TOOL'),
+                ('ASSEMBLY', 'Test assembly', 'ASSEMBLY'),
+                ('RF', 'RF generator', 'COMPONENT');
+            INSERT INTO bom_item VALUES
+                ('TOOL', 'ASSEMBLY', 2), ('ASSEMBLY', 'RF', 3), ('TOOL', 'RF', 1);
+            INSERT INTO sales_order_item VALUES ('TOOL', 3, 'Open'), ('TOOL', 5, 'Closed');
+        """)
+        yield connection
+
+
+def test_rf_reference_multiplies_open_quantity_only(rf_open_order_scenario):
+    exercise = next(item for item in _exercises() if item.id == "bom-rf-for-open-orders")
+    run = _scenario_runner(rf_open_order_scenario)
+    for sql in exercise.reference_sql:
+        assert run(sql).rows == [("RF", "RF generator", 21)]
+
+
+def test_common_wrong_answers_fail(
+    lab_home, reference_results, latest_receipt_scenario, rf_open_order_scenario
+) -> None:
     assert lab_home is not None
     exercises = {item.id: item for item in _exercises()}
+    scenarios = {
+        "cte-latest-receipt": latest_receipt_scenario,
+        "bom-rf-for-open-orders": rf_open_order_scenario,
+    }
     for exercise_id, sql in _WRONG_ANSWERS:
         exercise = exercises[exercise_id]
-        outcome = check_answer(exercise, sql, runner=_run)
+        runner = _scenario_runner(scenarios[exercise_id]) if exercise_id in scenarios else _run
+        outcome = check_answer(exercise, sql, runner=runner)
         assert outcome.passed is False, exercise_id
         if exercise_id == "join-open-rf-po-lines" and "JOIN goods_receipt AS g" not in sql:
             wrong_rows = _run(sql).total_rows
