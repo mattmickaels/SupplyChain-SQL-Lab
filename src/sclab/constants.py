@@ -7,5 +7,5 @@ AS_OF_SQL: str = f"DATE '{AS_OF_DATE.isoformat()}'"
 ON_TIME_WINDOW_START: date = date(2025, 1, 1)
 HISTORY_START: date = date(2021, 11, 1)
 FORECAST_END: date = date(2028, 4, 30)
-GENERATOR_VERSION: str = "12"
+GENERATOR_VERSION: str = "13"
 COMPANY_NAME: str = "Kestrel Process Equipment"

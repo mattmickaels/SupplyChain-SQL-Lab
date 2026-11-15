@@ -88,9 +88,9 @@ FROM (
 ORDER BY plant_code
 """
 expected_rows = [
-  ["AU01", 5],
-  ["SC01", 5],
-  ["SG01", 5],
+  ["AU01", 2],
+  ["SC01", 2],
+  ["SG01", 1],
 ]
 order_matters = true
 

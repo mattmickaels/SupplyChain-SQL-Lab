@@ -35,6 +35,8 @@ COMPONENT_LOCATION = "RM01"
 TOOL_LOCATION = "FG01"
 BUILD_DAYS = {"DEP": 56, "ETC": 70, "CMP": 84, "INS": 42}
 PROMISE_GAP = 7
+# A planner pulls an overfull bay week's extra start up to this many weeks earlier.
+LEVEL_WEEKS = 3
 # Monthly tool bookings follow an industry cycle: strong 2022, a 2023 downturn, then an upswing.
 CYCLE_ANCHORS = (
     (0, 34),
@@ -77,9 +79,11 @@ def generate_transactions(
     plant_of = _component_plant(leaf, master)
     lines = _order_lines(rng, master, plant_of)
     lines = _apply_status(rng, lines)
-    production = _production_orders(lines)
+    production = _production_orders(lines, master["build_bay"])
     forecast = _forecast(master, lines)
     demand, issues = _component_demand(lines, production, leaf)
+    # The planner levels bay weeks after the MRP run, so purchasing keeps its dates.
+    production["planned_start"] = _level_planned_starts(production, master["build_bay"])
     supply = _supply(rng, master, demand)
     movements, inventory = _stock(
         lines, production, supply["goods_receipt"], issues, supply["opening"]
@@ -158,11 +162,6 @@ def _order_lines(rng, master: dict[str, pd.DataFrame], plant_of: pd.Series) -> p
     ).astype(int)
     tools_frame["family_code"] = tools_frame["material_no"].map(family_of)
     tools_frame["plant_code"] = tools_frame["family_code"].map(HOME_PLANT)
-    missing_bay = tools_frame["bay_id"].isna()
-    tools_frame.loc[missing_bay, "bay_id"] = _assign_bays(
-        tools_frame.loc[missing_bay, ["plant_code", "family_code"]],
-        master["build_bay"],
-    )
     spares = _spare_lines(rng, plant_of, customers, _spare_prices(master))
     spares["promised_date"] = spares["order_date"] + pd.Timedelta(days=21)
     lines = pd.concat([tools_frame, spares], ignore_index=True)
@@ -318,17 +317,34 @@ def _schedule_overload(normal, master, etch_ids) -> pd.DataFrame:
     return frame
 
 
-def _assign_bays(frame: pd.DataFrame, bays: pd.DataFrame) -> pd.Series:
-    usable = bays[bays["bay_id"] != OVERLOADED_BAY]
+def _assign_bays(tools: pd.DataFrame, bays: pd.DataFrame) -> pd.Series:
+    """Give each unscheduled production order a bay of its plant and family.
+
+    Orders go in start order to the bay with the lowest share of its weekly slots used
+    in that week, so work spreads across same-family bays in proportion to their slots.
+    The overloaded bay takes no extra work inside the overload window.
+    """
+    window_start, window_end = (pd.Timestamp(day) for day in OVERLOAD_WINDOW)
+    slots = bays.set_index("bay_id")["weekly_slots"].astype(int).to_dict()
     options = {
-        (plant, family): sorted(group["bay_id"].tolist())
-        for (plant, family), group in usable.groupby(["plant_code", "family_code"])
+        key: sorted(group["bay_id"].tolist())
+        for key, group in bays.groupby(["plant_code", "family_code"])
     }
-    assigned = pd.Series(index=frame.index, dtype="object")
-    for key, indexes in frame.groupby(["plant_code", "family_code"], sort=True).groups.items():
-        choices = options[key]
-        ordered = list(indexes)
-        assigned.loc[ordered] = [choices[i % len(choices)] for i in range(len(ordered))]
+    week = tools["planned_start"] - pd.to_timedelta(tools["planned_start"].dt.day_of_week, unit="D")
+    used: dict[tuple[str, pd.Timestamp], int] = {}
+    assigned = tools["bay_id"].copy()
+    for index in tools.index[assigned.notna()]:
+        key = (assigned[index], week[index])
+        used[key] = used.get(key, 0) + 1
+    for index in tools.index[assigned.isna()]:
+        start, monday = tools.at[index, "planned_start"], week[index]
+        choices = options[(tools.at[index, "plant_code"], tools.at[index, "family_code"])]
+        if window_start <= start <= window_end and len(choices) > 1:
+            choices = [bay_id for bay_id in choices if bay_id != OVERLOADED_BAY]
+        shares = {bay_id: used.get((bay_id, monday), 0) / slots[bay_id] for bay_id in choices}
+        bay_id = min(choices, key=lambda bay: (shares[bay], bay))
+        assigned[index] = bay_id
+        used[(bay_id, monday)] = used.get((bay_id, monday), 0) + 1
     return assigned
 
 
@@ -395,7 +411,7 @@ def _apply_status(rng: np.random.Generator, lines: pd.DataFrame) -> pd.DataFrame
     return frame
 
 
-def _production_orders(lines: pd.DataFrame) -> pd.DataFrame:
+def _production_orders(lines: pd.DataFrame, bays: pd.DataFrame) -> pd.DataFrame:
     tools = lines[(lines["kind"] == "tool") & (lines["status"] != "Cancelled")].copy()
     tools["planned_start"] = tools["promised_date"] - pd.to_timedelta(
         tools["family_code"].map(BUILD_DAYS), unit="D"
@@ -407,9 +423,39 @@ def _production_orders(lines: pd.DataFrame) -> pd.DataFrame:
     tools["actual_finish"] = pd.Series(pd.NaT, index=tools.index, dtype="datetime64[ns]")
     tools.loc[finished, "actual_finish"] = tools.loc[finished, "planned_finish"]
     tools = tools.sort_values(["planned_start", "so_no", "line_no"]).reset_index(drop=True)
+    tools["bay_id"] = _assign_bays(tools, bays)
     tools["prod_order_no"] = _row_ids(len(tools), "PR-", 7)
     tools["so_line_no"] = tools["line_no"].astype(int)
     return tools
+
+
+def _level_planned_starts(tools: pd.DataFrame, bays: pd.DataFrame) -> pd.Series:
+    """Pull planned starts that overfill a bay week into an earlier week with a free slot.
+
+    Only future Planned orders move, by whole weeks and never onto or before the snapshot,
+    so the finish and promise dates hold. The planted overload is left as it is.
+    """
+    slots = bays.set_index("bay_id")["weekly_slots"].astype(int).to_dict()
+    start = tools["planned_start"].copy()
+    week = start - pd.to_timedelta(start.dt.day_of_week, unit="D")
+    used = week.groupby(tools["bay_id"]).value_counts().to_dict()
+    movable = tools["prod_status"].eq("Planned") & tools["bay_id"].ne(OVERLOADED_BAY)
+    for index in tools.index[movable][::-1]:
+        bay_id = tools.at[index, "bay_id"]
+        monday = week[index]
+        if used[(bay_id, monday)] <= slots[bay_id]:
+            continue
+        for back in range(1, LEVEL_WEEKS + 1):
+            earlier = start[index] - pd.Timedelta(weeks=back)
+            target = monday - pd.Timedelta(weeks=back)
+            if earlier <= AS_OF_TS:
+                break
+            if used.get((bay_id, target), 0) < slots[bay_id]:
+                used[(bay_id, monday)] -= 1
+                used[(bay_id, target)] = used.get((bay_id, target), 0) + 1
+                start[index] = earlier
+                break
+    return start
 
 
 def _forecast(master: dict[str, pd.DataFrame], lines: pd.DataFrame) -> pd.DataFrame:

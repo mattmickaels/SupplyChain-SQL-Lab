@@ -15,8 +15,8 @@ WHERE weekly_slots > (SELECT AVG(weekly_slots) FROM build_bay)
 ORDER BY bay_id
 ```
 
-Seven bays come back.
-AU01-B5, SC01-B1, SC01-B3, SC01-B5, SG01-B1, SG01-B3, and SG01-B4 are above the average.
+Two bays come back.
+SC01-B2 and SC01-B3 are above the average of 3.8 slots.
 
 The average is computed on the whole table.
 A filter in the outer query does not change that average.

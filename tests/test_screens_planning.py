@@ -240,7 +240,7 @@ def _cm01(plant: str = "SC01"):
 def test_cm01_flags_overloaded_bay() -> None:
     rows = _dicts(_cm01().runs["load"])
     window = [r for r in rows if WINDOW[0] <= r["week_start"] <= WINDOW[1]]
-    assert len(window) == 5 * 13
+    assert len(window) == 2 * 13
     b3 = [r for r in window if r["bay_id"] == "SC01-B3"]
     assert len(b3) == 13
     assert all(r["overloaded"] for r in b3)

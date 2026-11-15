@@ -124,8 +124,8 @@
     "row_count": 52
   },
   "drill-bay-bottleneck": {
-    "md5": "e9216fcf2a33f2a2c561801a7d440d4e",
-    "row_count": 15
+    "md5": "50b48f9d1b3fa3e8294c01397e5045d1",
+    "row_count": 5
   },
   "drill-excess-inventory": {
     "md5": "1caccfe498538dc5de4e2707761e8853",
@@ -232,8 +232,8 @@
     "row_count": 8
   },
   "plan-bay-load": {
-    "md5": "3dbb27f01d19d970241c9df4cd7bbf5c",
-    "row_count": 195
+    "md5": "0d94e31c09ef0d58276a8e91e05ce309",
+    "row_count": 65
   },
   "plan-corvane-exposure": {
     "md5": "895ff0ff0aaf3688f60579db4b520e1e",
