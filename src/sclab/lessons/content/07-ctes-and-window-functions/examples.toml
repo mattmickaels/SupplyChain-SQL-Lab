@@ -249,7 +249,9 @@ SELECT country, supplier_no, supplier_name, spend, rank_no
 FROM ranked
 WHERE rank_no = 1
 """
-expected_rows = [["US", "V-10017", "Corvane RF Systems", 205861634.39, 1]]
+expected_rows = [
+  ["US", "V-10017", "Corvane RF Systems", 205692401.81, 1],
+]
 order_matters = false
 
 [[fact]]

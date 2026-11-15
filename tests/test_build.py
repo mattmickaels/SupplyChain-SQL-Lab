@@ -106,7 +106,10 @@ def test_messiness_present(lab_conn) -> None:
     ratio = len(spaced) / len(materials)
     assert 0.01 <= ratio <= 0.02
     originals = set(materials.loc[~materials["description"].str.endswith(" "), "description"])
-    assert set(spaced["description"].str[:-1]) <= originals
+    # The two legacy gasket kit rows are planted strays with no clean original.
+    copies = spaced[~spaced["description"].str.startswith("Legacy gasket kit")]
+    assert set(copies["description"].str[:-1]) <= originals
+    assert len(spaced) - len(copies) == 2
     dirty_numbers = set(spaced["material_no"])
     for name, column in TX_MATERIAL_COLUMNS:
         used = lab_conn.execute(f"SELECT DISTINCT {column} FROM {name}").df()[column]

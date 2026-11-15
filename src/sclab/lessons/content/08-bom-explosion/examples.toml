@@ -7,7 +7,9 @@ JOIN material AS m ON m.material_no = b.component_material_no
 WHERE b.parent_material_no = 'M-000001'
   AND b.component_material_no = 'M-000041'
 """
-expected_rows = [["M-000041", "Deposition chamber module", 2.0]]
+expected_rows = [
+  ["M-000041", "Deposition chamber module, 2-chamber PECVD", 2.0],
+]
 order_matters = false
 
 [[example]]
@@ -81,10 +83,10 @@ expected_rows = [
   [1, "M-001049", "RF delivery subassembly, variant 729", "SUBASSY"],
   [1, "M-001051", "RF delivery subassembly, variant 731", "SUBASSY"],
   [1, "M-001057", "RF delivery subassembly, variant 737", "SUBASSY"],
-  [2, "M-000055", "Deposition chamber module", "MODULE"],
-  [2, "M-000097", "Deposition chamber module", "MODULE"],
-  [2, "M-000111", "Etch chamber module", "MODULE"],
-  [2, "M-000153", "Etch chamber module", "MODULE"],
+  [2, "M-000055", "Deposition chamber module, 4-chamber PECVD", "MODULE"],
+  [2, "M-000097", "Deposition chamber module, 5-chamber PEALD", "MODULE"],
+  [2, "M-000111", "Etch chamber module, 2-chamber conductor", "MODULE"],
+  [2, "M-000153", "Etch chamber module, 3-chamber dielectric", "MODULE"],
   [3, "M-000003", "Deposition system, 300mm, 4-chamber, PECVD", "TOOL"],
   [3, "M-000009", "Deposition system, 300mm, 5-chamber, PEALD", "TOOL"],
   [3, "M-000011", "Etch system, 300mm, 2-chamber, conductor", "TOOL"],

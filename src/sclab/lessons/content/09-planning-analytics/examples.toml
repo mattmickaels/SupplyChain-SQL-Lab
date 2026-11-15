@@ -99,9 +99,9 @@ SELECT w.week_start, s.qty AS opening_qty,
 FROM periods w CROSS JOIN stock s ORDER BY w.week_start
 """
 expected_rows = [
-  ["2026-11-01", 3, 3],
-  ["2026-11-08", 3, 3],
-  ["2026-11-15", 3, 3],
+  ["2026-11-01", 2, 2],
+  ["2026-11-08", 2, 2],
+  ["2026-11-15", 2, 2],
 ]
 order_matters = true
 

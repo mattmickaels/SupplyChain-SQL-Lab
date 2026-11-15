@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from sclab.constants import AS_OF_DATE
-from sclab.data.story import CORVANE_SUPPLIER_NO
+from sclab.data.story import CORVANE_SUPPLIER_NO, SUPPLIER_WARNING_RAISES
 from sclab.data.transactions import _tool_components
 
 
@@ -98,11 +98,13 @@ def apply_messiness(
 
 
 def _raise_idle_safety_stock(frames: dict[str, pd.DataFrame], planning: pd.DataFrame):
-    """Raise the safety stock of idle long-lead parts above what is on hand.
+    """Plant the supplier-warning scenario behind the lesson 9 shortage trap.
 
-    These parts are built into a tool at the plant, but no open production order uses
-    them in the next 26 weeks, so nothing replenishes them.
-    A buyer raised the target after a supplier warning, which leaves them below safety stock.
+    After a supplier warning, buyers raised the safety stock of idle long-lead parts.
+    Idle means built into a tool at the plant, with no open production order using
+    the part in the next 26 weeks, so nothing replenishes it.
+    The first idle pairs in material number order are raised above on-hand stock by
+    SUPPLIER_WARNING_RAISES units, which leaves them below safety stock with no demand.
     """
     start = pd.Timestamp(AS_OF_DATE)
     end = start + pd.Timedelta(weeks=26)
@@ -131,10 +133,16 @@ def _raise_idle_safety_stock(frames: dict[str, pd.DataFrame], planning: pd.DataF
             pd.MultiIndex.from_frame(demand)
         )
     )
-    on_hand = pd.Series(
-        list(zip(frame["material_no"], frame["plant_code"], strict=True)), index=frame.index
-    ).map(stock.to_dict())
-    frame.loc[idle, "safety_stock"] = on_hand[idle].fillna(0).astype(int) + 4
+    chosen = (
+        frame.loc[idle]
+        .sort_values(["material_no", "plant_code"])
+        .index[: len(SUPPLIER_WARNING_RAISES)]
+    )
+    if len(chosen) == 0:
+        raise RuntimeError("No idle long-lead part is available for the supplier-warning scenario")
+    for index, raise_by in zip(chosen, SUPPLIER_WARNING_RAISES, strict=False):
+        key = (frame.at[index, "material_no"], frame.at[index, "plant_code"])
+        frame.at[index, "safety_stock"] = int(stock.get(key, 0)) + raise_by
     return frame
 
 
@@ -159,7 +167,15 @@ def _duplicate_materials(rng: np.random.Generator, materials: pd.DataFrame) -> p
     start = int(materials["material_no"].str[2:].astype(int).max()) + 1
     copies["material_no"] = [f"M-{number:06d}" for number in range(start, start + duplicates)]
     copies["description"] = copies["description"].astype(str) + " "
-    return pd.concat([materials, copies], ignore_index=True)
+    # A legacy part keyed twice with different trailing spaces, and never with the clean text.
+    # It matches after TRIM but is not a copy of any real row, so it must not be removed.
+    stray = copies.iloc[:2].copy()
+    stray["material_no"] = [
+        f"M-{number:06d}" for number in range(start + duplicates, start + duplicates + 2)
+    ]
+    stray["description"] = ["Legacy gasket kit, variant 1 ", "Legacy gasket kit, variant 1  "]
+    stray["is_long_lead"] = False
+    return pd.concat([materials, copies, stray], ignore_index=True)
 
 
 def _mess_lead_times(rng: np.random.Generator, planning: pd.DataFrame) -> pd.DataFrame:

@@ -291,7 +291,7 @@ FROM ranked
 WHERE rank_no = 1
 ```
 
-Corvane RF Systems, V-10017, is rank 1 in the US, with spend 205861634.39.
+Corvane RF Systems, V-10017, is rank 1 in the US, with spend 205692401.81.
 
 Check yourself.
 Name the grain of each step before you rank, lag, or take a share.

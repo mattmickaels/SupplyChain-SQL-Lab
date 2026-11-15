@@ -225,7 +225,7 @@ time_limit_s = 900
 summary_prompt = "Write three lines: the main result with numbers, the planning implication or limitation, and a specific next action."
 model_summary = """
 The top 10 materials with no usage in Nov 2025-Oct 2026 hold 1063696.15 of stock at the snapshot.
-M-005407 leads at 213618.60 for 17 units; this uses a primary-source quote rather than an accounting valuation.
+M-005409 leads at 213618.60 for 17 units; this uses a primary-source quote rather than an accounting valuation.
 Check forward service demand and disposition options for these ten before reducing purchases or writing stock off.
 """
 summary_checklist = ["Names the number that matters", "States the date window and scope", "Separates evidence from inference", "Recommends an action", "Three lines or fewer"]

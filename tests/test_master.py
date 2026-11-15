@@ -399,7 +399,8 @@ def test_round2_functional_bom_paths(lab_conn):
         assert child_type == allowed_types[parent_type], (parent, child)
         if parent_type == "MODULE":
             function = child.split(" subassembly,")[0]
-            assert function in (platform[parent] if parent in platform else chamber), (
+            module_kind = parent.split(",")[0]
+            assert function in (platform[module_kind] if module_kind in platform else chamber), (
                 parent,
                 child,
             )
@@ -416,8 +417,28 @@ def test_round2_functional_bom_paths(lab_conn):
         JOIN bom_item d ON d.parent_material_no=s.material_no
         JOIN material c ON c.material_no=d.component_material_no
         WHERE t.family_code='ETC' AND t.material_type='TOOL'
-          AND m.description='Etch chamber module'
+          AND m.description LIKE 'Etch chamber module, %'
           AND s.description LIKE 'RF match network subassembly,%'
           AND c.description LIKE 'RF match network, %'
     """).fetchall()
     assert paths
+
+
+def test_every_real_description_is_unique(lab_conn):
+    # Only the planted trailing-space copies repeat a real description.
+    rows = lab_conn.execute("""
+        SELECT TRIM(description), COUNT(*) FROM material
+        GROUP BY TRIM(description) HAVING COUNT(*) > 1
+    """).fetchall()
+    copies = lab_conn.execute(
+        "SELECT COUNT(*) FROM material WHERE description <> TRIM(description)"
+    ).fetchone()[0]
+    # The stray legacy pair matches after TRIM but is not an exact duplicate of anything.
+    assert copies >= 80 and len(rows) == copies - 1
+    assert (
+        lab_conn.execute("""
+        SELECT COUNT(*) FROM (SELECT description FROM material GROUP BY description
+                              HAVING COUNT(*) > 1)
+    """).fetchone()[0]
+        == 0
+    )

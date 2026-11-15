@@ -11,3 +11,5 @@ SPIKE_START = date(2026, 7, 1)
 SPIKE_FACTOR = 1.6
 OVERLOAD_WINDOW = (date(2026, 12, 1), date(2027, 2, 28))
 OVERLOAD_RATIO = 1.3
+# Units above on-hand stock that buyers added to idle long-lead safety stocks (see messiness.py).
+SUPPLIER_WARNING_RAISES = (3, 6)

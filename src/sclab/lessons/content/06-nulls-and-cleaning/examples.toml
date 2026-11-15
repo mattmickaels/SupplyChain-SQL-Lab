@@ -127,22 +127,22 @@ expected_rows = [
 order_matters = true
 
 [[fact]]
-id = "interface-module-highest-material"
+id = "legacy-gasket-highest-material"
 sql = """
 SELECT MAX(material_no)
 FROM material
-WHERE description = 'Factory interface module'
+WHERE TRIM(description) = 'Legacy gasket kit, variant 1'
 """
-expected = "M-000315"
+expected = "M-005403"
 
 [[example]]
-id = "interface-module-same-description"
+id = "legacy-gasket-trim-match"
 sql = """
 SELECT COUNT(*) AS material_count
 FROM material
-WHERE description = 'Factory interface module'
+WHERE TRIM(description) = 'Legacy gasket kit, variant 1'
 """
-expected_rows = [[40]]
+expected_rows = [[2]]
 order_matters = false
 
 [[example]]
@@ -185,12 +185,12 @@ expected_rows = [["M-005351"]]
 order_matters = false
 
 [[example]]
-id = "interface-module-lowest-material"
+id = "legacy-gasket-lowest-material"
 sql = """
-SELECT MIN(material_no) AS kept_material_no,
+SELECT MIN(material_no) AS first_material_no,
        COUNT(*) AS material_count
 FROM material
-WHERE description = 'Factory interface module'
+WHERE TRIM(description) = 'Legacy gasket kit, variant 1'
 """
-expected_rows = [["M-000042", 40]]
+expected_rows = [["M-005402", 2]]
 order_matters = false

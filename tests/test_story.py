@@ -204,6 +204,7 @@ AT_RISK_SQL = "SELECT COUNT(*) FROM (" + RISK_ROWS_SQL + ")"
 def test_at_risk_orders_exist(lab_conn) -> None:
     rows = lab_conn.execute(RISK_ROWS_SQL).fetchall()
     print(f"at_risk_lines={len(rows)}")
+    # The generator steers this count to about 8-10 (RF_BUFFER_DAYS); the band is 5-15.
     assert 5 <= len(rows) <= 15
     assert all(booked <= AS_OF_DATE < started for _, _, booked, started in rows)
 

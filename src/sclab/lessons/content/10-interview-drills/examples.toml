@@ -316,16 +316,16 @@ WHERE NOT EXISTS (
 ORDER BY on_hand_value DESC, m.material_no LIMIT 10
 """
 expected_rows = [
-  ["M-005407", "Objective lens, variant 121, retired configuration", 17, 213618.6],
-  ["M-005409", "Illumination source, variant 121, retired configuration", 19, 197487.71],
-  ["M-005410", "Camera sensor, variant 121, retired configuration", 20, 195880.2],
-  ["M-005408", "Stage encoder, variant 121, retired configuration", 18, 125436.06],
-  ["M-005411", "Vacuum chuck plate, variant 121, retired configuration", 21, 103258.05],
-  ["M-005405", "Pressure transducer, variant 121, retired configuration", 15, 55612.65],
-  ["M-005416", "Robot servo motor, variant 121, retired configuration", 26, 44723.64],
-  ["M-005402", "Platen bearing, variant 121, retired configuration", 12, 44457.36],
-  ["M-005406", "Conditioner disk, variant 121, retired configuration", 16, 44293.28],
-  ["M-005420", "Control PCB assembly, variant 121, retired configuration", 30, 38928.6],
+  ["M-005409", "Objective lens, variant 121, retired configuration", 17, 213618.6],
+  ["M-005411", "Illumination source, variant 121, retired configuration", 19, 197487.71],
+  ["M-005412", "Camera sensor, variant 121, retired configuration", 20, 195880.2],
+  ["M-005410", "Stage encoder, variant 121, retired configuration", 18, 125436.06],
+  ["M-005413", "Vacuum chuck plate, variant 121, retired configuration", 21, 103258.05],
+  ["M-005407", "Pressure transducer, variant 121, retired configuration", 15, 55612.65],
+  ["M-005418", "Robot servo motor, variant 121, retired configuration", 26, 44723.64],
+  ["M-005404", "Platen bearing, variant 121, retired configuration", 12, 44457.36],
+  ["M-005408", "Conditioner disk, variant 121, retired configuration", 16, 44293.28],
+  ["M-005422", "Control PCB assembly, variant 121, retired configuration", 30, 38928.6],
 ]
 order_matters = true
 

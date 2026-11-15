@@ -455,6 +455,15 @@ def _materials(rng, tool_ids, module_ids, sub_ids, comp_ids, sub_functions) -> l
         )
     for index, material_no in enumerate(module_ids):
         family_code, description = _module_function(index)
+        tool_index = index // 7
+        tool_family, tool_family_name = FAMILIES[tool_index // 10]
+        chambers = 2 + (tool_index % 5)
+        variant = TOOL_VARIANTS[tool_family][(tool_index % 10) // 5]
+        # Each tool has its own modules, so the description names the tool they belong to.
+        if family_code:
+            description = f"{description}, {chambers}-chamber {variant}"
+        else:
+            description = f"{description}, {tool_family_name} {chambers}-chamber {variant}"
         rows.append(
             {
                 "material_no": material_no,
@@ -504,8 +513,8 @@ def _material_plants(rng, materials: list[dict], used_plants: dict[str, set[str]
             lead = _lead_days(rng, material["is_long_lead"])
             safety = int(rng.integers(0, 25))
             if material["material_no"] in RF_PART_NUMBERS:
-                # Costly RF generators are held at one to three units.
-                safety = 1 + safety % 3
+                # Costly RF generators are held at one or two units.
+                safety = 1 + safety % 2
             rows.append(
                 {
                     "material_no": material["material_no"],

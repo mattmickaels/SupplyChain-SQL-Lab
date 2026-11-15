@@ -20,7 +20,7 @@ WHERE b.parent_material_no = 'M-000001'
   AND b.component_material_no = 'M-000041'
 ```
 
-The row is M-000041, Deposition chamber module, quantity 2.
+The row is M-000041, Deposition chamber module, 2-chamber PECVD, quantity 2.
 
 A full explosion needs WITH RECURSIVE.
 The anchor selects the first children and sets level to 1.

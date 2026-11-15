@@ -155,7 +155,7 @@ Write the test as confirmed_delivery_date >= requested_delivery_date + INTERVAL 
 A date-time still compares correctly with a date.
 Date minus date is not used here, because those engines do not return the same kind of value.
 
-Line 1 of PO-0006661 was requested for 11 April 2027 and confirmed for 6 June 2027.
+Line 1 of PO-0006661 was requested for 17 April 2027 and confirmed for 12 June 2027.
 The confirmed date is the requested date plus 56 days.
 
 ```sql

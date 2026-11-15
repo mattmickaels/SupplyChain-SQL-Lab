@@ -24,7 +24,9 @@ SLIP_TS = pd.Timestamp(SLIP_START)
 EARLY_END = pd.Timestamp(date(2026, 1, 1))
 HISTORY_MONTH = pd.Timestamp(date(2021, 11, 1))
 LOT_DAYS = 100
-RF_BUFFER_DAYS = 49
+# The supplier slip overruns this early-order buffer by 13 days.
+# That overrun is what steers the Corvane-caused at-risk Etch lines to about 8-10.
+RF_BUFFER_DAYS = SLIP_DAYS - 13
 RECEIPT_BUFFER_DAYS = 7
 COMPONENT_LOCATION = "RM01"
 TOOL_LOCATION = "FG01"

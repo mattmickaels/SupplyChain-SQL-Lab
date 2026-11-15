@@ -12,8 +12,8 @@ SQL AVG does the same: it skips NULL and still counts 0.
 
 TRIM removes spaces at both ends of text.
 Two descriptions that match after TRIM are candidates, not proof that the material numbers are the same part.
-Forty materials share the exact description Factory interface module, from M-000042 through M-000315.
-Those are different parts.
+Two legacy gasket kit rows, M-005402 and M-005403, match after TRIM.
+Neither is a copy of a real row, because no material has the clean text.
 Gas box, variant 2 is M-001344, and Gas box, variant 15 is M-001435.
 The variant number makes them different parts.
 A planted copy is a row whose description differs from a real material only by trailing spaces.
@@ -119,7 +119,7 @@ A cleaned material list removes only those planted copies.
 Keep the real row: the lower material_no whose description has no extra space.
 For Robot servo motor, variant 15, the kept number is M-002019 and the removed number is M-005351.
 Do not drop every material that shares a trimmed description.
-Doing that to Factory interface module would keep only M-000042 and delete the other 39 real parts.
+Doing that to the two legacy gasket kit rows would delete one of them, although no real row holds that text.
 
 ```sql
 SELECT material_no
@@ -129,10 +129,10 @@ WHERE TRIM(description) = 'Robot servo motor, variant 15'
 ```
 
 ```sql
-SELECT MIN(material_no) AS kept_material_no,
+SELECT MIN(material_no) AS first_material_no,
        COUNT(*) AS material_count
 FROM material
-WHERE description = 'Factory interface module'
+WHERE TRIM(description) = 'Legacy gasket kit, variant 1'
 ```
 
 Check yourself.

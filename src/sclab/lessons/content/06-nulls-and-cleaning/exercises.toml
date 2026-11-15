@@ -4,8 +4,8 @@ title = "Materials that match after trim"
 prompt_md = """
 List candidate materials whose descriptions match once spaces at the ends are removed.
 A match is a candidate, not proof that two material numbers are the same part.
-Materials that share an exact description are different parts.
-The factory interface modules are one example, and the gas box variants are another.
+Materials with different variant numbers are different parts, like the gas box variants.
+Two legacy gasket kit rows match after TRIM but have no clean original.
 A planted copy is the row whose description adds only trailing spaces.
 Return every material_no in a candidate group, including the real parts and the copies.
 Return material_no, description, and trimmed_description.
@@ -211,8 +211,7 @@ prompt_md = """
 Count the planted copies a cleaned material list removes.
 A planted copy is a material whose description is another material's description plus trailing spaces.
 Keep the real material: the lower material_no whose stored description equals the trimmed text.
-Do not remove materials that share an exact description.
-Those rows are different parts.
+Do not remove a row when no real row holds its text.
 Return one row with removed_rows, the number of planted copies removed.
 """
 hints = [

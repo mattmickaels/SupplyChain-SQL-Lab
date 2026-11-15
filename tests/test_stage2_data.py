@@ -546,3 +546,32 @@ def test_tool_lines_have_multi_unit_quantities(lab_conn) -> None:
             "WHERE m.material_type = 'TOOL'"
         ).fetchall()
     ) == {1, 2}
+
+
+def test_supplier_warning_scenario_is_planted(lab_conn) -> None:
+    """Idle long-lead parts whose safety stock a buyer raised above on-hand stock."""
+    rows = lab_conn.execute("""
+        SELECT p.material_no, p.plant_code, p.safety_stock - COALESCE(SUM(i.qty_on_hand), 0)
+        FROM material_plant p JOIN material m USING (material_no)
+        LEFT JOIN inventory i ON i.material_no = p.material_no AND i.plant_code = p.plant_code
+          AND i.storage_location = 'RM01'
+        WHERE m.is_long_lead AND m.description NOT LIKE 'RF generator, %'
+        GROUP BY p.material_no, p.plant_code, p.safety_stock
+        HAVING p.safety_stock > COALESCE(SUM(i.qty_on_hand), 0) AND p.safety_stock > 0
+    """).fetchall()
+    from sclab.data.story import SUPPLIER_WARNING_RAISES
+
+    assert 1 <= len(rows) <= len(SUPPLIER_WARNING_RAISES)
+    assert all(deficit in SUPPLIER_WARNING_RAISES for _, _, deficit in rows)
+    # None of these parts has open production demand in the next 26 weeks.
+    demand = lab_conn.execute(
+        _COMPONENT_COSTS
+        + """
+        SELECT DISTINCT l.material_no, p.plant_code
+        FROM production_order p JOIN leaves l ON l.root = p.material_no
+        WHERE p.status IN ('Planned', 'Released')
+          AND p.planned_start > DATE '2026-11-01'
+          AND p.planned_start < DATE '2026-11-01' + INTERVAL 182 DAY
+    """
+    ).fetchall()
+    assert not {(material, plant) for material, plant, _ in rows} & set(demand)
