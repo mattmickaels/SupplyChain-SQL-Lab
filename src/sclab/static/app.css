@@ -313,3 +313,20 @@ button:focus-visible, a:focus-visible, textarea:focus-visible {
 .tcode-box input { font-family: var(--mono); padding: 0.25rem 0.4rem; border: 1px solid var(--line); border-radius: 0.3rem; }
 .sql-panel { margin-top: 0.8rem; }
 .sql-panel summary { cursor: pointer; }
+.doc-block { margin: 1.1rem 0 1.4rem; }
+.doc-block h2 { margin: 0 0 0.45rem; font-size: 1.05rem; }
+.doc-header {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.65rem 1.2rem;
+  margin: 0;
+  padding: 0.85rem 1rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+.doc-header div { min-width: 0; }
+.doc-header dt { margin: 0; color: var(--muted); font-size: 0.78rem; text-transform: capitalize; }
+.doc-header dd { margin: 0.1rem 0 0; font-weight: 650; overflow-wrap: anywhere; }
+a.drill { font-weight: 650; text-decoration: none; }
+a.drill::after { content: " \25B8"; font-weight: 400; }

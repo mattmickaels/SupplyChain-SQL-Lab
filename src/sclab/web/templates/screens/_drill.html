@@ -1,0 +1,22 @@
+{% if value is none %}
+{{ value | cell(type_name) }}
+{% elif column == 'material_no' %}
+{% set plant = namespace(code=none) %}
+{% if columns is defined and 'plant_code' in columns %}
+{% set plant.code = row[columns.index('plant_code')] %}
+{% endif %}
+{% if not plant.code %}
+{% set plant.code = request.query_params.get('plant', '') %}
+{% endif %}
+<a class="drill" href="/screens/MM03?key={{ value | urlencode }}{% if plant.code %}&amp;plant={{ plant.code | urlencode }}{% endif %}">{{ value | cell(type_name) }}</a>
+{% elif column == 'supplier_no' %}
+<a class="drill" href="/screens/XK03?key={{ value | urlencode }}">{{ value | cell(type_name) }}</a>
+{% elif column == 'po_no' %}
+<a class="drill" href="/screens/ME23N?key={{ value | urlencode }}">{{ value | cell(type_name) }}</a>
+{% elif column == 'so_no' %}
+<a class="drill" href="/screens/VA03?key={{ value | urlencode }}">{{ value | cell(type_name) }}</a>
+{% elif column == 'prod_order_no' %}
+<a class="drill" href="/screens/CO03?key={{ value | urlencode }}">{{ value | cell(type_name) }}</a>
+{% else %}
+{{ value | cell(type_name) }}
+{% endif %}
