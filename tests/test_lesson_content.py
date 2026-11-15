@@ -2188,6 +2188,265 @@ GROUP BY material_no, plant_code ORDER BY material_no, plant_code
 
         """,
     ),
+    (
+        "cte-open-qty-above-avg",
+        """
+        SELECT t.material_no, m.description, t.open_qty
+        FROM (
+            SELECT i.material_no, SUM(i.order_qty) AS open_qty
+            FROM purchase_order_item AS i
+            JOIN purchase_order AS h ON h.po_no = i.po_no
+            WHERE h.order_date <= DATE '2026-11-01'
+            GROUP BY i.material_no
+        ) AS t
+        JOIN material AS m ON m.material_no = t.material_no
+        WHERE t.open_qty > (
+            SELECT AVG(i.order_qty)
+            FROM purchase_order_item AS i
+            JOIN purchase_order AS h ON h.po_no = i.po_no
+            WHERE h.order_date <= DATE '2026-11-01'
+        )
+        ORDER BY t.open_qty DESC, t.material_no
+        """,
+    ),
+    (
+        "cte-open-qty-with-cte",
+        """
+        WITH open_by_material AS (
+            SELECT i.material_no,
+                   i.order_qty - COALESCE(SUM(g.qty), 0) AS open_qty
+            FROM purchase_order_item AS i
+            JOIN purchase_order AS h ON h.po_no = i.po_no
+            LEFT JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
+            WHERE h.order_date <= DATE '2026-11-01'
+            GROUP BY i.po_no, i.line_no, i.material_no, i.order_qty
+            HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
+        )
+        SELECT t.material_no, m.description, SUM(t.open_qty) AS open_qty
+        FROM open_by_material AS t
+        JOIN material AS m ON m.material_no = t.material_no
+        GROUP BY t.material_no, m.description
+        HAVING SUM(t.open_qty) > (SELECT AVG(open_qty) FROM open_by_material)
+        ORDER BY open_qty DESC, t.material_no
+        """,
+    ),
+    (
+        "cte-supplier-on-time-rank",
+        """
+        WITH rates AS (
+            SELECT s.supplier_no, s.name AS supplier_name, COUNT(*) AS receipts,
+                   ROUND(100.0 * AVG(CASE
+                       WHEN g.receipt_date <= i.confirmed_delivery_date THEN 1.0
+                       ELSE 0.0 END), 1) AS on_time_pct
+            FROM goods_receipt AS g
+            JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+            JOIN purchase_order AS h ON h.po_no = g.po_no
+            JOIN supplier AS s ON s.supplier_no = h.supplier_no
+            WHERE g.receipt_date >= DATE '2025-11-01'
+              AND g.receipt_date < DATE '2026-11-01'
+            GROUP BY s.supplier_no, s.name
+            HAVING COUNT(*) >= 20
+        )
+        SELECT supplier_no, supplier_name, receipts, on_time_pct,
+               ROW_NUMBER() OVER (ORDER BY on_time_pct DESC, supplier_no) AS rank_no
+        FROM rates
+        ORDER BY rank_no, supplier_no
+        """,
+    ),
+    (
+        "cte-latest-receipt",
+        """
+        WITH numbered AS (
+            SELECT i.po_no, i.line_no, g.gr_no, g.receipt_date, g.qty,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY i.po_no, i.line_no
+                       ORDER BY g.receipt_date, g.gr_no
+                   ) AS rn
+            FROM purchase_order_item AS i
+            JOIN purchase_order AS h ON h.po_no = i.po_no
+            JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
+            WHERE g.receipt_date >= DATE '2026-10-01'
+              AND g.receipt_date <= DATE '2026-10-31'
+        )
+        SELECT po_no, line_no, gr_no, receipt_date, qty
+        FROM numbered WHERE rn = 1
+        ORDER BY po_no, line_no
+        """,
+    ),
+    (
+        "cte-rf-running-total",
+        """
+        SELECT CAST(date_trunc('month', g.receipt_date) AS DATE) AS month,
+               SUM(g.qty) AS month_qty,
+               SUM(g.qty) AS running_qty
+        FROM goods_receipt AS g
+        JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+        JOIN material AS m ON m.material_no = i.material_no
+        WHERE m.description IN ('RF generator', 'Spare RF generator kit')
+          AND g.receipt_date >= DATE '2026-01-01'
+          AND g.receipt_date < DATE '2026-11-01'
+        GROUP BY CAST(date_trunc('month', g.receipt_date) AS DATE)
+        ORDER BY month
+        """,
+    ),
+    (
+        "cte-tool-order-change",
+        """
+        WITH monthly AS (
+            SELECT CAST(date_trunc('month', h.order_date) AS DATE) AS month,
+                   SUM(i.qty) AS order_qty
+            FROM sales_order_item AS i
+            JOIN sales_order AS h ON h.so_no = i.so_no
+            JOIN material AS m ON m.material_no = i.material_no
+            WHERE m.material_type = 'TOOL'
+              AND h.order_date >= DATE '2025-01-01'
+              AND h.order_date < DATE '2026-11-01'
+            GROUP BY CAST(date_trunc('month', h.order_date) AS DATE)
+        )
+        SELECT month, order_qty,
+               order_qty - COALESCE(LAG(order_qty) OVER (ORDER BY month), 0) AS qty_change
+        FROM monthly
+        ORDER BY month
+        """,
+    ),
+    (
+        "cte-customer-share",
+        """
+        WITH open_lines AS (
+            SELECT h.customer_no, c.name AS customer_name, SUM(i.qty) AS open_qty
+            FROM sales_order_item AS i
+            JOIN sales_order AS h ON h.so_no = i.so_no
+            JOIN customer AS c ON c.customer_no = h.customer_no
+            JOIN material AS m ON m.material_no = i.material_no
+            WHERE m.material_type = 'TOOL'
+            GROUP BY h.customer_no, c.name
+        )
+        SELECT customer_no, customer_name, open_qty,
+               ROUND(open_qty / SUM(open_qty) OVER (), 1) AS share_pct
+        FROM open_lines
+        ORDER BY share_pct DESC, customer_no
+        """,
+    ),
+    (
+        "cte-top-suppliers-by-country",
+        """
+        WITH spend AS (
+            SELECT s.country, s.supplier_no, s.name AS supplier_name,
+                   ROUND(SUM(i.order_qty * i.net_price), 2) AS spend
+            FROM purchase_order_item AS i
+            JOIN purchase_order AS h ON h.po_no = i.po_no
+            JOIN supplier AS s ON s.supplier_no = h.supplier_no
+            WHERE h.order_date >= DATE '2025-11-01'
+              AND h.order_date < DATE '2026-11-01'
+            GROUP BY s.country, s.supplier_no, s.name
+        ),
+        ranked AS (
+            SELECT country, supplier_no, supplier_name, spend,
+                   ROW_NUMBER() OVER (ORDER BY spend DESC, supplier_no) AS rank_no
+            FROM spend
+        )
+        SELECT country, supplier_no, supplier_name, spend, rank_no
+        FROM ranked WHERE rank_no <= 3
+        ORDER BY country, rank_no
+        """,
+    ),
+    (
+        "bom-direct-children",
+        """
+        SELECT b.component_material_no, m.description, b.qty_per
+        FROM bom_item AS b
+        JOIN material AS m ON m.material_no = b.component_material_no
+        WHERE b.parent_material_no = 'M-000001'
+        ORDER BY b.component_material_no
+        """,
+    ),
+    (
+        "bom-full-explosion",
+        """
+        SELECT 1 AS level, b.parent_material_no, b.component_material_no, m.description
+        FROM bom_item AS b
+        JOIN material AS m ON m.material_no = b.component_material_no
+        WHERE b.parent_material_no = 'M-000011'
+        ORDER BY level, b.component_material_no, b.parent_material_no
+        """,
+    ),
+    (
+        "bom-extended-qty",
+        """
+        WITH RECURSIVE tree AS (
+            SELECT b.parent_material_no, b.component_material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)) AS extended_qty, 1 AS level
+            FROM bom_item AS b
+            WHERE b.parent_material_no = 'M-000011'
+            UNION ALL
+            SELECT b.parent_material_no, b.component_material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)), t.level + 1
+            FROM tree AS t
+            JOIN bom_item AS b ON b.parent_material_no = t.component_material_no
+            WHERE t.level < 10
+        )
+        SELECT t.level, t.parent_material_no, t.component_material_no,
+               m.description, t.extended_qty
+        FROM tree AS t
+        JOIN material AS m ON m.material_no = t.component_material_no
+        ORDER BY t.level, t.component_material_no, t.parent_material_no
+        """,
+    ),
+    (
+        "bom-long-lead-count",
+        """
+        SELECT tool.material_no AS tool_material_no, tool.description,
+               COUNT(b.component_material_no) AS long_lead_count
+        FROM material AS tool
+        LEFT JOIN bom_item AS b ON b.parent_material_no = tool.material_no
+        LEFT JOIN material AS c ON c.material_no = b.component_material_no
+          AND c.is_long_lead = true
+        WHERE tool.material_type = 'TOOL'
+        GROUP BY tool.material_no, tool.description
+        ORDER BY long_lead_count DESC, tool.material_no
+        """,
+    ),
+    (
+        "bom-where-used",
+        """
+        SELECT m.material_no, m.description
+        FROM bom_item AS b
+        JOIN material AS m ON m.material_no = b.parent_material_no
+        WHERE b.component_material_no = 'M-001324'
+          AND m.material_type = 'TOOL'
+        ORDER BY m.material_no
+        """,
+    ),
+    (
+        "bom-rf-for-open-orders",
+        """
+        WITH RECURSIVE tree AS (
+            SELECT m.material_no AS tool_no, b.component_material_no AS material_no,
+                   CAST(b.qty_per AS DECIMAL(20,6)) AS extended_qty, 1 AS level
+            FROM material AS m
+            JOIN bom_item AS b ON b.parent_material_no = m.material_no
+            WHERE m.material_type = 'TOOL'
+            UNION ALL
+            SELECT t.tool_no, b.component_material_no,
+                   CAST(t.extended_qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+            FROM tree AS t
+            JOIN bom_item AS b ON b.parent_material_no = t.material_no
+            WHERE t.level < 10
+        ),
+        per_tool AS (
+            SELECT t.tool_no, t.material_no, SUM(t.extended_qty) AS qty_per_tool
+            FROM tree AS t
+            JOIN material AS c ON c.material_no = t.material_no
+            WHERE c.material_type = 'COMPONENT' AND c.description = 'RF generator'
+            GROUP BY t.tool_no, t.material_no
+        )
+        SELECT p.material_no, c.description, SUM(p.qty_per_tool) AS required_qty
+        FROM per_tool AS p
+        JOIN material AS c ON c.material_no = p.material_no
+        GROUP BY p.material_no, c.description
+        ORDER BY p.material_no
+        """,
+    ),
 )
 
 

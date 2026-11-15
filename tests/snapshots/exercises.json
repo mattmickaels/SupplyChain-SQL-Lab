@@ -1,4 +1,28 @@
 {
+  "bom-direct-children": {
+    "md5": "f7ffb483c3c035c26f252914e125f6f5",
+    "row_count": 7
+  },
+  "bom-extended-qty": {
+    "md5": "33e90b0c48db6996da4bf1d3fb839c63",
+    "row_count": 221
+  },
+  "bom-full-explosion": {
+    "md5": "ae5f479f5fb4c5000a1fae564a4e8813",
+    "row_count": 221
+  },
+  "bom-long-lead-count": {
+    "md5": "b1b5296810f5fd748db2a6b6aeeaa3c3",
+    "row_count": 40
+  },
+  "bom-rf-for-open-orders": {
+    "md5": "ac52c97eb92737188399226932d0d4fa",
+    "row_count": 12
+  },
+  "bom-where-used": {
+    "md5": "e4455b23a8a10f0ce1f3b4aae91a6dfa",
+    "row_count": 1
+  },
   "confirmed-after-today": {
     "md5": "f9282b0a8ce09302cdaa93782a888d7d",
     "row_count": 3352
@@ -6,6 +30,38 @@
   "corvane-po-lines": {
     "md5": "1fa94f6154504f0c95baa4b349c5f1b9",
     "row_count": 3
+  },
+  "cte-customer-share": {
+    "md5": "83e969bb56e288f2c134bdb1920f90d7",
+    "row_count": 25
+  },
+  "cte-latest-receipt": {
+    "md5": "dc369b245cadddf6da25b6bea9a88ae8",
+    "row_count": 458
+  },
+  "cte-open-qty-above-avg": {
+    "md5": "ed10382fa45f1a7cdb26d8f794f53dbf",
+    "row_count": 972
+  },
+  "cte-open-qty-with-cte": {
+    "md5": "ed10382fa45f1a7cdb26d8f794f53dbf",
+    "row_count": 972
+  },
+  "cte-rf-running-total": {
+    "md5": "172b6cb7f78d5df126c24d030f89c617",
+    "row_count": 8
+  },
+  "cte-supplier-on-time-rank": {
+    "md5": "3fe0fd8dfa6b64e9d12afc29508d3e16",
+    "row_count": 131
+  },
+  "cte-tool-order-change": {
+    "md5": "c6c45d8c2f32e1851d7166e7e10ca16f",
+    "row_count": 22
+  },
+  "cte-top-suppliers-by-country": {
+    "md5": "ca68730e78bab9d9963970a47d70cbf4",
+    "row_count": 27
   },
   "december-open-lines": {
     "md5": "fcc575016b5ca8f9c97809e8e9992e94",

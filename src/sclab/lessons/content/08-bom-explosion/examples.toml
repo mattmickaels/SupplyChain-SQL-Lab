@@ -1,0 +1,155 @@
+[[example]]
+id = "one-direct-child"
+sql = """
+SELECT b.component_material_no, m.description, b.qty_per
+FROM bom_item AS b
+JOIN material AS m ON m.material_no = b.component_material_no
+WHERE b.parent_material_no = 'M-000001'
+  AND b.component_material_no = 'M-000041'
+"""
+expected_rows = [["M-000041", "Deposition chamber module", 2.0]]
+order_matters = false
+
+[[example]]
+id = "etch-levels"
+sql = """
+WITH RECURSIVE tree AS (
+    SELECT b.component_material_no AS material_no, 1 AS level
+    FROM bom_item AS b
+    WHERE b.parent_material_no = 'M-000011'
+    UNION ALL
+    SELECT b.component_material_no, t.level + 1
+    FROM tree AS t
+    JOIN bom_item AS b ON b.parent_material_no = t.material_no
+    WHERE t.level < 10
+)
+SELECT t.level, m.material_type, COUNT(*) AS links
+FROM tree AS t
+JOIN material AS m ON m.material_no = t.material_no
+GROUP BY t.level, m.material_type
+ORDER BY t.level, m.material_type
+"""
+expected_rows = [
+  [1, "MODULE", 7],
+  [2, "SUBASSY", 36],
+  [3, "COMPONENT", 178],
+]
+order_matters = true
+
+[[example]]
+id = "one-extended-path"
+sql = """
+WITH RECURSIVE tree AS (
+    SELECT b.component_material_no AS material_no,
+           CAST(b.qty_per AS DECIMAL(20,6)) AS extended_qty,
+           1 AS level
+    FROM bom_item AS b
+    WHERE b.parent_material_no = 'M-000011'
+      AND b.component_material_no = 'M-000111'
+    UNION ALL
+    SELECT b.component_material_no,
+           CAST(t.extended_qty * b.qty_per AS DECIMAL(20,6)),
+           t.level + 1
+    FROM tree AS t
+    JOIN bom_item AS b ON b.parent_material_no = t.material_no
+    WHERE t.level < 10
+      AND b.component_material_no = 'M-000501'
+)
+SELECT level, material_no, extended_qty
+FROM tree
+ORDER BY level
+"""
+expected_rows = [
+  [1, "M-000111", 2.0],
+  [2, "M-000501", 4.0],
+]
+order_matters = true
+
+[[example]]
+id = "where-used-one-generator"
+sql = """
+WITH RECURSIVE used AS (
+    SELECT parent_material_no AS material_no, 1 AS level
+    FROM bom_item
+    WHERE component_material_no = 'M-001321'
+    UNION ALL
+    SELECT b.parent_material_no, u.level + 1
+    FROM used AS u
+    JOIN bom_item AS b ON b.component_material_no = u.material_no
+    WHERE u.level < 10
+)
+SELECT u.level, t.material_no, t.description, t.material_type
+FROM used AS u
+JOIN material AS t ON t.material_no = u.material_no
+ORDER BY u.level, t.material_no
+"""
+expected_rows = [
+  [1, "M-000504", "RF match network subassembly, variant 184", "SUBASSY"],
+  [2, "M-000111", "Etch chamber module", "MODULE"],
+  [3, "M-000011", "Etch system, 300mm, 2-chamber", "TOOL"],
+]
+order_matters = true
+
+[[fact]]
+id = "deposition-tool-name"
+sql = """
+SELECT description
+FROM material
+WHERE material_no = 'M-000001'
+"""
+expected = "Deposition system, 300mm, 2-chamber"
+
+[[fact]]
+id = "etch-tool-type"
+sql = """
+SELECT material_type
+FROM material
+WHERE material_no = 'M-000011'
+"""
+expected = "TOOL"
+
+[[fact]]
+id = "etch-tool-name"
+sql = """
+SELECT description
+FROM material
+WHERE material_no = 'M-000011'
+"""
+expected = "Etch system, 300mm, 2-chamber"
+
+[[fact]]
+id = "max-descendant-level"
+sql = """
+WITH RECURSIVE tree AS (
+    SELECT component_material_no AS material_no, 1 AS level
+    FROM bom_item
+    UNION ALL
+    SELECT b.component_material_no, t.level + 1
+    FROM tree AS t
+    JOIN bom_item AS b ON b.parent_material_no = t.material_no
+    WHERE t.level < 10
+)
+SELECT MAX(level)
+FROM tree
+"""
+expected = 3
+
+[[fact]]
+id = "etch-direct-long-lead"
+sql = """
+SELECT COUNT(*)
+FROM bom_item AS b
+JOIN material AS m ON m.material_no = b.component_material_no
+WHERE b.parent_material_no = 'M-000011'
+  AND m.is_long_lead = true
+"""
+expected = 0
+
+[[fact]]
+id = "named-rf-generator"
+sql = """
+SELECT description
+FROM material
+WHERE material_no = 'M-001321'
+"""
+expected = "RF generator"
