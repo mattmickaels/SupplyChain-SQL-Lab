@@ -38,6 +38,8 @@ _OTHER_INTERVALS = frozenset(
         "to_quarters",
         "to_years",
         "to_decades",
+        "to_centuries",
+        "to_millennia",
     }
 )
 
@@ -253,11 +255,48 @@ def _string_constant(node: object) -> str | None:
     return text.casefold()
 
 
+def _is_interval_literal(node: dict) -> bool:
+    if node.get("class") not in {"CAST", "CONSTANT"}:
+        return False
+    return (
+        node.get("type_expr", {}).get("type_name", "").casefold() == "interval"
+        or node.get("literal", {}).get("kind", "").casefold() == "interval"
+    )
+
+
+def _interval_literal_is_whole_days(node: dict) -> bool:
+    constant = node.get("child") if node.get("class") == "CAST" else node
+    if not isinstance(constant, dict) or constant.get("class") != "CONSTANT":
+        return False
+    text = constant.get("literal", {}).get("text")
+    if not isinstance(text, str):
+        return False
+    # Keep months separate: Python timedeltas would flatten months into days.
+    with duckdb.connect(":memory:") as connection:
+        try:
+            return connection.execute(
+                "SELECT datepart('year', i) = 0 AND datepart('month', i) = 0 "
+                "AND (datepart('hour', i) * 3600000000 "
+                "+ datepart('minute', i) * 60000000 "
+                "+ datepart('microseconds', i)) % 86400000000 = 0 "
+                "FROM (SELECT CAST(? AS INTERVAL) AS i)",
+                [text],
+            ).fetchone()[0]
+        except duckdb.Error:
+            return False
+
+
 def _date_exception_forms(sql: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Split controlled date forms into allowed units and rejected units."""
     allowed: list[str] = []
     rejected: list[str] = []
     for node in _walk(_parse_sql(sql)):
+        if _is_interval_literal(node):
+            if _interval_literal_is_whole_days(node):
+                allowed.append("interval")
+            else:
+                rejected.append("interval")
+            continue
         if node.get("class") != "FUNCTION":
             continue
         name = _function_name(node)
@@ -319,7 +358,18 @@ def _is_level_guard(node: dict) -> bool:
 
 
 def _where_has_level_guard(where: object) -> bool:
-    return any(_is_level_guard(node) for node in _walk(where))
+    if not isinstance(where, dict):
+        return False
+    if _is_level_guard(where):
+        return True
+    if where.get("class") != "CONJUNCTION":
+        return False
+    children = where.get("children", [])
+    if where.get("type") == "CONJUNCTION_AND":
+        return any(_where_has_level_guard(child) for child in children)
+    if where.get("type") == "CONJUNCTION_OR":
+        return bool(children) and all(_where_has_level_guard(child) for child in children)
+    return False
 
 
 def _recursive_guard_problem(sql: str) -> str | None:
@@ -382,6 +432,24 @@ def test_recursive_guard_in_recursive_term() -> None:
     assert _recursive_guard_problem(_GUARDED_RECURSIVE) is None
 
 
+@pytest.mark.parametrize(
+    ("predicate", "guarded"),
+    [
+        ("level < 10 AND x > 0", True),
+        ("level < 10 OR true", False),
+        ("NOT (level >= 10)", False),
+        ("NOT (level < 10)", False),
+        ("(level < 10 AND x > 0) OR (level < 5 AND x < 0)", True),
+        ("(level < 10 AND x > 0) OR x < 0", False),
+        ("(level < 10 OR true) AND x > 0", False),
+        ("(x > 0 OR x < 0) AND level < 10", True),
+    ],
+)
+def test_recursive_guard_boolean_structure(predicate: str, guarded: bool) -> None:
+    sql = _GUARDED_RECURSIVE.replace("level < 10", predicate)
+    assert (_recursive_guard_problem(sql) is None) is guarded
+
+
 def test_recursive_outer_filter_is_not_a_guard() -> None:
     assert _recursive_guard_problem(_OUTER_ONLY_RECURSIVE) is not None
 
@@ -403,6 +471,8 @@ _ALLOWED_DATE_SQL = (
     "SELECT date_trunc('month', d) FROM t",
     "SELECT date_trunc('week', d) FROM t",
     "SELECT d + INTERVAL 7 DAY FROM t",
+    "SELECT d + INTERVAL '1 day' FROM t",
+    "SELECT CAST('7 days' AS INTERVAL)",
 )
 
 
@@ -423,6 +493,10 @@ def test_allowed_date_forms_fail_without_note(sql: str) -> None:
         "SELECT datediff('month', a, b) FROM t",
         "SELECT date_trunc('year', d) FROM t",
         "SELECT d + INTERVAL 2 YEAR FROM t",
+        "SELECT d + INTERVAL '2 years' FROM t",
+        "SELECT INTERVAL '36 hours'",
+        "SELECT INTERVAL '1 day 1 microsecond'",
+        "SELECT CAST('1 month 2 days' AS INTERVAL)",
     ],
 )
 def test_disallowed_date_units_fail_with_note(sql: str) -> None:
