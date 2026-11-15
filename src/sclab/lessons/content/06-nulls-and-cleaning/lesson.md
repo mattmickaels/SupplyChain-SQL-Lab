@@ -16,6 +16,8 @@ Two legacy gasket kit rows, M-005402 and M-005403, match after TRIM.
 Neither is a copy of a real row, because no material has the clean text.
 Gas box, variant 2 is M-001344, and Gas box, variant 15 is M-001435.
 The variant number makes them different parts.
+No two materials share an exact description.
+A planted copy differs only by spaces at the end.
 A planted copy is a row whose description differs from a real material only by trailing spaces.
 M-002019 is Robot servo motor, variant 15.
 M-005351 is the same words with a trailing space, so its description is 30 characters and M-002019 is 29.
@@ -118,6 +120,14 @@ ORDER BY p.material_no
 A cleaned material list removes only those planted copies.
 Keep the real row: the lower material_no whose description has no extra space.
 For Robot servo motor, variant 15, the kept number is M-002019 and the removed number is M-005351.
+EXISTS keeps an outer row when the inner query finds a match.
+M-005351 stays, because M-002019 holds the trimmed description and has the lower material number.
+
+```sql
+SELECT copy.material_no FROM material AS copy
+WHERE copy.material_no = 'M-005351' AND EXISTS (SELECT 1 FROM material AS kept WHERE kept.description = TRIM(copy.description) AND kept.material_no < copy.material_no)
+```
+
 Do not drop every material that shares a trimmed description.
 Doing that to the two legacy gasket kit rows would delete one of them, although no real row holds that text.
 

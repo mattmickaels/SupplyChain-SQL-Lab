@@ -223,6 +223,7 @@ A tool sales line has status = 'Open' and the ordered material has material_type
 An RF generator has material_type COMPONENT and description starting with RF generator,.
 Explode every tool, multiply qty_per down the path, and sum that extended quantity by tool and component.
 Then multiply by the sales line quantity and sum across open lines.
+COUNT(*) of those lines is not the required quantity.
 Guard the recursive term with level < 10.
 Return material_no, description, and required_qty.
 Order by material_no.

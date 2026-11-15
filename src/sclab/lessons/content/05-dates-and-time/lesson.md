@@ -8,7 +8,7 @@ Subtracting two dates, or adding a number of days, is how you measure a promise 
 In Excel this is the same job as subtracting two date cells, or using WEEKNUM and EOMONTH to bucket them.
 
 datediff('day', start_date, end_date) counts the days from the start date to the end date.
-On Databricks, datediff(end_date, start_date) is the same count.
+datediff(end_date, start_date) is the same count on Databricks.
 A goods receipt on the confirmed day is not late.
 Late means the receipt date is after the confirmed date.
 
@@ -25,7 +25,7 @@ WHERE g.gr_no = 'GR-0010740'
 
 Adding a whole number of days uses INTERVAL.
 confirmed_delivery_date + INTERVAL 1 DAY is the next day.
-On Databricks, date_add(confirmed_delivery_date, 1) is the same day.
+date_add(confirmed_delivery_date, 1) is the same day on Databricks.
 For this line, the confirmed date plus 1 day is 7 July 2022, the day GR-0010740 arrived.
 
 ```sql
@@ -68,9 +68,11 @@ WHERE g.po_no = 'PO-0000010'
 ```
 
 date_trunc('month', order_date) snaps a day back to the first of its month.
-On Databricks the unit is written date_trunc('MONTH', order_date).
+The unit is written date_trunc('MONTH', order_date) on Databricks.
+A booking includes cancelled lines, in this lesson and in the later booking exercises.
+The line was booked on the order date even when status is later Cancelled.
 Sales order lines placed in January 2025 number 576.
-That count includes cancelled lines, because the order was still booked.
+That count includes the cancelled lines.
 
 ```sql
 SELECT date_trunc('month', h.order_date) AS booked_month,
@@ -83,7 +85,7 @@ GROUP BY date_trunc('month', h.order_date)
 ```
 
 date_trunc('week', a date) snaps the day back to the Monday of its week.
-On Databricks the unit is written date_trunc('WEEK', a date).
+The unit is written date_trunc('WEEK', a date) on Databricks.
 PO-0002506 line 1 is confirmed for 1 November 2026.
 That confirmed date falls in the week starting 26 October 2026.
 
@@ -107,13 +109,12 @@ WHERE gr_no = 'GR-0010740'
 
 A recency test adds a number of days to the latest date and compares that result with the lab's today, DATE '2026-11-01'.
 More than N days before today means latest_date + INTERVAL N DAY is still before 1 November 2026.
-On Databricks, date_add(latest_date, N) is the same comparison.
+date_add(latest_date, N) is the same comparison on Databricks.
 Every customer has an order on or after 22 October 2026.
 The latest order of any kind is never 180 days old.
 A tool order is a sales order line for a material whose material_type is TOOL.
-Quiet Memory, customer C-2009, last ordered a tool on 24 June 2026.
-That date plus 90 days is 22 September 2026, which is before 1 November 2026.
-That date plus 180 days is 21 December 2026, which is after 1 November 2026.
+Rowan Semiconductors, customer C-2025, last ordered a tool on 25 August 2026.
+That date plus 90 days is 23 November 2026, which is after 1 November 2026, so Rowan is not in the 90-day result.
 No customer's latest tool order is more than 365, 270, or 180 days before 1 November 2026.
 
 ```sql
@@ -125,7 +126,7 @@ FROM customer AS c
 JOIN sales_order AS h ON h.customer_no = c.customer_no
 JOIN sales_order_item AS i ON i.so_no = h.so_no
 JOIN material AS m ON m.material_no = i.material_no
-WHERE c.customer_no = 'C-2009'
+WHERE c.customer_no = 'C-2025'
   AND m.material_type = 'TOOL'
 GROUP BY c.customer_no, c.name
 ```

@@ -212,7 +212,6 @@ WITH bookings AS (
     FROM sales_order_item i JOIN sales_order h ON h.so_no = i.so_no
     JOIN material m ON m.material_no = i.material_no
     WHERE h.customer_no = 'C-2003' AND m.material_type = 'TOOL' AND m.family_code = 'ETC'
-      AND i.status <> 'Cancelled'
 ), forecast AS (
     SELECT SUM(CASE WHEN f.forecast_version = '2026-09' THEN f.qty ELSE 0 END) AS forecast_09,
            SUM(CASE WHEN f.forecast_version = '2026-10' THEN f.qty ELSE 0 END) AS forecast_10
@@ -246,7 +245,9 @@ WITH RECURSIVE weeks(level) AS (
     SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
            COUNT(*) AS starts
     FROM production_order
-    WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+    WHERE status IN ('Planned', 'Released')
+      AND planned_start > DATE '2026-11-01'
+      AND planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
     GROUP BY bay_id, CAST(date_trunc('week', planned_start) AS DATE)
 ), grid AS (
     SELECT b.bay_id, w.week_start, COALESCE(l.starts, 0) AS starts, b.weekly_slots

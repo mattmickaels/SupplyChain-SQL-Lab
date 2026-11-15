@@ -72,6 +72,8 @@ Use the BOM path rollup from lesson 9 for dependency exposure, and count each or
 Exposure is the full open sales value dependent on a component, not the component purchase cost and not proven lost revenue.
 Do not sum exposure across components because several components can support the same order.
 Use the capacity grid from lesson 9 to keep empty weeks in the bottleneck denominator.
+Count only Planned and Released production whose planned_start is after 1 November 2026.
+A start on or before that date is treated as already issued.
 For this planning exercise, next quarter is explicitly December 2026 through February 2027.
 
 ## Six drills

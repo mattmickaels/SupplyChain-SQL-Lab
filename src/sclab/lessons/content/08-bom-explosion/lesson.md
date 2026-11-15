@@ -61,7 +61,7 @@ Long-lead parts sit further down the bill, so a one-level join cannot count them
 
 Extended quantity multiplies qty_per down the path.
 The chamber module M-000111 uses 2 per tool.
-Under that module, M-000503 uses 1 per module, so one tool needs 2.
+Under that module, M-000503, Wafer lift assembly subassembly, variant 183, uses 1 per module, so one tool needs 2.
 Under that subassembly, lift pin M-001874 uses 6 per subassembly, so one tool needs 12.
 
 ```sql
@@ -113,9 +113,9 @@ JOIN material AS t ON t.material_no = u.material_no
 ORDER BY u.level, t.material_no
 ```
 
-Level 1 is four RF delivery subassemblies: M-001043, M-001049, M-001051, and M-001057.
-Level 2 is four chamber modules: M-000055, M-000097, M-000111, and M-000153.
-Level 3 is four tools: M-000003, M-000009, M-000011, and M-000017.
+Level 1 is four RF delivery subassemblies: M-001043 variant 723, M-001049 variant 729, M-001051 variant 731, and M-001057 variant 737.
+Level 2 is four chamber modules: M-000055 is Deposition chamber module, 4-chamber PECVD, M-000097 is Deposition chamber module, 5-chamber PEALD, M-000111 is Etch chamber module, 2-chamber conductor, and M-000153 is Etch chamber module, 3-chamber dielectric.
+Level 3 is four tools: M-000003 is Deposition system, 300mm, 4-chamber, PECVD, M-000009 is Deposition system, 300mm, 5-chamber, PEALD, M-000011 is Etch system, 300mm, 2-chamber, conductor, and M-000017 is Etch system, 300mm, 3-chamber, dielectric.
 
 Use UNION ALL so a repeated path is not dropped.
 Sum extended quantity by component before you multiply by an order quantity.

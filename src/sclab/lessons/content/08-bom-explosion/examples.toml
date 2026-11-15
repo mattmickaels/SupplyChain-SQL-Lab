@@ -157,3 +157,12 @@ FROM material
 WHERE material_no = 'M-001321'
 """
 expected = "RF generator, 13.56 MHz, 1.5 kW"
+
+[[fact]]
+id = "wafer-lift-assembly-name"
+sql = """
+SELECT description
+FROM material
+WHERE material_no = 'M-000503'
+"""
+expected = "Wafer lift assembly subassembly, variant 183"
