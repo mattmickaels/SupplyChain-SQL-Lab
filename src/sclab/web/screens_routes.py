@@ -62,7 +62,7 @@ def create_router(templates, render) -> APIRouter:
             [f"screens/{data.screen.code.upper()}.html", "screens/_default.html"]
         ).name
         plants = {}
-        if data.found and data.screen.code in {"CS03", "CS15"}:
+        if data.found:
             plants = link_plants(material_numbers(data.key, data.runs))
         grid = capacity_grid(data.runs.get("load")) if data.found else None
         return render(

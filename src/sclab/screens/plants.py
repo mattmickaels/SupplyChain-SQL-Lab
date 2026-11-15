@@ -131,11 +131,6 @@ LEFT JOIN any_plant ON any_plant.material_no = m.material_no
 """
 
 
-def link_plant_join(material_sql: str, alias: str = "link_plant") -> str:
-    """LEFT JOIN the shared plant choice onto one material number expression."""
-    return f"LEFT JOIN (\n{LINK_PLANTS_SQL}\n) AS {alias} ON {alias}.material_no = {material_sql}"
-
-
 def link_plants(material_nos: Sequence[object]) -> dict[str, str]:
     """Map each material to the plant its link opens, skipping materials with none."""
     unique: list[str] = []

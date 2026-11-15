@@ -8,12 +8,14 @@
 {{ value | cell(type_name) }}
 {% elif column == 'material_no' %}
 {% set plant = namespace(code=none) %}
-{% if columns is defined and 'plant_code' in columns %}
+{% if columns is defined and 'plant_code' in columns and row[columns.index('plant_code')] %}
 {% set plant.code = row[columns.index('plant_code')] %}
-{% elif request.query_params.get('plant') %}
-{% set plant.code = request.query_params.get('plant') %}
 {% elif screen is defined and screen.code == 'CM01' %}
 {% set plant.code = data.key %}
+{% elif plants is defined and plants.get(value) %}
+{% set plant.code = plants.get(value) %}
+{% elif request.query_params.get('plant') %}
+{% set plant.code = request.query_params.get('plant') %}
 {% endif %}
 {% if plant.code %}
 <a class="drill" href="/screens/MM03?key={{ value | urlencode }}&amp;plant={{ plant.code | urlencode }}">{{ value | cell(type_name) }}</a>

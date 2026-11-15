@@ -32,6 +32,7 @@ _MONTHS = (
 )
 _SAMPLE_PATH = Path(__file__).resolve().parent / "samples" / "corvane-supply-review.json"
 _SAMPLE_ID = "corvane-supply-review"
+SAMPLE_ID = _SAMPLE_ID
 _MARKER = ".sample-copied"
 _LOCKS: dict[Path, threading.RLock] = {}
 _LOCKS_GUARD = threading.Lock()
@@ -242,6 +243,18 @@ class NotebookStore:
             if not path.is_file():
                 raise KeyError(notebook_id)
             path.unlink()
+
+    def sample_missing(self) -> bool:
+        """True after the sample was deleted and has not been restored."""
+        with self._lock:
+            return self._marker().exists() and not self._path(_SAMPLE_ID).is_file()
+
+    def restore_sample(self) -> None:
+        """Copy the sample notebook back onto the list."""
+        with self._lock:
+            self.dir.mkdir(parents=True, exist_ok=True)
+            self._copy_sample()
+            self._remember()
 
     def _read_all(self) -> list[Notebook]:
         found: list[Notebook] = []

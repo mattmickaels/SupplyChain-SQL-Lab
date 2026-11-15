@@ -14,7 +14,7 @@ from markupsafe import Markup
 from starlette.concurrency import run_in_threadpool
 
 from sclab.engine.query import QueryError, QueryResult, run_query
-from sclab.notebook.store import NOTEBOOK_ID, Cell, Notebook, NotebookStore
+from sclab.notebook.store import NOTEBOOK_ID, SAMPLE_ID, Cell, Notebook, NotebookStore
 from sclab.paths import notebooks_dir, sandbox_db_path
 from sclab.web import export as excel
 from sclab.web.cells import display_text
@@ -33,7 +33,12 @@ def register_notebook_routes(app: FastAPI, render) -> None:
     async def notebooks_index(request: Request):
         async def work():
             notebooks = await run_in_threadpool(lambda: _store().list())
-            return render(request, "notebook/index.html", {"notebooks": notebooks})
+            missing = await run_in_threadpool(lambda: _store().sample_missing())
+            return render(
+                request,
+                "notebook/index.html",
+                {"notebooks": notebooks, "sample_missing": missing},
+            )
 
         return await _call(work)
 
@@ -48,6 +53,16 @@ def register_notebook_routes(app: FastAPI, render) -> None:
 
         return await _call(work)
 
+    @app.post("/notebooks/restore-sample")
+    async def notebooks_restore_sample():
+        async def work():
+            await run_in_threadpool(lambda: _store().restore_sample())
+            response = plain_message("Sample notebook restored.")
+            response.headers["HX-Redirect"] = "/notebooks"
+            return response
+
+        return await _call(work)
+
     @app.get("/notebooks/{notebook_id}")
     async def notebook_page(request: Request, notebook_id: str):
         async def work():
@@ -56,7 +71,7 @@ def register_notebook_routes(app: FastAPI, render) -> None:
             return render(
                 request,
                 "notebook/notebook.html",
-                {"notebook": notebook, "cells": cells},
+                {"notebook": notebook, "cells": cells, "is_sample": notebook.id == SAMPLE_ID},
             )
 
         return await _call(work)

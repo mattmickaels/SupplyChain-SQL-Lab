@@ -27,6 +27,7 @@ uv run sclab
 ```
 
 The first start builds the database, then your browser opens the lab.
+Pass `--no-browser` to start the lab without opening a browser.
 If that command is blocked on your machine, run `uv run -m sclab` instead.
 
 Your progress is saved on your computer as you go, so you can stop and come back at any time.

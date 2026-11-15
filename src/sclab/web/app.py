@@ -394,6 +394,16 @@ def _export_fields(fields: dict[str, str], exercise_id: str = "") -> dict[str, s
     return {"export_form": excel.safe_form_id(posted)}
 
 
+def _back_label(href: str) -> str:
+    if href.startswith("/notebooks/"):
+        return "Back to the notebook"
+    if href.startswith("/schema"):
+        return "Back to the schema"
+    if href.startswith("/playground"):
+        return "Back to the playground"
+    return "Back to the lesson"
+
+
 def _back_href(fields: dict[str, str], exercise_lesson: dict[str, str]) -> str:
     exercise_id = fields.get("exercise_id", "")
     if exercise_id in exercise_lesson:
@@ -427,7 +437,7 @@ def _export_error_page(message: str, href: str) -> HTMLResponse:
   <main>
     <h1>Could not export</h1>
     <p class="message">{html.escape(message)}</p>
-    <p><a href="{html.escape(href, quote=True)}">Back to the lesson</a></p>
+    <p><a href="{html.escape(href, quote=True)}">{html.escape(_back_label(href))}</a></p>
   </main>
 </body>
 </html>

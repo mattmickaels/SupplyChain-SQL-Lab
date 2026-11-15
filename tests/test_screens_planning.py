@@ -478,6 +478,12 @@ def test_md04_states_the_lines_left_out(client) -> None:
     assert f"promised date ({past})" in spare_page.text
 
 
+def test_spare_plant_cte_is_shared() -> None:
+    assert planning._SPARE_PLANT_CTE in planning.MD04_LIST_SQL
+    assert planning._SPARE_PLANT_CTE in planning.MD04_OMITTED_SQL
+    assert "origin.material_type = 'COMPONENT'" in planning._SPARE_PLANT_CTE
+
+
 def test_displayed_sql_is_dedented() -> None:
     data = render_screen("CM01", "SC01", {})
     for run in data.runs.values():

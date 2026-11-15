@@ -38,9 +38,47 @@ LEFT JOIN (
 WHERE m.material_no = $1 AND p.plant_code = $2
 """
 
+# Spare lines count only when the material itself is a component.
+# Both MD04 queries use this CTE so a tool or a module is not treated as a spare.
+_SPARE_PLANT_CTE = """
+spare_plant AS (
+    SELECT MIN(CASE tool.family_code WHEN 'ETC' THEN 'SC01' WHEN 'CMP' THEN 'SG01'
+                                     ELSE 'AU01' END) AS plant_code
+    FROM material AS origin
+    JOIN (
+        SELECT b0.parent_material_no AS tool_no
+        FROM bom_item AS b0
+        WHERE b0.component_material_no = $1
+        UNION
+        SELECT b1.parent_material_no
+        FROM bom_item AS b0
+        JOIN bom_item AS b1 ON b1.component_material_no = b0.parent_material_no
+        WHERE b0.component_material_no = $1
+        UNION
+        SELECT b2.parent_material_no
+        FROM bom_item AS b0
+        JOIN bom_item AS b1 ON b1.component_material_no = b0.parent_material_no
+        JOIN bom_item AS b2 ON b2.component_material_no = b1.parent_material_no
+        WHERE b0.component_material_no = $1
+        UNION
+        SELECT b3.parent_material_no
+        FROM bom_item AS b0
+        JOIN bom_item AS b1 ON b1.component_material_no = b0.parent_material_no
+        JOIN bom_item AS b2 ON b2.component_material_no = b1.parent_material_no
+        JOIN bom_item AS b3 ON b3.component_material_no = b2.parent_material_no
+        WHERE b0.component_material_no = $1
+    ) AS hit ON TRUE
+    JOIN material AS tool ON tool.material_no = hit.tool_no
+    WHERE origin.material_no = $1
+      AND origin.material_type = 'COMPONENT'
+      AND tool.material_type = 'TOOL'
+)
+"""
+
 # Where-used runs upward from the material, so only its own tools are walked.
 # qty_per_tool multiplies the quantity per level on every BOM path, then adds the paths together.
-MD04_LIST_SQL = f"""
+MD04_LIST_SQL = (
+    """
 WITH RECURSIVE where_used(parent_material_no, qty, level) AS (
     SELECT parent_material_no, qty_per, 1
     FROM bom_item
@@ -56,11 +94,11 @@ WITH RECURSIVE where_used(parent_material_no, qty, level) AS (
     JOIN material c ON c.material_no = $1
     WHERE t.material_type = 'TOOL' AND c.material_type = 'COMPONENT'
     GROUP BY t.material_no, t.family_code
-), spare_plant AS (
-    SELECT MIN(CASE family_code WHEN 'ETC' THEN 'SC01' WHEN 'CMP' THEN 'SG01'
-                                ELSE 'AU01' END) AS plant_code
-    FROM tool_qty
-), outstanding AS (
+),
+"""
+    + _SPARE_PLANT_CTE
+    + f""",
+outstanding AS (
     SELECT i.po_no, i.line_no, i.confirmed_delivery_date,
            i.order_qty - COALESCE(SUM(g.qty), 0) AS qty
     FROM purchase_order_item i
@@ -116,6 +154,7 @@ FROM running r
 JOIN material_plant p ON p.material_no = $1 AND p.plant_code = $2
 ORDER BY r.element_date, r.element_order, r.doc_no, r.doc_line
 """
+)
 
 CM01_HEADER_SQL = f"""
 SELECT p.plant_code, p.name, p.city, COUNT(*) AS bays, SUM(b.weekly_slots) AS weekly_slots,
@@ -177,23 +216,8 @@ ORDER BY g.bay_id, g.week_start, p.planned_start, p.prod_order_no
 )
 
 MD04_OMITTED_SQL = f"""
-WITH RECURSIVE up AS (
-    SELECT material_no, material_type, family_code, 0 AS depth
-    FROM material
-    WHERE material_no = $1
-    UNION ALL
-    SELECT p.material_no, p.material_type, p.family_code, up.depth + 1
-    FROM up
-    JOIN bom_item b ON b.component_material_no = up.material_no
-    JOIN material p ON p.material_no = b.parent_material_no
-    WHERE up.depth < 4 AND up.material_type <> 'TOOL'
-),
-spare_plant AS (
-    SELECT MIN(CASE family_code WHEN 'ETC' THEN 'SC01' WHEN 'CMP' THEN 'SG01'
-                                ELSE 'AU01' END) AS plant_code
-    FROM up
-    WHERE material_type = 'TOOL'
-),
+WITH
+{_SPARE_PLANT_CTE},
 open_unconfirmed AS (
     SELECT i.po_no, i.line_no
     FROM purchase_order_item i

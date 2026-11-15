@@ -10,6 +10,11 @@
     <button type="submit">Create notebook</button>
   </div>
 </form>
+{% if sample_missing %}
+<p class="actions">
+  <button type="button" hx-post="/notebooks/restore-sample" hx-target="body">Restore the sample notebook</button>
+</p>
+{% endif %}
 {% if notebooks %}
 <ul class="lesson-list">
   {% for notebook in notebooks %}

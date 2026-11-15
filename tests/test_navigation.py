@@ -125,6 +125,9 @@ def test_lesson_pages_link_screens_and_sap_views(client) -> None:
     assert "plant=" in match.group(1)
     assert "plant_code=" not in match.group(1)
     assert 'href="/screens/CM01?key=SC01"' in planning.text
+    assert "See a shortage on" in planning.text
+    assert "where the Etch orders run out." in planning.text
+    assert "See this stock on" not in planning.text
     for lesson_id, expected in _SAP_LINKS.items():
         page = client.get(f"/lessons/{lesson_id}")
         assert page.status_code == 200
@@ -232,6 +235,28 @@ def test_screen_go_keeps_the_plant(client) -> None:
     assert 'type="hidden" name="tcode"' in back.text
     assert 'id="header-tcode"' in back.text
     assert 'for="header-tcode">Transaction code</label>' in back.text
+
+
+def test_header_form_keeps_material_and_plant(client) -> None:
+    page = client.get("/screens/MM03", params={"key": "M-001324", "plant": "SC01"})
+    header = re.search(
+        r'<form class="tcode-box" action="/screens/go" method="get">(.*?)</form>',
+        page.text,
+        re.S,
+    )
+    assert header is not None
+    body = header.group(1)
+    assert 'name="key" value="M-001324"' in body
+    assert 'name="plant" value="SC01"' in body
+    opened = client.get(
+        "/screens/go",
+        params={"tcode": "MD04", "key": "M-001324", "plant": "SC01"},
+        follow_redirects=True,
+    )
+    assert "Enter a material." not in opened.text
+    assert "Enter a plant." not in opened.text
+    assert "M-001324" in opened.text
+    assert "SC01" in opened.text
 
 
 def test_supplier_material_without_a_plant_is_plain_text(client) -> None:

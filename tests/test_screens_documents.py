@@ -266,6 +266,18 @@ def test_screens_index_lists_document_screens(client) -> None:
     assert "MM03" not in client.get("/screens", params={"q": "VA03"}).text
 
 
+def test_document_sql_stays_on_the_data() -> None:
+    import sclab.screens  # noqa: F401
+
+    for code in ("XK03", "VA03", "MM03", "ME23N"):
+        for query in get_screen(code).queries:
+            assert "tool_of" not in query.sql
+            assert "bay_choice" not in query.sql
+    items = next(query for query in get_screen("VA03").queries if query.name == "items")
+    assert "p.plant_code" in items.sql
+    assert "spare_plant" not in items.sql
+
+
 def test_supplier_with_no_recent_receipts_says_so(client) -> None:
     page = client.get("/screens/XK03", params={"key": "V-10022"})
     assert page.status_code == 200

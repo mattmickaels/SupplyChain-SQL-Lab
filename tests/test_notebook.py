@@ -586,7 +586,10 @@ def test_notebook_pages_stay_local(client: TestClient) -> None:
     assert _URL.search(page) is None
     assert "Corvane" in page
     assert "1 Nov 2026 00:00" in index.text
-    assert 'hx-confirm="Delete this notebook?"' in page
+    assert (
+        'hx-confirm="Delete this notebook? You can restore the sample notebook '
+        'from the notebook list."'
+    ) in page
     assert 'getPropertyValue("--accent")' in script
     assert 'getPropertyValue("--ink")' in script
     assert 'getPropertyValue("--line")' in script
@@ -626,6 +629,7 @@ def test_notebook_export_error_returns_to_the_notebook(client: TestClient) -> No
             },
         )
         assert f'href="/notebooks/{notebook_id}"' in response.text
+        assert "Back to the notebook" in response.text
 
 
 def test_delete_notebook_is_htmx_guarded(client: TestClient) -> None:
@@ -638,3 +642,24 @@ def test_delete_notebook_is_htmx_guarded(client: TestClient) -> None:
     raw = TestClient(create_app(), base_url="http://127.0.0.1")
     refused = raw.delete(f"/notebooks/{notebook_id}")
     assert refused.status_code == 403
+
+
+def test_restore_sample_notebook_is_htmx_guarded(client: TestClient) -> None:
+    opened = _open_sample(client)
+    assert "Restore the sample notebook" not in client.get("/notebooks").text
+    assert "restore the sample notebook from the notebook list" in opened
+    removed = client.delete("/notebooks/corvane-supply-review")
+    assert removed.status_code == 200
+    index = client.get("/notebooks")
+    assert "Restore the sample notebook" in index.text
+    assert "corvane-supply-review" not in index.text
+    raw = TestClient(create_app(), base_url="http://127.0.0.1")
+    refused = raw.post("/notebooks/restore-sample")
+    assert refused.status_code == 403
+    restored = client.post("/notebooks/restore-sample")
+    assert restored.status_code == 200
+    assert restored.headers["HX-Redirect"] == "/notebooks"
+    page = client.get("/notebooks/corvane-supply-review")
+    assert page.status_code == 200
+    assert "Corvane" in page.text
+    assert "Restore the sample notebook" not in client.get("/notebooks").text

@@ -211,7 +211,7 @@ DEP maps to AU01 and ETC maps to SC01, so the spare M-001324 is planned at AU01.
 
 Use RM01 stock for component planning.
 RF generator M-001324 has 1 on hand at AU01 and 2 on hand at SC01.
-See this stock on [MD04](/screens/MD04?key=M-001330&plant=SC01).
+See a shortage on [MD04](/screens/MD04?key=M-001330&plant=SC01) for RF generator M-001330 at SC01, where the Etch orders run out.
 See the bay load on [CM01](/screens/CM01?key=SC01).
 
 ```sql

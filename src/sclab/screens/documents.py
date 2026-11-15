@@ -4,18 +4,12 @@ from textwrap import dedent
 
 from sclab.constants import AS_OF_SQL, ON_TIME_WINDOW_START
 from sclab.screens.framework import Screen, ScreenQuery, register
-from sclab.screens.plants import link_plant_join
 
 _WINDOW_START = f"DATE '{ON_TIME_WINDOW_START.isoformat()}'"
 
 
 def _query(name: str, title: str, sql: str) -> ScreenQuery:
     return ScreenQuery(name, title, dedent(sql).strip())
-
-
-def _with_link(sql: str, material_sql: str) -> str:
-    body = dedent(sql).strip()
-    return body.replace("/*__LINK__*/", link_plant_join(material_sql).strip())
 
 
 # Lesson 5 uses this window: 2025 Q1 through 2026 Q4, receipts before the lab as-of date.
@@ -179,18 +173,14 @@ register(
             _query(
                 "materials",
                 "Materials supplied",
-                _with_link(
-                    """
-                    SELECT ms.material_no, m.description, link_plant.plant_code,
-                           ms.quoted_lead_time_days, ms.unit_price, ms.is_primary
-                    FROM material_supplier AS ms
-                    JOIN material AS m ON m.material_no = ms.material_no
-                    /*__LINK__*/
-                    WHERE ms.supplier_no = $1
-                    ORDER BY ms.material_no
-                    """,
-                    "ms.material_no",
-                ),
+                """
+                SELECT ms.material_no, m.description,
+                       ms.quoted_lead_time_days, ms.unit_price, ms.is_primary
+                FROM material_supplier AS ms
+                JOIN material AS m ON m.material_no = ms.material_no
+                WHERE ms.supplier_no = $1
+                ORDER BY ms.material_no
+                """,
             ),
             ScreenQuery("on_time", "On-time rate by quarter", dedent(_ON_TIME).strip()),
             ScreenQuery("on_time_90", "On-time rate, last 90 days", dedent(_ON_TIME_90).strip()),
@@ -202,17 +192,13 @@ register(
             _query(
                 "quality",
                 "Quality notifications",
-                _with_link(
-                    """
-                    SELECT n.notif_no, n.material_no, link_plant.plant_code, n.po_no, n.created_on,
-                           n.defect_code, n.qty_affected
-                    FROM quality_notification AS n
-                    /*__LINK__*/
-                    WHERE n.supplier_no = $1
-                    ORDER BY n.created_on, n.notif_no
-                    """,
-                    "n.material_no",
-                ),
+                """
+                SELECT n.notif_no, n.material_no, n.po_no, n.created_on,
+                       n.defect_code, n.qty_affected
+                FROM quality_notification AS n
+                WHERE n.supplier_no = $1
+                ORDER BY n.created_on, n.notif_no
+                """,
             ),
         ),
     )
@@ -300,23 +286,17 @@ register(
             _query(
                 "items",
                 "Items",
-                _with_link(
-                    """
-                    SELECT i.line_no, i.material_no, m.description, i.qty, i.requested_date,
-                           i.promised_date, i.status, i.shipped_date, p.prod_order_no,
-                           COALESCE(
-                               p.plant_code, link_plant.spare_plant, link_plant.plant_code
-                           ) AS plant_code
-                    FROM sales_order_item AS i
-                    JOIN material AS m ON m.material_no = i.material_no
-                    LEFT JOIN production_order AS p
-                      ON p.so_no = i.so_no AND p.so_line_no = i.line_no
-                    /*__LINK__*/
-                    WHERE i.so_no = $1
-                    ORDER BY i.line_no, p.prod_order_no
-                    """,
-                    "i.material_no",
-                ),
+                """
+                SELECT i.line_no, i.material_no, m.description, i.qty, i.requested_date,
+                       i.promised_date, i.status, i.shipped_date, p.prod_order_no,
+                       p.plant_code
+                FROM sales_order_item AS i
+                JOIN material AS m ON m.material_no = i.material_no
+                LEFT JOIN production_order AS p
+                  ON p.so_no = i.so_no AND p.so_line_no = i.line_no
+                WHERE i.so_no = $1
+                ORDER BY i.line_no, p.prod_order_no
+                """,
             ),
         ),
     )

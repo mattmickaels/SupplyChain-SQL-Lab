@@ -188,7 +188,8 @@ def test_insert_returning_does_not_change_rows(client) -> None:
     assert "text/html" in response.headers["content-type"]
     assert "Download works for SELECT queries." in response.text
     assert "Run your change first, then download a SELECT of the rows." in response.text
-    assert "Back to the lesson" in response.text
+    assert "Back to the playground" in response.text
+    assert 'href="/playground?' in response.text
     assert not response.content.startswith(b"PK")
     after = client.post("/api/run", data={"sql": count_sql, "target": "sandbox"})
     assert ">0<" in after.text
@@ -301,6 +302,17 @@ def test_export_timeout_returns_page(client, monkeypatch) -> None:
     assert "spreadsheet" not in response.headers["content-type"]
     assert "Back to the lesson" in response.text
     assert 'href="/lessons/00-sample#exercise-sample-plants"' in response.text
+    schema = client.post(
+        "/api/export",
+        data={
+            "sql": "SELEC 1",
+            "target": "lesson",
+            "return_to": "/schema/plant",
+            "label": "schema",
+        },
+    )
+    assert "Back to the schema" in schema.text
+    assert 'href="/schema/plant"' in schema.text
     assert "15 seconds" in response.text
     assert not response.content.startswith(b"PK")
 
