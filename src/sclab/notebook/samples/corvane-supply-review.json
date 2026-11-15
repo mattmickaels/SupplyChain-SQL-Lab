@@ -1,0 +1,44 @@
+{
+  "id": "corvane-supply-review",
+  "title": "Corvane supply review",
+  "target": "lesson",
+  "updated_at": "2026-11-01T00:00:00+00:00",
+  "cells": [
+    {
+      "id": "slip",
+      "kind": "sql",
+      "source": "-- Open Corvane lines whose confirmed date is at least 56 days after the requested date.\nSELECT i.po_no, i.line_no, m.description,\n       i.requested_delivery_date, i.confirmed_delivery_date\nFROM purchase_order_item AS i\nJOIN purchase_order AS h ON h.po_no = i.po_no\nJOIN material AS m ON m.material_no = i.material_no\nLEFT JOIN (\n    SELECT po_no, line_no, sum(qty) AS received_qty\n    FROM goods_receipt\n    GROUP BY po_no, line_no\n) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no\nWHERE h.supplier_no = 'V-10017'\n  AND h.order_date <= DATE '2026-11-01'\n  AND coalesce(r.received_qty, 0) < i.order_qty\n  AND i.confirmed_delivery_date >= i.requested_delivery_date + INTERVAL 56 DAY\nORDER BY i.po_no, i.line_no",
+      "chart": null
+    },
+    {
+      "id": "on-time",
+      "kind": "sql",
+      "source": "-- Corvane on-time rate by quarter for receipts in 2025 and 2026.\nSELECT EXTRACT(YEAR FROM g.receipt_date) AS receipt_year,\n       EXTRACT(QUARTER FROM g.receipt_date) AS receipt_quarter,\n       COUNT(*) AS receipt_count,\n       ROUND(\n           100.0 * SUM(CASE WHEN g.receipt_date <= i.confirmed_delivery_date THEN 1 ELSE 0 END)\n           / COUNT(*),\n           1\n       ) AS on_time_pct\nFROM goods_receipt AS g\nJOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no\nJOIN purchase_order AS h ON h.po_no = g.po_no\nWHERE h.supplier_no = 'V-10017'\n  AND g.receipt_date >= DATE '2025-01-01'\n  AND g.receipt_date < DATE '2027-01-01'\nGROUP BY EXTRACT(YEAR FROM g.receipt_date), EXTRACT(QUARTER FROM g.receipt_date)\nORDER BY receipt_year, receipt_quarter",
+      "chart": null
+    },
+    {
+      "id": "rf-stock",
+      "kind": "sql",
+      "source": "-- On-hand RF generators in RM01, the location used for component planning.\nSELECT i.plant_code, m.material_no, m.description, i.qty_on_hand\nFROM inventory AS i\nJOIN material AS m ON m.material_no = i.material_no\nWHERE m.description LIKE 'RF generator,%'\n  AND i.storage_location = 'RM01'\nORDER BY m.material_no, i.plant_code",
+      "chart": null
+    },
+    {
+      "id": "etch-backlog",
+      "kind": "sql",
+      "source": "-- Open Etch tool sales lines ordered on or before the lab's today.\nSELECT i.so_no, i.line_no, c.name AS customer_name,\n       m.material_no, m.description, i.qty, i.promised_date\nFROM sales_order_item AS i\nJOIN sales_order AS h ON h.so_no = i.so_no\nJOIN customer AS c ON c.customer_no = h.customer_no\nJOIN material AS m ON m.material_no = i.material_no\nWHERE i.status = 'Open'\n  AND m.material_type = 'TOOL'\n  AND m.family_code = 'ETC'\n  AND h.order_date <= DATE '2026-11-01'\nORDER BY i.so_no, i.line_no",
+      "chart": null
+    },
+    {
+      "id": "at-risk",
+      "kind": "sql",
+      "source": "-- On Databricks, write datediff(DAY, p.planned_start, a.available_date) in place of datediff('day', p.planned_start, a.available_date).\nWITH RECURSIVE tree AS (\n    SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,\n           CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level\n    FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no\n    WHERE m.material_type = 'TOOL'\n    UNION ALL\n    SELECT t.root, t.family_code, b.component_material_no,\n           CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1\n    FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no\n    WHERE t.level < 10\n), leaves AS (\n    SELECT t.root, t.family_code, t.material_no, SUM(t.qty) AS qty\n    FROM tree t JOIN material m ON m.material_no = t.material_no\n    WHERE m.description LIKE 'RF generator,%'\n    GROUP BY t.root, t.family_code, t.material_no\n), spare_plant AS (\n    SELECT material_no,\n           MIN(CASE family_code WHEN 'ETC' THEN 'SC01' WHEN 'CMP' THEN 'SG01'\n                                ELSE 'AU01' END) AS plant_code\n    FROM leaves\n    GROUP BY material_no\n), production_need AS (\n    SELECT p.prod_order_no, l.material_no, p.plant_code,\n           p.planned_start AS need_date, p.qty * l.qty AS qty\n    FROM production_order p JOIN leaves l ON l.root = p.material_no\n    WHERE p.status IN ('Planned', 'Released') AND p.planned_start > DATE '2026-11-01'\n), spare_need AS (\n    SELECT i.material_no, sp.plant_code, i.promised_date AS need_date, i.qty\n    FROM sales_order_item i JOIN spare_plant sp ON sp.material_no = i.material_no\n    WHERE i.status = 'Open' AND i.promised_date > DATE '2026-11-01'\n), need_ledger AS (\n    SELECT material_no, plant_code, need_date, day_qty,\n           SUM(day_qty) OVER (PARTITION BY material_no, plant_code ORDER BY need_date\n                              ROWS UNBOUNDED PRECEDING) AS cumulative_qty\n    FROM (\n        SELECT material_no, plant_code, need_date, SUM(qty) AS day_qty\n        FROM (\n            SELECT material_no, plant_code, need_date, qty FROM production_need\n            UNION ALL\n            SELECT material_no, plant_code, need_date, qty FROM spare_need\n        ) needs\n        GROUP BY material_no, plant_code, need_date\n    ) daily\n), outstanding AS (\n    SELECT i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,\n           i.confirmed_delivery_date, i.order_qty - COALESCE(SUM(g.qty), 0) AS qty\n    FROM purchase_order_item i JOIN purchase_order h ON h.po_no = i.po_no\n    LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no\n    WHERE h.order_date <= DATE '2026-11-01'\n    GROUP BY i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,\n             i.confirmed_delivery_date, i.order_qty\n    HAVING i.order_qty > COALESCE(SUM(g.qty), 0)\n), stock AS (\n    SELECT material_no, plant_code, SUM(qty_on_hand) AS qty FROM inventory\n    WHERE storage_location = 'RM01'\n    GROUP BY material_no, plant_code\n), supply_events AS (\n    SELECT material_no, plant_code, supply_date, qty\n    FROM (\n        SELECT s.material_no, s.plant_code, DATE '2026-11-01' AS supply_date, s.qty\n        FROM stock s JOIN material m ON m.material_no = s.material_no\n        WHERE m.description LIKE 'RF generator,%'\n        UNION ALL\n        SELECT o.material_no, o.plant_code,\n               GREATEST(o.confirmed_delivery_date, DATE '2026-11-01'), o.qty\n        FROM outstanding o JOIN material m ON m.material_no = o.material_no\n        WHERE m.description LIKE 'RF generator,%' AND o.confirmed_delivery_date IS NOT NULL\n    ) events\n), supply_ledger AS (\n    SELECT material_no, plant_code, supply_date, day_qty,\n           SUM(day_qty) OVER (PARTITION BY material_no, plant_code ORDER BY supply_date\n                              ROWS UNBOUNDED PRECEDING) AS cumulative_qty\n    FROM (\n        SELECT material_no, plant_code, supply_date, SUM(qty) AS day_qty\n        FROM supply_events\n        GROUP BY material_no, plant_code, supply_date\n    ) daily\n), availability AS (\n    SELECT n.prod_order_no, n.need_date, MIN(s.supply_date) AS available_date\n    FROM production_need n\n    JOIN need_ledger d ON d.material_no = n.material_no AND d.plant_code = n.plant_code\n                      AND d.need_date = n.need_date\n    LEFT JOIN supply_ledger s ON s.material_no = n.material_no AND s.plant_code = n.plant_code\n                             AND s.cumulative_qty >= d.cumulative_qty\n    GROUP BY n.prod_order_no, n.material_no, n.plant_code, n.need_date\n)\nSELECT i.so_no, i.line_no, c.name AS customer_name, i.promised_date,\n       p.planned_start,\n       MAX(datediff('day', p.planned_start, a.available_date)) AS days_at_risk\nFROM availability a\nJOIN production_order p ON p.prod_order_no = a.prod_order_no\nJOIN sales_order_item i ON i.so_no = p.so_no AND i.line_no = p.so_line_no\nJOIN sales_order h ON h.so_no = i.so_no\nJOIN customer c ON c.customer_no = h.customer_no\nJOIN material m ON m.material_no = p.material_no\nWHERE i.status = 'Open' AND m.material_type = 'TOOL' AND m.family_code = 'ETC'\n  AND h.order_date <= DATE '2026-11-01'\nGROUP BY i.so_no, i.line_no, c.name, i.promised_date, p.planned_start\nHAVING MAX(datediff('day', p.planned_start, a.available_date)) > 0\nORDER BY i.so_no, i.line_no",
+      "chart": null
+    },
+    {
+      "id": "summary",
+      "kind": "markdown",
+      "source": "",
+      "chart": null
+    }
+  ]
+}

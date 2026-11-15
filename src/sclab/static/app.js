@@ -111,14 +111,97 @@
     scope.querySelectorAll("[data-remaining]").forEach(armCountdown);
   }
 
+  function fireAutosave(el) {
+    var form = el.form;
+    var url = el.getAttribute("data-autosave");
+    if (!form || !url) {
+      return;
+    }
+    saveEditors();
+    fetch(url, {
+      method: "POST",
+      headers: {
+        "HX-Request": "true",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams(new FormData(form)),
+    });
+  }
+
+  function armAutosave(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    scope.querySelectorAll("[data-autosave]").forEach(function (el) {
+      if (el._sclabAutosave) {
+        return;
+      }
+      el._sclabAutosave = true;
+      function schedule() {
+        clearTimeout(el._sclabAutosaveTimer);
+        el._sclabAutosaveTimer = setTimeout(fire, 1000);
+      }
+      function fire() {
+        fireAutosave(el);
+      }
+      el.addEventListener("input", schedule);
+      el.addEventListener("change", schedule);
+      if (el.editor) {
+        el.editor.on("change", schedule);
+      }
+    });
+  }
+
+  function mountCharts(root) {
+    if (typeof Chart === "undefined") {
+      return;
+    }
+    var scope = root && root.querySelectorAll ? root : document;
+    scope.querySelectorAll("canvas[data-chart]").forEach(function (canvas) {
+      if (canvas._sclabChart) {
+        return;
+      }
+      var spec;
+      try {
+        spec = JSON.parse(canvas.getAttribute("data-chart"));
+      } catch (error) {
+        return;
+      }
+      canvas._sclabChart = new Chart(canvas, {
+        type: spec.type,
+        data: {
+          labels: spec.labels,
+          datasets: [
+            {
+              label: spec.y,
+              data: spec.values,
+              backgroundColor: "#0f6e6b",
+              borderColor: "#0f6e6b",
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { title: { display: true, text: spec.x } },
+            y: { title: { display: true, text: spec.y }, beginAtZero: true },
+          },
+        },
+      });
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     mountEditors(document);
+    armAutosave(document);
     armCountdowns(document);
+    mountCharts(document);
   });
 
   document.body.addEventListener("htmx:afterSwap", function () {
     mountEditors(document);
+    armAutosave(document);
     armCountdowns(document);
+    mountCharts(document);
   });
 
   document.body.addEventListener("drill-summary", function (event) {
@@ -180,6 +263,16 @@
         button.disabled = false;
       });
   }
+
+  document.addEventListener("change", function (event) {
+    var select = event.target.closest("[data-notebook-target]");
+    if (!select) {
+      return;
+    }
+    document.querySelectorAll("[data-notebook-target-value]").forEach(function (input) {
+      input.value = select.value;
+    });
+  });
 
   document.addEventListener("click", function (event) {
     var button = event.target.closest("[data-export]");

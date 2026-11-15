@@ -1,0 +1,44 @@
+<section class="cell" id="cell-{{ cell.id }}" data-cell="{{ cell.id }}">
+  <form id="form-{{ cell.id }}">
+    <input type="hidden" name="target" value="{{ notebook.target }}" data-notebook-target-value>
+    <input type="hidden" name="form_id" value="form-{{ cell.id }}">
+    <input type="hidden" name="label" value="{{ notebook.id }}">
+    {% if cell.kind == "markdown" %}
+    <label for="source-{{ cell.id }}">Note</label>
+    <textarea id="source-{{ cell.id }}" name="source" rows="5" aria-label="Note" data-autosave="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}" placeholder="Write the supply review in your own words.">{{ cell.source }}</textarea>
+    {% if cell.html %}
+    <div class="prose">{{ cell.html }}</div>
+    {% endif %}
+    {% else %}
+    <label for="source-{{ cell.id }}">SQL</label>
+    <textarea id="source-{{ cell.id }}" name="source" data-editor rows="8" aria-label="SQL" data-autosave="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}">{{ cell.source }}</textarea>
+    <div class="chart-fields">
+      <div>
+        <label for="chart-type-{{ cell.id }}">Chart</label>
+        <select id="chart-type-{{ cell.id }}" name="chart_type" data-autosave="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}">
+          <option value="">None</option>
+          <option value="bar"{% if cell.chart and cell.chart.type == "bar" %} selected{% endif %}>Bar</option>
+          <option value="line"{% if cell.chart and cell.chart.type == "line" %} selected{% endif %}>Line</option>
+        </select>
+      </div>
+      <div>
+        <label for="chart-x-{{ cell.id }}">X column</label>
+        <input id="chart-x-{{ cell.id }}" name="chart_x" type="text" value="{{ cell.chart.x if cell.chart else '' }}" data-autosave="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}" aria-label="Chart x column">
+      </div>
+      <div>
+        <label for="chart-y-{{ cell.id }}">Y column</label>
+        <input id="chart-y-{{ cell.id }}" name="chart_y" type="text" value="{{ cell.chart.y if cell.chart else '' }}" data-autosave="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}" aria-label="Chart y column">
+      </div>
+    </div>
+    {% endif %}
+    <div class="actions">
+      {% if cell.kind == "sql" %}
+      <button type="button" data-run hx-post="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}/run" hx-include="#form-{{ cell.id }}" hx-target="#result-{{ cell.id }}">Run</button>
+      {% endif %}
+      <button type="button" hx-post="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}/move" hx-vals='{"direction":"up"}' hx-target="#cells" hx-swap="innerHTML">Move up</button>
+      <button type="button" hx-post="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}/move" hx-vals='{"direction":"down"}' hx-target="#cells" hx-swap="innerHTML">Move down</button>
+      <button type="button" hx-delete="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}" hx-target="closest .cell" hx-swap="outerHTML">Delete</button>
+    </div>
+  </form>
+  <div id="result-{{ cell.id }}">{{ cell.chart_html }}</div>
+</section>

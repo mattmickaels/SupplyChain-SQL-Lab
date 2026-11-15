@@ -24,6 +24,7 @@ from sclab.lessons.progress import ProgressStore
 from sclab.paths import progress_path
 from sclab.web import export as excel
 from sclab.web.cells import display_text, is_numeric_type
+from sclab.web.notebook_routes import register_notebook_routes
 
 _WEB_DIR = Path(__file__).resolve().parent
 _STATIC_DIR = _WEB_DIR.parent / "static"
@@ -321,6 +322,8 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         except Exception:
             return _plain_message(_UNEXPECTED)
         return HTMLResponse('<p class="banner">Practice database reset.</p>')
+
+    register_notebook_routes(app, render)
 
     @app.middleware("http")
     async def require_htmx_post(request: Request, call_next):

@@ -24,3 +24,9 @@ def sandbox_db_path() -> Path:
 
 def progress_path() -> Path:
     return data_dir() / "progress.json"
+
+
+def notebooks_dir() -> Path:
+    path = data_dir() / "notebooks"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
