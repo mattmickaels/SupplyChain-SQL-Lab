@@ -22,7 +22,7 @@
 {% set run = data.runs['explode'] %}
 {% if run.error %}
 <p class="message">{{ run.error }}</p>
-{% elif run.result.rows %}
+{% elif run.result.rows | length > 1 %}
 <div class="grid-wrap">
   <table class="grid">
     <thead>

@@ -1,7 +1,7 @@
 """BOM display (CS03) and where-used (CS15).
 
 CS03 lists one level at a time.
-Explode all runs one recursive query guarded by level < 10.
+Explode all and where-used share one depth limit, written into the SQL as a plain number.
 The root material is level 0, so a tool shows four levels: tool, module, subassembly, component.
 """
 
@@ -42,8 +42,9 @@ _CHILDREN = dedent(
     """
 ).strip()
 
-_EXPLODE = dedent(
-    """\
+_EXPLODE = (
+    dedent(
+        """\
     WITH RECURSIVE tree AS (
         SELECT
             CAST($1 AS VARCHAR) AS material_no,
@@ -58,7 +59,7 @@ _EXPLODE = dedent(
             CAST(t.level + 1 AS INTEGER)
         FROM tree AS t
         JOIN bom_item AS b ON b.parent_material_no = t.material_no
-        WHERE t.level < 10
+        WHERE t.level < {max_depth}
     )
     SELECT
         t.level AS level,
@@ -72,10 +73,14 @@ _EXPLODE = dedent(
     JOIN material AS m ON m.material_no = t.material_no
     ORDER BY t.path
     """
-).strip()
+    )
+    .strip()
+    .format(max_depth=_MAX_DEPTH)
+)
 
-_WHERE_USED = dedent(
-    """\
+_WHERE_USED = (
+    dedent(
+        """\
     WITH RECURSIVE used AS (
         SELECT
             b.parent_material_no AS material_no,
@@ -90,7 +95,7 @@ _WHERE_USED = dedent(
             u.path || ' / ' || b.parent_material_no
         FROM used AS u
         JOIN bom_item AS b ON b.component_material_no = u.material_no
-        WHERE u.level < 10
+        WHERE u.level < {max_depth}
     )
     SELECT
         u.level AS level,
@@ -102,7 +107,10 @@ _WHERE_USED = dedent(
     JOIN material AS m ON m.material_no = u.material_no
     ORDER BY u.level, u.material_no, u.path
     """
-).strip()
+    )
+    .strip()
+    .format(max_depth=_MAX_DEPTH)
+)
 
 
 def render_level(parent: str, path: str) -> dict[str, object]:
@@ -117,7 +125,7 @@ def render_level(parent: str, path: str) -> dict[str, object]:
     if segments.count(parent) > 1:
         return _level_payload(shown, "This BOM path repeats a material.", [], [])
     if len(segments) > _MAX_DEPTH:
-        return _level_payload(shown, "BOM expansion stops at level 10.", [], [])
+        return _level_payload(shown, f"BOM expansion stops at level {_MAX_DEPTH}.", [], [])
     try:
         exists = run_query(_EXISTS, params=[parent])
     except QueryError as exc:
