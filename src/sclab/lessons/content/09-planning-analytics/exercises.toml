@@ -113,6 +113,7 @@ Return one row per bucket, sorted by week_start, including weeks with nothing in
 Start from the RM01 stock on hand at the snapshot.
 Receipts are the outstanding quantity (ordered minus everything received) of PO lines that have a confirmed date.
 A confirmed date before the snapshot counts in the first bucket.
+Count only POs ordered on or before DATE '2026-11-01'.
 Demand is the quantity the production orders need, multiplied down every BOM path.
 Production demand follows the lesson rule: status Planned or Released, and planned_start after the snapshot.
 Leave out spare sales lines in this exercise.
@@ -198,6 +199,7 @@ title = "First shortage week"
 prompt_md = """
 Repeat the weekly balance for every long-lead material and every RF generator, at every plant.
 Use the same 26 weekly buckets, from DATE '2026-11-01' inclusive to DATE '2027-05-02' exclusive, and the same rules: RM01 stock, confirmed outstanding supply, production demand only.
+Count only POs ordered on or before the snapshot.
 Production demand follows the lesson rule: status Planned or Released, and planned_start after the snapshot.
 For each material and plant, find the first week whose end-of-week balance is below that plant's safety_stock.
 Long-lead means is_long_lead is true. An RF generator has a description that starts with RF generator,.
@@ -442,17 +444,14 @@ WITH outstanding AS (
     WHERE storage_location = 'RM01'
     GROUP BY material_no, plant_code
 ), supply_events AS (
-    SELECT material_no, plant_code, supply_date, qty
-    FROM (
-        SELECT s.material_no, s.plant_code, DATE '2026-11-01' AS supply_date, s.qty
-        FROM stock s JOIN material m ON m.material_no = s.material_no
-        WHERE m.description LIKE 'RF generator,%'
-        UNION ALL
-        SELECT o.material_no, o.plant_code,
-               GREATEST(o.confirmed_delivery_date, DATE '2026-11-01'), o.qty
-        FROM outstanding o JOIN material m ON m.material_no = o.material_no
-        WHERE m.description LIKE 'RF generator,%' AND o.confirmed_delivery_date IS NOT NULL
-    ) events
+    SELECT s.material_no, s.plant_code, DATE '2026-11-01' AS supply_date, s.qty
+    FROM stock s JOIN material m ON m.material_no = s.material_no
+    WHERE m.description LIKE 'RF generator,%'
+    UNION ALL
+    SELECT o.material_no, o.plant_code,
+           GREATEST(o.confirmed_delivery_date, DATE '2026-11-01'), o.qty
+    FROM outstanding o JOIN material m ON m.material_no = o.material_no
+    WHERE m.description LIKE 'RF generator,%' AND o.confirmed_delivery_date IS NOT NULL
 ), supply_ledger AS (
     SELECT material_no, plant_code, supply_date, day_qty,
            SUM(day_qty) OVER (PARTITION BY material_no, plant_code ORDER BY supply_date
@@ -487,6 +486,7 @@ A sales line can need several RF generators; use the largest delay, and count ea
 Skip a need that no confirmed supply ever covers; it needs a separate unconfirmed-supply review.
 Only sales lines with status Open, a TOOL in family ETC, and an order date on or before the snapshot count.
 Use the current confirmations, with no extra slip.
+Count only POs ordered on or before the snapshot.
 Return so_no, line_no, customer_name, promised_date, planned_start, days_at_risk, in that column order.
 Sort by so_no, then line_no.
 """
@@ -693,6 +693,7 @@ prompt_md = """
 Run the order-risk check twice side by side: as it stands (0 days) and with every confirmed date of supplier V-10017 pushed back by 28 days.
 Put 28 AS slip_days in a parameters CTE.
 Only outstanding V-10017 supply moves. Received quantities, other suppliers, stock and need stay as they are.
+Count only POs ordered on or before the snapshot.
 Use the same rules as the order-risk exercise: RF generators only, production rule Planned or Released after DATE '2026-11-01', Open ETC tool lines whose order date is on or before the snapshot.
 For each sales line return so_no, line_no, baseline_days, slipped_days.
 Each is the largest positive delay in days under that run, or 0 when the line is not late.
@@ -843,6 +844,7 @@ Use the same comparison as the previous step: slip_days of 28 for supplier V-100
 Return one row with baseline_at_risk, slipped_at_risk, additional_at_risk, in that column order.
 baseline_at_risk and slipped_at_risk count the sales lines that are late in each run.
 additional_at_risk counts the lines that are late only after the slip; it does not add up delay days.
+Only V-10017 (Corvane) confirmations slip; the dates of other suppliers do not move.
 The slip is a what-if on supplier dates; it does not say customer shipment dates move by the same number of days.
 """
 hints = [

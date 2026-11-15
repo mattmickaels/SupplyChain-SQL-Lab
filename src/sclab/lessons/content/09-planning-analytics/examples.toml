@@ -197,16 +197,19 @@ order_matters = true
 [[example]]
 id = "outstanding-line"
 sql = """
-SELECT i.po_no, i.line_no, i.order_qty - COALESCE(SUM(g.qty), 0) AS outstanding_qty
+SELECT i.po_no, i.line_no, h.plant_code, h.supplier_no,
+       i.order_qty - COALESCE(SUM(g.qty), 0) AS outstanding_qty
 FROM purchase_order_item i
+JOIN purchase_order h ON h.po_no = i.po_no
 LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
-WHERE i.po_no IN ('PO-0000003', 'PO-0007027') AND i.line_no = 1
-GROUP BY i.po_no, i.line_no, i.order_qty
+WHERE h.order_date <= DATE '2026-11-01'
+  AND i.po_no IN ('PO-0000003', 'PO-0007027') AND i.line_no = 1
+GROUP BY i.po_no, i.line_no, h.plant_code, h.supplier_no, i.order_qty
+HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
 ORDER BY i.po_no
 """
 expected_rows = [
-  ["PO-0000003", 1, 0],
-  ["PO-0007027", 1, 139]
+  ["PO-0007027", 1, "SC01", "V-10017", 139]
 ]
 order_matters = true
 

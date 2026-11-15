@@ -3620,3 +3620,91 @@ def test_staged_planning_data_quirk_mistakes_fail(
     assert wrong != reference
     outcome = check_answer(exercise, wrong, runner=_scenario_runner(rf_ledger_scenario))
     assert outcome.passed is False, f"{exercise_id}: the mistake {old!r} -> {new!r} still passes"
+
+
+# --- Lesson 9 fix round 1: the slip step needs a second supplier and real sales lines ---
+# Known limit of _non_equality_outer_reference: an unqualified outer column, or a subquery that
+# reuses an outer alias, is not caught (the parse tree does not say which table owns a bare name).
+
+
+@pytest.fixture
+def rf_slip_scenario():
+    """Two RF suppliers, stock, and four Open Etch lines with production orders."""
+    with duckdb.connect(":memory:") as connection:
+        create_all(connection)
+        connection.execute("""
+            INSERT INTO plant VALUES ('SC01', 'Test plant', 'Santa Clara', 'US');
+            INSERT INTO product_family VALUES ('ETC', 'Etch');
+            INSERT INTO customer VALUES ('C1', 'Test customer', 'Fab', 'US');
+            INSERT INTO material VALUES
+                ('TOOL1', 'Test tool', 'TOOL', 'ETC', 'EA', false, DATE '2021-11-01'),
+                ('M-001327', 'RF generator, test', 'COMPONENT', NULL, 'EA', false,
+                 DATE '2021-11-01');
+            INSERT INTO bom_item VALUES ('TOOL1', 'M-001327', 2);
+            INSERT INTO sales_order VALUES
+                ('SO1', 'C1', DATE '2026-09-01'), ('SO2', 'C1', DATE '2026-09-01'),
+                ('SO3', 'C1', DATE '2026-09-01'), ('SO4', 'C1', DATE '2026-09-01');
+            INSERT INTO sales_order_item VALUES
+                ('SO1', 1, 'TOOL1', 1, 100, DATE '2027-01-01', DATE '2027-01-01', 'Open', NULL),
+                ('SO2', 1, 'TOOL1', 2, 100, DATE '2027-01-01', DATE '2027-01-01', 'Open', NULL),
+                ('SO3', 1, 'TOOL1', 1, 100, DATE '2027-01-01', DATE '2027-01-01', 'Open', NULL),
+                ('SO4', 1, 'TOOL1', 1, 100, DATE '2027-03-01', DATE '2027-03-01', 'Open', NULL);
+            INSERT INTO production_order VALUES
+                ('PR1', 'TOOL1', 'SC01', NULL, 'SO1', 1, 1, DATE '2026-11-05',
+                 DATE '2026-12-05', NULL, 'Planned'),
+                ('PR3', 'TOOL1', 'SC01', NULL, 'SO3', 1, 1, DATE '2026-12-05',
+                 DATE '2027-01-05', NULL, 'Planned'),
+                ('PR2', 'TOOL1', 'SC01', NULL, 'SO2', 1, 2, DATE '2026-12-10',
+                 DATE '2027-01-10', NULL, 'Planned'),
+                ('PR4', 'TOOL1', 'SC01', NULL, 'SO4', 1, 1, DATE '2027-01-05',
+                 DATE '2027-02-05', NULL, 'Planned');
+            INSERT INTO inventory VALUES ('M-001327', 'SC01', 'RM01', 2);
+            INSERT INTO purchase_order VALUES
+                ('PO-C', 'V-10017', 'SC01', DATE '2026-09-01'),
+                ('PO-O', 'V-10099', 'SC01', DATE '2026-09-01');
+            INSERT INTO purchase_order_item VALUES
+                ('PO-C', 1, 'M-001327', 4, 'EA', 1, DATE '2026-12-01', DATE '2026-12-01'),
+                ('PO-O', 1, 'M-001327', 2, 'EA', 1, DATE '2026-11-10', DATE '2026-11-10');
+        """)
+        yield connection
+
+
+def test_slip_references_move_only_corvane_supply(rf_slip_scenario) -> None:
+    compare = _scenario_rows(rf_slip_scenario, "plan-corvane-line-compare")
+    assert compare == [("SO2", 1, 0, 19)]
+    counts = _scenario_rows(rf_slip_scenario, "plan-corvane-what-if")
+    assert counts == [(0, 1, 1)]
+
+
+_SLIP_STOCK = "DATE '2026-11-01' AS supply_date, s.qty"
+_SLIP_MISTAKES = (
+    ("plan-corvane-line-compare", "WHEN o.supplier_no = 'V-10017' THEN", "WHEN 1 = 1 THEN"),
+    ("plan-corvane-what-if", "WHEN o.supplier_no = 'V-10017' THEN", "WHEN 1 = 1 THEN"),
+    (
+        "plan-corvane-line-compare",
+        _SLIP_STOCK,
+        "DATE '2026-11-01' + sc.slip_days * INTERVAL 1 DAY AS supply_date, s.qty",
+    ),
+    (
+        "plan-corvane-what-if",
+        _SLIP_STOCK,
+        "DATE '2026-11-01' + sc.slip_days * INTERVAL 1 DAY AS supply_date, s.qty",
+    ),
+    ("plan-corvane-line-compare", "SELECT 0 AS slip_days", "SELECT 28 AS slip_days"),
+    ("plan-corvane-what-if", "SELECT 0 AS slip_days", "SELECT 28 AS slip_days"),
+)
+
+
+@pytest.mark.parametrize(
+    ("exercise_id", "old", "new"),
+    _SLIP_MISTAKES,
+    ids=[f"{item[0]}-{index}" for index, item in enumerate(_SLIP_MISTAKES)],
+)
+def test_slip_mistakes_fail_on_two_supplier_scenario(rf_slip_scenario, exercise_id, old, new):
+    exercise = next(item for item in _exercises() if item.id == exercise_id)
+    reference = exercise.reference_sql[0]
+    assert old in reference, f"{exercise_id}: reference no longer contains {old!r}"
+    wrong = reference.replace(old, new)
+    assert wrong != reference
+    outcome = check_answer(exercise, wrong, runner=_scenario_runner(rf_slip_scenario))
+    assert outcome.passed is False, f"{exercise_id}: the mistake {old!r} -> {new!r} still passes"

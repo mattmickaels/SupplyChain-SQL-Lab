@@ -125,6 +125,7 @@ Every tool needs RF generators somewhere deep in its bill of materials.
 Lesson 8 walked that bill with WITH RECURSIVE.
 Here the same walk starts from every tool at once, multiplies qty_per down each path, and keeps the root tool as a column.
 A component can sit under a tool by more than one path, so you add the quantities for each root and component.
+Keep that sum as a CTE called leaves: one row for each root tool and component, with the total quantity per tool.
 Etch tool M-000011 needs two RF generators of two kinds.
 
 ```sql
@@ -221,15 +222,23 @@ ORDER BY plant_code
 Supply from a purchase order line is the outstanding quantity.
 That is the ordered quantity minus the sum of all receipts on the same PO line.
 A line is identified by po_no and line_no together.
-PO-0000003 line 1 was fully received, so 0 is outstanding.
-PO-0007027 line 1 has nothing received yet, so all 139 are outstanding.
+The plant and the supplier live on the PO header, so join purchase_order.
+Count only POs ordered on or before the snapshot.
+HAVING keeps only the lines that still have something outstanding.
+PO-0000003 line 1 was fully received, so HAVING drops it.
+PO-0007027 line 1 has nothing received yet, so all 139 are outstanding, at plant SC01 from supplier V-10017.
+In the exercises this query is a CTE called outstanding.
 
 ```sql
-SELECT i.po_no, i.line_no, i.order_qty - COALESCE(SUM(g.qty), 0) AS outstanding_qty
+SELECT i.po_no, i.line_no, h.plant_code, h.supplier_no,
+       i.order_qty - COALESCE(SUM(g.qty), 0) AS outstanding_qty
 FROM purchase_order_item i
+JOIN purchase_order h ON h.po_no = i.po_no
 LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
-WHERE i.po_no IN ('PO-0000003', 'PO-0007027') AND i.line_no = 1
-GROUP BY i.po_no, i.line_no, i.order_qty
+WHERE h.order_date <= DATE '2026-11-01'
+  AND i.po_no IN ('PO-0000003', 'PO-0007027') AND i.line_no = 1
+GROUP BY i.po_no, i.line_no, h.plant_code, h.supplier_no, i.order_qty
+HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
 ORDER BY i.po_no
 ```
 
@@ -429,7 +438,6 @@ Boundary weeks keep the full weekly_slots.
 Only starts inside the date range count.
 That is a simple rule for this lab, not a finite-capacity schedule.
 Check yourself: does the calendar still return every week when production_order has no rows?
-Keep a separate sum of the positive weekly overload when you recommend which starts to move.
 Spare slots in one week cannot cancel an overload in another.
 
 ## Exercises
