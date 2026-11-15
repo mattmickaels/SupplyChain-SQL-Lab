@@ -138,7 +138,7 @@ def test_capped_result_executes_original_sql_once(monkeypatch) -> None:
         def close(self):
             connection.close()
 
-    monkeypatch.setattr(query, "_connect", lambda target: Connection())
+    monkeypatch.setattr(query, "_connect", lambda target, **kwargs: Connection())
     result = run_query(sql)
     assert executed == [sql]
     assert result.rows == [(number,) for number in range(MAX_ROWS)]
@@ -170,7 +170,7 @@ def test_timeout_covers_counting_buffered_rows(monkeypatch) -> None:
             pass
 
     connection = BufferedConnection()
-    monkeypatch.setattr(query, "_connect", lambda target: connection)
+    monkeypatch.setattr(query, "_connect", lambda target, **kwargs: connection)
     started = time.perf_counter()
     with pytest.raises(QueryError, match=_TIMEOUT_MESSAGE):
         run_query("SELECT range FROM range(1001)", max_rows=1, timeout_s=0.05)

@@ -1,4 +1,9 @@
 <div class="grid-wrap">
+  {% if export_form %}
+  <p class="actions">
+    <button type="button" data-export="{{ export_form }}">Download Excel</button>
+  </p>
+  {% endif %}
   <table class="grid">
     <thead>
       <tr>
@@ -13,7 +18,7 @@
       <tr>
         {% for value in row %}
         {% set type_name = types[loop.index0] if types and loop.index0 < (types|length) else '' %}
-        <td{% if type_name is numeric_type %} class="num"{% endif %}>{{ value | cell }}</td>
+        <td{% if type_name is numeric_type %} class="num"{% endif %}>{{ value | cell(type_name) }}</td>
         {% endfor %}
       </tr>
       {% endfor %}
