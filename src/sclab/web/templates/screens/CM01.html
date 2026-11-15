@@ -3,19 +3,12 @@
 {% set head = data.runs['header'] %}
 {% set load = data.runs['load'] %}
 {% set orders = data.runs['orders'] %}
-<style>
-  .cm01-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.4rem 1.2rem; padding: 0.7rem 0.9rem; background: var(--paper); border: 1px solid var(--line); border-radius: 0.5rem; }
-  .cm01-head dt { color: var(--muted); font-size: 0.85rem; }
-  .cm01-head dd { margin: 0; font-weight: 600; }
-  .cm01 td.num, .cm01 th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .cm01 tr.over td { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
-</style>
 {% if head.error %}
 <p class="message">{{ head.error }}</p>
 {% elif head.result.rows %}
 {% set h = head.result.rows[0] %}
 {% set hc = head.result.columns %}
-<dl class="cm01-head">
+<dl class="screen-head">
   <div><dt>Plant</dt><dd>{{ h[hc.index('plant_code')] }}, {{ h[hc.index('name')] }}</dd></div>
   <div><dt>Build bays</dt><dd>{{ h[hc.index('bays')] }}</dd></div>
   <div><dt>Slots a week</dt><dd>{{ h[hc.index('weekly_slots')] }}</dd></div>
@@ -26,35 +19,33 @@
 <h2>{{ load.query.title }}</h2>
 {% if load.error %}
 <p class="message">{{ load.error }}</p>
-{% else %}
-{% set c = load.result.columns %}
+{% elif grid %}
+<p class="muted">Each cell is starts/slots. A highlighted cell is over 100 percent.</p>
 <div class="grid-wrap">
   <table class="grid cm01">
     <thead>
       <tr>
         <th>Bay</th>
-        <th>Week of</th>
-        <th class="num">Starts</th>
-        <th class="num">Slots</th>
-        <th class="num">Load %</th>
-        <th>Flag</th>
+        {% for week in grid.weeks %}
+        <th>{{ week | cell('DATE') }}</th>
+        {% endfor %}
       </tr>
     </thead>
     <tbody>
-      {% for row in load.result.rows %}
-      {% set over = row[c.index('overloaded')] %}
-      <tr{% if over %} class="over"{% endif %}>
-        <td>{{ row[c.index('bay_id')] }}</td>
-        <td>{{ row[c.index('week_start')] | cell('DATE') }}</td>
-        <td class="num">{{ row[c.index('starts')] }}</td>
-        <td class="num">{{ row[c.index('weekly_slots')] }}</td>
-        <td class="num">{{ row[c.index('load_pct')] }}</td>
-        <td>{% if over %}OVER 100%{% endif %}</td>
+      {% for bay in grid.bays %}
+      <tr>
+        <td>{{ bay }}</td>
+        {% for week in grid.weeks %}
+        {% set item = grid.cells[bay ~ '|' ~ week.isoformat()] %}
+        <td class="num{% if item.over %} over{% endif %}">{{ item.text }}</td>
+        {% endfor %}
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+{% else %}
+<p class="empty">No bay load in the next {{ cm01_weeks }} weeks.</p>
 {% endif %}
 <h2>{{ orders.query.title }}</h2>
 {% if orders.error %}
@@ -67,7 +58,8 @@
     <thead>
       <tr>
         {% for name in columns %}
-        <th>{{ name }}</th>
+        {% set type_name = types[loop.index0] %}
+        <th{% if type_name is numeric_type %} class="num"{% endif %}>{{ name.replace('_', ' ') }}</th>
         {% endfor %}
       </tr>
     </thead>
@@ -76,12 +68,9 @@
       <tr>
         {% for value in row %}
         {% set column = columns[loop.index0] %}
-        <td>
-          {% if column == 'material_no' and value %}
-          <a class="drill" href="/screens/MM03?key={{ value | urlencode }}&amp;plant={{ data.key | urlencode }}">{{ value }}</a>
-          {% else %}
-          {{ value | cell(types[loop.index0]) }}
-          {% endif %}
+        {% set type_name = types[loop.index0] %}
+        <td{% if type_name is numeric_type %} class="num"{% endif %}>
+          {% include "screens/_drill.html" %}
         </td>
         {% endfor %}
       </tr>
@@ -90,6 +79,6 @@
   </table>
 </div>
 {% else %}
-<p class="empty">No bay has production starts in the next {{ h[hc.index('horizon_weeks')] }} weeks.</p>
+<p class="empty">No bay has production starts in the next {{ cm01_weeks }} weeks.</p>
 {% endif %}
 {% endblock %}

@@ -5,8 +5,7 @@ from fastapi.testclient import TestClient
 
 from sclab.data.story import CORVANE_SUPPLIER_NO, HALCYON_CUSTOMER_NO
 from sclab.engine.query import run_query
-from sclab.screens.documents import SCREENS
-from sclab.screens.framework import render_screen
+from sclab.screens.framework import get_screen, render_screen
 from sclab.web.app import create_app
 from tests.test_story import RISK_ROWS_SQL
 
@@ -14,13 +13,14 @@ _CODES = ("MM03", "XK03", "ME23N", "VA03")
 
 
 def test_four_screens_are_registered() -> None:
-    assert tuple(SCREENS) == _CODES
-    assert [screen.code for screen in SCREENS.values()] == list(_CODES)
-    assert SCREENS["MM03"].title == "Display Material"
-    assert SCREENS["XK03"].title == "Display Supplier"
-    assert SCREENS["ME23N"].title == "Display Purchase Order"
-    assert SCREENS["VA03"].title == "Display Sales Order"
-    assert SCREENS["MM03"].params == ("plant",)
+    import sclab.screens  # noqa: F401
+
+    assert get_screen("MM03").title == "Display Material"
+    assert get_screen("XK03").title == "Display Supplier"
+    assert get_screen("ME23N").title == "Display Purchase Order"
+    assert get_screen("VA03").title == "Display Sales Order"
+    assert get_screen("MM03").params == ("plant",)
+    assert get_screen("MD04").params == ("plant",)
 
 
 @pytest.fixture
@@ -264,3 +264,30 @@ def test_screens_index_lists_document_screens(client) -> None:
     for code in _CODES:
         assert code in text
     assert "MM03" not in client.get("/screens", params={"q": "VA03"}).text
+
+
+def test_supplier_with_no_recent_receipts_says_so(client) -> None:
+    page = client.get("/screens/XK03", params={"key": "V-10022"})
+    assert page.status_code == 200
+    assert "No receipts in the last 90 days." in page.text
+
+
+def test_header_uses_plain_labels(client) -> None:
+    po_no = run_query("SELECT po_no FROM purchase_order ORDER BY po_no LIMIT 1").rows[0][0]
+    page = client.get("/screens/ME23N", params={"key": po_no})
+    assert "PO number" in page.text
+    assert "Po Number" not in page.text
+    material, plant = run_query(
+        """
+        SELECT material_no, plant_code
+        FROM material_plant
+        ORDER BY material_no, plant_code
+        LIMIT 1
+        """
+    ).rows[0]
+    material_page = client.get("/screens/MM03", params={"key": material, "plant": plant})
+    assert "Base unit" in material_page.text
+    assert "Long lead" in material_page.text
+    assert "Enter a material." in client.get("/screens/MM03").text
+    assert 'class="screen-prompt"' in client.get("/screens/MM03").text
+    assert 'class="message"' not in client.get("/screens/MM03").text

@@ -38,7 +38,11 @@ Your progress is saved on your computer as you go, so you can stop and come back
 - Hints go from the idea, to the clause to use, to an outline of the query; the full solution unlocks after your first Check.
 - Use the Schema page whenever you need to know which table holds what.
 - Open Screens from the top of the page, or type a transaction code such as MM03 in the box and press Go.
-- The notebook is for exploring a question in steps. The sample notebook walks the supply story.
+- The notebook is for exploring a question in steps.
+- The sample notebook walks the supply story.
+- From a material screen you can open its BOM, where it is used, and its stock and requirements list.
+- The capacity screen is a grid, one row per bay and one column per week.
+- Delete a notebook with the button on its page.
 - Try anything you like in the Playground; Reset puts the practice database back.
 
 ## For developers

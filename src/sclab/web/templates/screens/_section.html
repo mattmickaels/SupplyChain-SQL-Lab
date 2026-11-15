@@ -8,7 +8,7 @@
   <dl class="doc-header">
     {% for column in run.result.columns %}
     <div>
-      <dt>{{ column.replace('_', ' ') }}</dt>
+      <dt>{{ column | header_label }}</dt>
       <dd>
         {% with value=run.result.rows[0][loop.index0], type_name=run.result.column_types[loop.index0], column=column, row=run.result.rows[0], columns=run.result.columns %}
         {% include "screens/_drill.html" %}

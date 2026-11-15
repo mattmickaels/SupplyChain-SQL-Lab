@@ -6,7 +6,6 @@ import math
 import re
 import secrets
 from decimal import Decimal
-from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
@@ -14,17 +13,15 @@ from markdown_it import MarkdownIt
 from markupsafe import Markup
 from starlette.concurrency import run_in_threadpool
 
-from sclab.engine.query import QueryError, run_query
-from sclab.engine.types import QueryResult
-from sclab.notebook.store import Cell, Notebook, NotebookStore
+from sclab.engine.query import QueryError, QueryResult, run_query
+from sclab.notebook.store import NOTEBOOK_ID, Cell, Notebook, NotebookStore
 from sclab.paths import notebooks_dir, sandbox_db_path
 from sclab.web import export as excel
 from sclab.web.cells import display_text
+from sclab.web.common import UNEXPECTED, form_fields, plain_message, result_note
 
 _MD = MarkdownIt("commonmark", {"html": False, "linkify": False})
-_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 _COLUMN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
-_UNEXPECTED = "Something went wrong. Try again."
 _MISSING = "That notebook is not in the lab."
 _SANDBOX_CHART = "Run this cell to create the practice database and draw the chart."
 
@@ -43,9 +40,9 @@ def register_notebook_routes(app: FastAPI, render) -> None:
     @app.post("/notebooks")
     async def notebooks_create(request: Request):
         async def work():
-            title = (await _form(request)).get("title", "")
+            title = (await form_fields(request)).get("title", "")
             notebook = await run_in_threadpool(lambda: _store().create(title))
-            response = _plain("Notebook created.")
+            response = plain_message("Notebook created.")
             response.headers["HX-Redirect"] = f"/notebooks/{notebook.id}"
             return response
 
@@ -67,9 +64,9 @@ def register_notebook_routes(app: FastAPI, render) -> None:
     @app.post("/notebooks/{notebook_id}/cells")
     async def notebook_add_cell(request: Request, notebook_id: str):
         async def work():
-            kind = (await _form(request)).get("kind", "")
+            kind = (await form_fields(request)).get("kind", "")
             if kind not in ("sql", "markdown"):
-                return _plain("Choose a SQL cell or a note.")
+                return plain_message("Choose a SQL cell or a note.")
 
             def add() -> Notebook:
                 def change(notebook: Notebook) -> None:
@@ -94,7 +91,7 @@ def register_notebook_routes(app: FastAPI, render) -> None:
     @app.post("/notebooks/{notebook_id}/cells/{cell_id}")
     async def notebook_edit_cell(request: Request, notebook_id: str, cell_id: str):
         async def work():
-            fields = await _form(request)
+            fields = await form_fields(request)
 
             def edit() -> None:
                 def change(notebook: Notebook) -> None:
@@ -110,7 +107,7 @@ def register_notebook_routes(app: FastAPI, render) -> None:
     @app.post("/notebooks/{notebook_id}/cells/{cell_id}/run")
     async def notebook_run_cell(request: Request, notebook_id: str, cell_id: str):
         async def work():
-            fields = await _form(request)
+            fields = await form_fields(request)
 
             found: dict[str, Notebook | Cell] = {}
 
@@ -127,9 +124,9 @@ def register_notebook_routes(app: FastAPI, render) -> None:
             notebook = found["notebook"]
             cell = found["cell"]
             if not isinstance(notebook, Notebook) or not isinstance(cell, Cell):
-                return _plain(_UNEXPECTED)
+                return plain_message(UNEXPECTED)
             if cell.kind != "sql":
-                return _plain("Notes do not run.")
+                return plain_message("Notes do not run.")
             posted = fields.get("target", "")
             target = posted if posted in ("lesson", "sandbox") else notebook.target
             try:
@@ -153,7 +150,7 @@ def register_notebook_routes(app: FastAPI, render) -> None:
                 {
                     "error": None,
                     "result": result,
-                    "note": _note(result),
+                    "note": result_note(result),
                     "export_form": excel.safe_form_id(f"form-{cell.id}"),
                     "chart_html": chart_html,
                 },
@@ -164,9 +161,9 @@ def register_notebook_routes(app: FastAPI, render) -> None:
     @app.post("/notebooks/{notebook_id}/cells/{cell_id}/move")
     async def notebook_move_cell(request: Request, notebook_id: str, cell_id: str):
         async def work():
-            direction = (await _form(request)).get("direction", "")
+            direction = (await form_fields(request)).get("direction", "")
             if direction not in ("up", "down"):
-                return _plain("Move up or down.")
+                return plain_message("Move up or down.")
 
             def move() -> Notebook:
                 def change(notebook: Notebook) -> None:
@@ -203,12 +200,22 @@ def register_notebook_routes(app: FastAPI, render) -> None:
 
         return await _call(work)
 
+    @app.delete("/notebooks/{notebook_id}")
+    async def notebook_delete(notebook_id: str):
+        async def work():
+            await run_in_threadpool(lambda: _store().delete(notebook_id))
+            response = plain_message("Notebook deleted.")
+            response.headers["HX-Redirect"] = "/notebooks"
+            return response
+
+        return await _call(work)
+
     @app.post("/notebooks/{notebook_id}/target")
     async def notebook_target(request: Request, notebook_id: str):
         async def work():
-            target = (await _form(request)).get("target", "")
+            target = (await form_fields(request)).get("target", "")
             if target not in ("lesson", "sandbox"):
-                return _plain("Choose the lesson database or the practice database.")
+                return plain_message("Choose the lesson database or the practice database.")
 
             def update() -> None:
                 def change(notebook: Notebook) -> None:
@@ -269,13 +276,7 @@ async def _call(work):
     except KeyError:
         raise HTTPException(status_code=404, detail=_MISSING) from None
     except Exception:
-        return _plain(_UNEXPECTED)
-
-
-async def _form(request: Request) -> dict[str, str]:
-    raw = (await request.body()).decode("utf-8")
-    parsed = parse_qs(raw, keep_blank_values=True)
-    return {key: values[0] for key, values in parsed.items() if values}
+        return plain_message(UNEXPECTED)
 
 
 def _find(notebook: Notebook, cell_id: str) -> Cell:
@@ -283,7 +284,7 @@ def _find(notebook: Notebook, cell_id: str) -> Cell:
 
 
 def _index(notebook: Notebook, cell_id: str) -> int:
-    if not _ID.fullmatch(cell_id):
+    if not NOTEBOOK_ID.fullmatch(cell_id):
         raise KeyError(cell_id)
     for index, cell in enumerate(notebook.cells):
         if cell.id == cell_id:
@@ -390,14 +391,3 @@ def _json_value(value: object) -> object:
         return float(value)
     text = display_text("", value)
     return text if text is not None else str(value)
-
-
-def _note(result: QueryResult) -> str:
-    if result.truncated:
-        return f"Showing {len(result.rows):,} of {result.total_rows:,} rows."
-    noun = "row" if result.total_rows == 1 else "rows"
-    return f"{result.total_rows:,} {noun}."
-
-
-def _plain(text: str, status_code: int = 200) -> HTMLResponse:
-    return HTMLResponse(f'<p class="message">{html.escape(text)}</p>', status_code=status_code)

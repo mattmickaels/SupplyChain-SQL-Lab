@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from math import isinf, isnan
+from textwrap import dedent
 
 import duckdb
 
@@ -141,7 +142,7 @@ def _params_for(sql: str, values: Sequence[object]) -> list[object]:
 
 def _run(query: ScreenQuery, values: Sequence[object]) -> QueryRun:
     params = _params_for(query.sql, values)
-    display = inline_params(query.sql, params)
+    display = dedent(inline_params(query.sql, params)).strip()
     try:
         return QueryRun(query, run_query(query.sql, params=params), None, display)
     except QueryError as exc:

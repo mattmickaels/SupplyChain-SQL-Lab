@@ -205,6 +205,10 @@
       } catch (error) {
         return;
       }
+      var style = getComputedStyle(document.documentElement);
+      var accent = style.getPropertyValue("--accent").trim();
+      var ink = style.getPropertyValue("--ink").trim();
+      var line = style.getPropertyValue("--line").trim();
       canvas._sclabChart = new Chart(canvas, {
         type: spec.type,
         data: {
@@ -213,8 +217,8 @@
             {
               label: spec.y,
               data: spec.values,
-              backgroundColor: "#0f6e6b",
-              borderColor: "#0f6e6b",
+              backgroundColor: accent,
+              borderColor: accent,
             },
           ],
         },
@@ -222,8 +226,17 @@
           responsive: true,
           plugins: { legend: { display: false } },
           scales: {
-            x: { title: { display: true, text: spec.x } },
-            y: { title: { display: true, text: spec.y }, beginAtZero: true },
+            x: {
+              title: { display: true, text: spec.x, color: ink },
+              ticks: { color: ink },
+              grid: { color: line },
+            },
+            y: {
+              title: { display: true, text: spec.y, color: ink },
+              ticks: { color: ink },
+              grid: { color: line },
+              beginAtZero: true,
+            },
           },
         },
       });
@@ -237,12 +250,35 @@
     mountCharts(document);
   });
 
-  document.body.addEventListener("htmx:afterSwap", function () {
+  document.body.addEventListener("htmx:afterSwap", function (event) {
     restoreResults();
     mountEditors(document);
     armAutosave(document);
     armCountdowns(document);
     mountCharts(document);
+    var target = event.detail && event.detail.target;
+    if (!target || !target.id || target.id.indexOf("bom-") !== 0) {
+      return;
+    }
+    var row = target.parentElement ? target.parentElement.querySelector(".bom-row .bom-expand") : null;
+    if (row && target.textContent && target.textContent.trim()) {
+      row.textContent = "Collapse";
+      row.setAttribute("aria-expanded", "true");
+    }
+  });
+
+  document.addEventListener("click", function (event) {
+    var button = event.target && event.target.closest ? event.target.closest(".bom-expand") : null;
+    if (!button || button.getAttribute("aria-expanded") !== "true") {
+      return;
+    }
+    var panelId = button.getAttribute("aria-controls");
+    var panel = panelId ? document.getElementById(panelId) : null;
+    if (panel) {
+      panel.replaceChildren();
+    }
+    button.textContent = "Expand";
+    button.setAttribute("aria-expanded", "false");
   });
 
   document.body.addEventListener("htmx:responseError", function () {

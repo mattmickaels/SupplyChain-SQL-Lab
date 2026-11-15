@@ -15,6 +15,21 @@ from pathlib import Path
 from typing import Literal
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+NOTEBOOK_ID = _ID
+_MONTHS = (
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+)
 _SAMPLE_PATH = Path(__file__).resolve().parent / "samples" / "corvane-supply-review.json"
 _SAMPLE_ID = "corvane-supply-review"
 _MARKER = ".sample-copied"
@@ -34,6 +49,21 @@ def _lock_for(path: Path) -> threading.RLock:
 
 def _timestamp() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def format_updated(value: str) -> str:
+    """Show a stored timestamp as '1 Nov 2026 00:00' without shifting its clock."""
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        stamped = datetime.fromisoformat(text)
+    except ValueError:
+        return value
+    return (
+        f"{stamped.day} {_MONTHS[stamped.month - 1]} {stamped.year} "
+        f"{stamped.hour:02d}:{stamped.minute:02d}"
+    )
 
 
 @dataclass

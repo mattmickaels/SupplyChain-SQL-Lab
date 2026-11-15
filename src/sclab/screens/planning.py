@@ -7,13 +7,13 @@ snapshot with an outstanding quantity, and every number comes from the tables.
 
 from datetime import timedelta
 
-from sclab.constants import AS_OF_DATE
+from sclab.constants import AS_OF_DATE, AS_OF_SQL
 from sclab.screens.framework import Screen, ScreenQuery, register
 
 MD04_WEEKS = 52
 CM01_WEEKS = 26
 
-_AS_OF = f"DATE '{AS_OF_DATE.isoformat()}'"
+_AS_OF = AS_OF_SQL
 _MD04_END = f"DATE '{(AS_OF_DATE + timedelta(weeks=MD04_WEEKS)).isoformat()}'"
 _CM01_LAST_LEVEL = CM01_WEEKS - 1
 # The first CM01 week is the Monday on or after AS_OF_DATE + 1 day (the first day after the
@@ -22,12 +22,16 @@ _CM01_LAST_LEVEL = CM01_WEEKS - 1
 MD04_HEADER_SQL = f"""
 SELECT m.material_no, m.description, p.plant_code, p.safety_stock, {MD04_WEEKS} AS horizon_weeks,
        p.planned_lead_time_days AS lead_time_days,
-       src.names || CASE WHEN src.suppliers = 1 THEN ' (sole)' ELSE '' END AS sources
+       src.names || CASE
+           WHEN src.suppliers IS NULL THEN ''
+           WHEN src.suppliers = 1 THEN ' (sole)'
+           ELSE ' (' || src.suppliers || ' suppliers)'
+       END AS sources
 FROM material m
 JOIN material_plant p ON p.material_no = m.material_no
 LEFT JOIN (
     SELECT q.material_no, COUNT(*) AS suppliers,
-           string_agg(s.name, ', ' ORDER BY q.is_primary DESC, s.name) AS names
+           COALESCE(MAX(CASE WHEN q.is_primary THEN s.name END), MIN(s.name)) AS names
     FROM material_supplier q JOIN supplier s ON s.supplier_no = q.supplier_no
     GROUP BY q.material_no
 ) src ON src.material_no = m.material_no
@@ -172,6 +176,46 @@ ORDER BY g.bay_id, g.week_start, p.planned_start, p.prod_order_no
 """
 )
 
+MD04_OMITTED_SQL = f"""
+WITH RECURSIVE up AS (
+    SELECT material_no, material_type, family_code, 0 AS depth
+    FROM material
+    WHERE material_no = $1
+    UNION ALL
+    SELECT p.material_no, p.material_type, p.family_code, up.depth + 1
+    FROM up
+    JOIN bom_item b ON b.component_material_no = up.material_no
+    JOIN material p ON p.material_no = b.parent_material_no
+    WHERE up.depth < 4 AND up.material_type <> 'TOOL'
+),
+spare_plant AS (
+    SELECT MIN(CASE family_code WHEN 'ETC' THEN 'SC01' WHEN 'CMP' THEN 'SG01'
+                                ELSE 'AU01' END) AS plant_code
+    FROM up
+    WHERE material_type = 'TOOL'
+),
+open_unconfirmed AS (
+    SELECT i.po_no, i.line_no
+    FROM purchase_order_item i
+    JOIN purchase_order h ON h.po_no = i.po_no
+    LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
+    WHERE i.material_no = $1 AND h.plant_code = $2
+      AND h.order_date <= {_AS_OF}
+      AND i.confirmed_delivery_date IS NULL
+    GROUP BY i.po_no, i.line_no, i.order_qty
+    HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
+),
+past_spare AS (
+    SELECT s.so_no, s.line_no
+    FROM sales_order_item s
+    JOIN spare_plant sp ON sp.plant_code = $2
+    WHERE s.material_no = $1 AND s.status = 'Open' AND s.promised_date <= {_AS_OF}
+)
+SELECT u.unconfirmed_po_lines, s.past_spare_lines
+FROM (SELECT COUNT(*) AS unconfirmed_po_lines FROM open_unconfirmed) u
+CROSS JOIN (SELECT COUNT(*) AS past_spare_lines FROM past_spare) s
+"""
+
 MD04 = Screen(
     code="MD04",
     title="Stock / Requirements List",
@@ -180,10 +224,11 @@ MD04 = Screen(
     queries=(
         ScreenQuery("header", "Material and plant", MD04_HEADER_SQL),
         ScreenQuery("list", "Stock and requirements", MD04_LIST_SQL),
+        ScreenQuery("omitted", "Lines left out of the list", MD04_OMITTED_SQL),
     ),
     exists_sql="SELECT count(*) FROM material_plant WHERE material_no = $1 AND plant_code = $2",
     not_found="Material {key} was not found in this plant.",
-    params=("plant_code",),
+    params=("plant",),
 )
 
 CM01 = Screen(
@@ -202,3 +247,25 @@ CM01 = Screen(
 
 register(MD04)
 register(CM01)
+
+
+def capacity_grid(run) -> dict | None:
+    """One row per bay and one column per week, for the CM01 page."""
+    if run is None or run.error or run.result is None or not run.result.rows:
+        return None
+    columns = {name: index for index, name in enumerate(run.result.columns)}
+    weeks: list = []
+    bays: list = []
+    cells: dict = {}
+    for row in run.result.rows:
+        bay = row[columns["bay_id"]]
+        week = row[columns["week_start"]]
+        if bay not in bays:
+            bays.append(bay)
+        if week not in weeks:
+            weeks.append(week)
+        cells[f"{bay}|{week.isoformat() if hasattr(week, 'isoformat') else week}"] = {
+            "text": f"{row[columns['starts']]}/{row[columns['weekly_slots']]}",
+            "over": bool(row[columns["overloaded"]]),
+        }
+    return {"bays": bays, "weeks": weeks, "cells": cells}

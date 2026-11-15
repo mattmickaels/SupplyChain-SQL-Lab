@@ -1,35 +1,21 @@
 """Material, supplier, purchase order and sales order display screens."""
 
-from sclab.constants import AS_OF_DATE, ON_TIME_WINDOW_START
-from sclab.screens.framework import Screen, ScreenQuery, register
+from textwrap import dedent
 
-_AS_OF = f"DATE '{AS_OF_DATE.isoformat()}'"
+from sclab.constants import AS_OF_SQL, ON_TIME_WINDOW_START
+from sclab.screens.framework import Screen, ScreenQuery, register
+from sclab.screens.plants import link_plant_join
+
 _WINDOW_START = f"DATE '{ON_TIME_WINDOW_START.isoformat()}'"
 
 
-def _screen(
-    *,
-    code: str,
-    title: str,
-    key_label: str,
-    queries: tuple[ScreenQuery, ...],
-    exists_sql: str,
-    not_found: str,
-    summary: str,
-    params: tuple[str, ...] = (),
-) -> Screen:
-    screen = Screen(
-        code=code,
-        title=title,
-        key_label=key_label,
-        queries=queries,
-        exists_sql=exists_sql,
-        not_found=not_found,
-        params=params,
-        summary=summary,
-    )
-    register(screen)
-    return screen
+def _query(name: str, title: str, sql: str) -> ScreenQuery:
+    return ScreenQuery(name, title, dedent(sql).strip())
+
+
+def _with_link(sql: str, material_sql: str) -> str:
+    body = dedent(sql).strip()
+    return body.replace("/*__LINK__*/", link_plant_join(material_sql).strip())
 
 
 # Lesson 5 uses this window: 2025 Q1 through 2026 Q4, receipts before the lab as-of date.
@@ -49,7 +35,7 @@ JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
 JOIN purchase_order AS h ON h.po_no = g.po_no
 WHERE h.supplier_no = $1
   AND g.receipt_date >= {_WINDOW_START}
-  AND g.receipt_date < {_AS_OF}
+  AND g.receipt_date < {AS_OF_SQL}
 GROUP BY CAST(date_trunc('quarter', g.receipt_date) AS DATE),
          EXTRACT(YEAR FROM g.receipt_date),
          EXTRACT(QUARTER FROM g.receipt_date)
@@ -68,8 +54,9 @@ FROM goods_receipt AS g
 JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
 JOIN purchase_order AS h ON h.po_no = g.po_no
 WHERE h.supplier_no = $1
-  AND g.receipt_date >= {_AS_OF} - INTERVAL 90 DAY
-  AND g.receipt_date < {_AS_OF}
+  AND g.receipt_date >= {AS_OF_SQL} - INTERVAL 90 DAY
+  AND g.receipt_date < {AS_OF_SQL}
+HAVING COUNT(*) > 0
 """
 
 _OPEN_PO = """
@@ -92,25 +79,13 @@ WHERE {where_sql}
 ORDER BY h.po_no, i.line_no
 """
 
-_USED_PLANT = """
-LEFT JOIN (
-    SELECT material_no,
-           COALESCE(
-               MIN(CASE WHEN safety_stock > 0 THEN plant_code END),
-               MIN(plant_code)
-           ) AS plant_code
-    FROM material_plant
-    GROUP BY material_no
-) AS used ON used.material_no = {material_sql}
-"""
-
 
 def _open_po(where_sql: str) -> str:
-    return _OPEN_PO.format(where_sql=where_sql, as_of=_AS_OF)
+    return dedent(_OPEN_PO.format(where_sql=where_sql, as_of=AS_OF_SQL)).strip()
 
 
-SCREENS = {
-    "MM03": _screen(
+register(
+    Screen(
         code="MM03",
         title="Display Material",
         summary="Material master, plant data, stock, and open orders.",
@@ -119,7 +94,7 @@ SCREENS = {
         exists_sql="SELECT COUNT(*) FROM material WHERE material_no = $1",
         not_found="Material {key} was not found.",
         queries=(
-            ScreenQuery(
+            _query(
                 "general",
                 "General data",
                 """
@@ -129,7 +104,7 @@ SCREENS = {
                 WHERE material_no = $1
                 """,
             ),
-            ScreenQuery(
+            _query(
                 "plant",
                 "Plant data",
                 """
@@ -140,7 +115,7 @@ SCREENS = {
                 WHERE mp.material_no = $1 AND mp.plant_code = $2
                 """,
             ),
-            ScreenQuery(
+            _query(
                 "stock",
                 "Stock by location",
                 """
@@ -150,7 +125,7 @@ SCREENS = {
                 ORDER BY storage_location
                 """,
             ),
-            ScreenQuery(
+            _query(
                 "sources",
                 "Sources",
                 """
@@ -167,7 +142,7 @@ SCREENS = {
                 "Open purchase order lines",
                 _open_po("i.material_no = $1 AND h.plant_code = $2"),
             ),
-            ScreenQuery(
+            _query(
                 "open_so",
                 "Open sales lines",
                 """
@@ -180,8 +155,11 @@ SCREENS = {
                 """,
             ),
         ),
-    ),
-    "XK03": _screen(
+    )
+)
+
+register(
+    Screen(
         code="XK03",
         title="Display Supplier",
         summary="Supplier master, lead times, and on-time history.",
@@ -189,7 +167,7 @@ SCREENS = {
         exists_sql="SELECT COUNT(*) FROM supplier WHERE supplier_no = $1",
         not_found="Supplier {key} was not found.",
         queries=(
-            ScreenQuery(
+            _query(
                 "header",
                 "Supplier",
                 """
@@ -198,45 +176,50 @@ SCREENS = {
                 WHERE supplier_no = $1
                 """,
             ),
-            ScreenQuery(
+            _query(
                 "materials",
                 "Materials supplied",
-                """
-                SELECT ms.material_no, m.description, used.plant_code,
-                       ms.quoted_lead_time_days, ms.unit_price, ms.is_primary
-                FROM material_supplier AS ms
-                JOIN material AS m ON m.material_no = ms.material_no
-                """
-                + _USED_PLANT.format(material_sql="ms.material_no")
-                + """
-                WHERE ms.supplier_no = $1
-                ORDER BY ms.material_no
-                """,
+                _with_link(
+                    """
+                    SELECT ms.material_no, m.description, link_plant.plant_code,
+                           ms.quoted_lead_time_days, ms.unit_price, ms.is_primary
+                    FROM material_supplier AS ms
+                    JOIN material AS m ON m.material_no = ms.material_no
+                    /*__LINK__*/
+                    WHERE ms.supplier_no = $1
+                    ORDER BY ms.material_no
+                    """,
+                    "ms.material_no",
+                ),
             ),
-            ScreenQuery("on_time", "On-time rate by quarter", _ON_TIME),
-            ScreenQuery("on_time_90", "On-time rate, last 90 days", _ON_TIME_90),
+            ScreenQuery("on_time", "On-time rate by quarter", dedent(_ON_TIME).strip()),
+            ScreenQuery("on_time_90", "On-time rate, last 90 days", dedent(_ON_TIME_90).strip()),
             ScreenQuery(
                 "open_po",
                 "Open purchase order lines",
                 _open_po("h.supplier_no = $1"),
             ),
-            ScreenQuery(
+            _query(
                 "quality",
                 "Quality notifications",
-                """
-                SELECT n.notif_no, n.material_no, used.plant_code, n.po_no, n.created_on,
-                       n.defect_code, n.qty_affected
-                FROM quality_notification AS n
-                """
-                + _USED_PLANT.format(material_sql="n.material_no")
-                + """
-                WHERE n.supplier_no = $1
-                ORDER BY n.created_on, n.notif_no
-                """,
+                _with_link(
+                    """
+                    SELECT n.notif_no, n.material_no, link_plant.plant_code, n.po_no, n.created_on,
+                           n.defect_code, n.qty_affected
+                    FROM quality_notification AS n
+                    /*__LINK__*/
+                    WHERE n.supplier_no = $1
+                    ORDER BY n.created_on, n.notif_no
+                    """,
+                    "n.material_no",
+                ),
             ),
         ),
-    ),
-    "ME23N": _screen(
+    )
+)
+
+register(
+    Screen(
         code="ME23N",
         title="Display Purchase Order",
         summary="Purchase order header, lines, and goods receipts.",
@@ -244,7 +227,7 @@ SCREENS = {
         exists_sql="SELECT COUNT(*) FROM purchase_order WHERE po_no = $1",
         not_found="Purchase order {key} was not found.",
         queries=(
-            ScreenQuery(
+            _query(
                 "header",
                 "Purchase order",
                 """
@@ -256,7 +239,7 @@ SCREENS = {
                 WHERE h.po_no = $1
                 """,
             ),
-            ScreenQuery(
+            _query(
                 "items",
                 "Items",
                 """
@@ -278,7 +261,7 @@ SCREENS = {
                 ORDER BY i.line_no
                 """,
             ),
-            ScreenQuery(
+            _query(
                 "receipts",
                 "Goods receipts",
                 """
@@ -292,8 +275,11 @@ SCREENS = {
                 """,
             ),
         ),
-    ),
-    "VA03": _screen(
+    )
+)
+
+register(
+    Screen(
         code="VA03",
         title="Display Sales Order",
         summary="Sales order header and lines.",
@@ -301,7 +287,7 @@ SCREENS = {
         exists_sql="SELECT COUNT(*) FROM sales_order WHERE so_no = $1",
         not_found="Sales order {key} was not found.",
         queries=(
-            ScreenQuery(
+            _query(
                 "header",
                 "Sales order",
                 """
@@ -311,24 +297,27 @@ SCREENS = {
                 WHERE h.so_no = $1
                 """,
             ),
-            ScreenQuery(
+            _query(
                 "items",
                 "Items",
-                """
-                SELECT i.line_no, i.material_no, m.description, i.qty, i.requested_date,
-                       i.promised_date, i.status, i.shipped_date, p.prod_order_no,
-                       COALESCE(p.plant_code, used.plant_code) AS plant_code
-                FROM sales_order_item AS i
-                JOIN material AS m ON m.material_no = i.material_no
-                LEFT JOIN production_order AS p
-                  ON p.so_no = i.so_no AND p.so_line_no = i.line_no
-                """
-                + _USED_PLANT.format(material_sql="i.material_no")
-                + """
-                WHERE i.so_no = $1
-                ORDER BY i.line_no, p.prod_order_no
-                """,
+                _with_link(
+                    """
+                    SELECT i.line_no, i.material_no, m.description, i.qty, i.requested_date,
+                           i.promised_date, i.status, i.shipped_date, p.prod_order_no,
+                           COALESCE(
+                               p.plant_code, link_plant.spare_plant, link_plant.plant_code
+                           ) AS plant_code
+                    FROM sales_order_item AS i
+                    JOIN material AS m ON m.material_no = i.material_no
+                    LEFT JOIN production_order AS p
+                      ON p.so_no = i.so_no AND p.so_line_no = i.line_no
+                    /*__LINK__*/
+                    WHERE i.so_no = $1
+                    ORDER BY i.line_no, p.prod_order_no
+                    """,
+                    "i.material_no",
+                ),
             ),
         ),
-    ),
-}
+    )
+)

@@ -510,7 +510,7 @@ def test_cli_shows_build_progress(lab_home, capsys, monkeypatch) -> None:
 
     monkeypatch.setattr("sclab.cli.webbrowser.open", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("sclab.cli.uvicorn.run", listen_until_connected)
-    main()
+    main([])
     captured = capsys.readouterr()
     assert "Building the lab database (first run only)..." in captured.out + captured.err
 

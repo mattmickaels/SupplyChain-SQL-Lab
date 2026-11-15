@@ -2,21 +2,19 @@
 {% block screen_body %}
 {% set head = data.runs['header'] %}
 {% set list = data.runs['list'] %}
-<style>
-  .md04-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.4rem 1.2rem; padding: 0.7rem 0.9rem; background: var(--paper); border: 1px solid var(--line); border-radius: 0.5rem; }
-  .md04-head dt { color: var(--muted); font-size: 0.85rem; }
-  .md04-head dd { margin: 0; font-weight: 600; }
-  .md04 td.num, .md04 th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .md04 tr.flag-shortage td { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
-  .md04 tr.flag-safety td { background: var(--null-bg); }
-  .md04 tr.row-stock td { font-weight: 600; }
-</style>
+{% set omitted = data.runs['omitted'] %}
+{% set plant = request.query_params.get('plant', '') %}
+<p class="actions">
+  <a href="/screens/MM03?key={{ data.key | urlencode }}&amp;plant={{ plant | urlencode }}">Material</a>
+  <a href="/screens/CS15?key={{ data.key | urlencode }}">Where used</a>
+  <a href="/screens/CM01?key={{ plant | urlencode }}">Capacity</a>
+</p>
 {% if head.error %}
 <p class="message">{{ head.error }}</p>
 {% elif head.result.rows %}
 {% set h = head.result.rows[0] %}
 {% set hc = head.result.columns %}
-<dl class="md04-head">
+<dl class="screen-head">
   <div><dt>Material</dt><dd><a class="drill" href="/screens/MM03?key={{ h[hc.index('material_no')] | urlencode }}&amp;plant={{ h[hc.index('plant_code')] | urlencode }}">{{ h[hc.index('material_no')] }}</a></dd></div>
   <div><dt>Description</dt><dd>{{ h[hc.index('description')] }}</dd></div>
   <div><dt>Plant</dt><dd>{{ h[hc.index('plant_code')] }}</dd></div>
@@ -71,7 +69,14 @@
   </table>
 </div>
 {% if list.result.rows | length == 1 %}
-<p class="empty">No open requirements or receipts in the next {{ h[hc.index('horizon_weeks')] }} weeks.</p>
+<p class="empty">No open requirements or receipts in the next {{ md04_weeks }} weeks.</p>
 {% endif %}
+{% endif %}
+{% if omitted and not omitted.error and omitted.result and omitted.result.rows %}
+{% set left = omitted.result.rows[0] %}
+{% set names = omitted.result.columns %}
+<p class="muted">Open PO lines without a confirmed date ({{ left[names.index('unconfirmed_po_lines')] }}) and open spare lines already past their promised date ({{ left[names.index('past_spare_lines')] }}) are left out, as in lesson 9.</p>
+{% else %}
+<p class="muted">Open PO lines without a confirmed date and open spare lines already past their promised date are left out, as in lesson 9.</p>
 {% endif %}
 {% endblock %}

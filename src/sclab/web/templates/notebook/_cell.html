@@ -3,6 +3,7 @@
     <input type="hidden" name="target" value="{{ notebook.target }}" data-notebook-target-value>
     <input type="hidden" name="form_id" value="form-{{ cell.id }}">
     <input type="hidden" name="label" value="{{ notebook.id }}">
+    <input type="hidden" name="return_to" value="/notebooks/{{ notebook.id }}">
     {% if cell.kind == "markdown" %}
     <label for="source-{{ cell.id }}">Note</label>
     <textarea id="source-{{ cell.id }}" name="source" rows="5" aria-label="Note" data-autosave="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}" placeholder="Write the supply review in your own words.">{{ cell.source }}</textarea>
@@ -11,7 +12,7 @@
     {% endif %}
     {% else %}
     <label for="source-{{ cell.id }}">SQL</label>
-    <textarea id="source-{{ cell.id }}" name="source" data-editor rows="8" aria-label="SQL" data-autosave="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}">{{ cell.source }}</textarea>
+    <textarea id="source-{{ cell.id }}" name="source" data-editor hidden rows="8" aria-label="SQL" data-autosave="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}">{{ cell.source }}</textarea>
     <div class="chart-fields">
       <div>
         <label for="chart-type-{{ cell.id }}">Chart</label>

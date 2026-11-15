@@ -10,14 +10,17 @@
       {% if row[5] and not capped %}
       {% set next_path = path ~ '/' ~ row[0] %}
       <button type="button" class="bom-expand"
+        aria-expanded="false"
+        aria-controls="bom-{{ node_id }}"
         hx-get="/screens/CS03/level?parent={{ row[0] | urlencode }}&amp;path={{ next_path | urlencode }}"
+        hx-trigger="click[this.getAttribute('aria-expanded')!='true']"
         hx-target="#bom-{{ node_id }}"
         hx-swap="innerHTML">Expand</button>
       {% endif %}
       <span class="mono">{% with number=row[0] %}{% include "screens/_material.html" %}{% endwith %}</span>
       <span>{{ row[1] }}</span>
       <span class="muted">{{ row[3] }}</span>
-      <span class="num">{{ row[2] | cell(types[2]) }}</span>
+      <span class="num">{{ row[2] | qty(types[2]) }}</span>
       {% if row[4] %}<span class="badge">Long lead</span>{% endif %}
     </div>
     {% if row[5] and not capped %}

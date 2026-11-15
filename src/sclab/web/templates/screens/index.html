@@ -9,7 +9,7 @@
   <button type="submit">Search</button>
 </form>
 {% if screens %}
-<ul class="schema-list">
+<ul class="schema-list screen-list">
   {% for item in screens %}
   <li><a href="/screens/{{ item.code }}">{{ item.code }}</a> <span>{{ item.title }}</span></li>
   {% endfor %}

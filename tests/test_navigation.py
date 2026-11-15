@@ -114,11 +114,16 @@ def test_lesson_pages_link_screens_and_sap_views(client) -> None:
     assert 'href="/screens/ME23N?key=PO-0043687"' in joins.text
     assert 'href="/screens/MM03?key=M-001501&amp;plant=AU01"' in joins.text
     bom = client.get("/lessons/08-bom-explosion")
-    assert 'href="/screens/CS03?key=M-000011"' in bom.text
+    assert 'href="/screens/CS03?key=M-000011&amp;view=explode"' in bom.text
     assert 'href="/screens/CS15?key=M-001321"' in bom.text
     planning = client.get("/lessons/09-planning-analytics")
-    assert "MD04?key=M-001324" in planning.text
-    assert "plant_code=SC01" in planning.text
+    match = re.search(r'href="(/screens/MD04\?[^"]+)"', planning.text)
+    assert match is not None
+    linked = client.get(match.group(1).replace("&amp;", "&"))
+    assert linked.status_code == 200
+    assert "SHORTAGE" in linked.text
+    assert "plant=" in match.group(1)
+    assert "plant_code=" not in match.group(1)
     assert 'href="/screens/CM01?key=SC01"' in planning.text
     for lesson_id, expected in _SAP_LINKS.items():
         page = client.get(f"/lessons/{lesson_id}")
@@ -138,9 +143,11 @@ def test_schema_view_page_lists_the_base_table(client) -> None:
 
 
 def test_bom_material_link_uses_first_plant_or_plain_text(client) -> None:
+    from sclab.screens.plants import link_plants
+
     linked = run_query(
         """
-        SELECT b.parent_material_no, b.component_material_no, MIN(p.plant_code) AS plant_code
+        SELECT b.parent_material_no, b.component_material_no
         FROM bom_item AS b
         JOIN material_plant AS p ON p.material_no = b.component_material_no
         GROUP BY b.parent_material_no, b.component_material_no
@@ -148,7 +155,8 @@ def test_bom_material_link_uses_first_plant_or_plain_text(client) -> None:
         LIMIT 1
         """
     ).rows[0]
-    parent, component, plant = linked
+    parent, component = linked
+    plant = link_plants([component])[component]
     page = client.get("/screens/CS03", params={"key": parent})
     assert page.status_code == 200
     assert f"/screens/MM03?key={component}&amp;plant={plant}" in page.text
@@ -177,7 +185,7 @@ def test_bom_material_link_uses_first_plant_or_plain_text(client) -> None:
 
 
 def test_md04_links_documents_and_cm01_links_materials(client) -> None:
-    page = client.get("/screens/MD04", params={"key": "M-001341", "plant_code": "AU01"})
+    page = client.get("/screens/MD04", params={"key": "M-001341", "plant": "AU01"})
     assert page.status_code == 200
     assert "/screens/ME23N?key=PO-" in page.text
     assert "/screens/CO03" not in page.text
@@ -203,3 +211,73 @@ def test_december_edge_comment_names_the_sunday() -> None:
     assert "same weekly bucket" not in text
     assert "27 December 2026" in text
     assert "Sunday" in text
+
+
+def test_screen_go_keeps_the_plant(client) -> None:
+    forward = client.get(
+        "/screens/go",
+        params={"tcode": "MD04", "key": "M-001324", "plant": "SC01"},
+        follow_redirects=True,
+    )
+    assert forward.status_code == 200
+    assert "Enter a plant." not in forward.text
+    assert "Stock and requirements" in forward.text
+    back = client.get(
+        "/screens/go",
+        params={"tcode": "MM03", "key": "M-001324", "plant": "SC01"},
+        follow_redirects=True,
+    )
+    assert "Enter a plant." not in back.text
+    assert "General data" in back.text
+    assert 'type="hidden" name="tcode"' in back.text
+    assert 'id="header-tcode"' in back.text
+    assert 'for="header-tcode">Transaction code</label>' in back.text
+
+
+def test_supplier_material_without_a_plant_is_plain_text(client) -> None:
+    page = client.get("/screens/XK03", params={"key": "V-10014"})
+    assert page.status_code == 200
+    assert "M-005416" in page.text
+    assert "/screens/MM03?key=M-005416" not in page.text
+    suppliers = run_query("SELECT supplier_no FROM supplier ORDER BY supplier_no").rows
+    for (supplier,) in suppliers:
+        text = client.get("/screens/XK03", params={"key": supplier}).text
+        for match in re.finditer(r'href="(/screens/MM03\?[^"]*)"', text):
+            assert "plant=" in match.group(1)
+
+
+def test_po_path_reaches_bom_and_where_used(client) -> None:
+    # Purchased lines are components, so the BOM with rows is the parent of the line.
+    po_no, material, plant = run_query(
+        """
+        SELECT h.po_no, i.material_no, h.plant_code
+        FROM purchase_order_item AS i
+        JOIN purchase_order AS h ON h.po_no = i.po_no
+        WHERE EXISTS (
+            SELECT 1 FROM bom_item AS b WHERE b.component_material_no = i.material_no
+        )
+        ORDER BY h.po_no, i.line_no
+        LIMIT 1
+        """
+    ).rows[0]
+    order = client.get("/screens/ME23N", params={"key": po_no})
+    assert f"/screens/MM03?key={material}" in order.text
+    assert f"/screens/ME23N?key={po_no}" not in order.text
+    material_page = client.get("/screens/MM03", params={"key": material, "plant": plant})
+    assert "Display BOM" in material_page.text
+    assert f"/screens/CS03?key={material}" in material_page.text
+    assert f"/screens/CS15?key={material}" in material_page.text
+    assert f"plant={plant}" in material_page.text
+    used = client.get("/screens/CS15", params={"key": material})
+    assert "This material is not used on any parent." not in used.text
+    parents = [
+        item for item in re.findall(r"/screens/MM03\?key=(M-[0-9]+)", used.text) if item != material
+    ]
+    assert parents
+    parent_no = parents[0]
+    opened = client.get("/screens/MM03", params={"key": parent_no, "plant": plant})
+    assert "was not found" not in opened.text
+    assert "Display BOM" in opened.text
+    bom = client.get("/screens/CS03", params={"key": parent_no})
+    assert "This material has no components." not in bom.text
+    assert material in bom.text
