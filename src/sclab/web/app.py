@@ -25,6 +25,7 @@ from sclab.lessons.progress import ProgressStore
 from sclab.paths import progress_path
 from sclab.web import export as excel
 from sclab.web.cells import display_text, is_numeric_type
+from sclab.web.notebook_routes import register_notebook_routes
 from sclab.web.screens_routes import create_router
 
 _WEB_DIR = Path(__file__).resolve().parent
@@ -290,7 +291,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
     async def api_export(request: Request):
         try:
             fields = await _form(request)
-            sql = fields.get("sql", "")
+            sql = fields["sql"] if "sql" in fields else fields.get("source", "")
             target = fields.get("target", "lesson")
             label = excel.safe_label(fields.get("label", ""))
             exercise_id = fields.get("exercise_id", "")
@@ -331,9 +332,11 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
             return _plain_message(_UNEXPECTED)
         return HTMLResponse('<p class="banner">Practice database reset.</p>')
 
+    register_notebook_routes(app, render)
+
     @app.middleware("http")
     async def require_htmx_post(request: Request, call_next):
-        if request.method == "POST" and request.headers.get("hx-request") != "true":
+        if request.method not in ("GET", "HEAD") and request.headers.get("hx-request") != "true":
             return _plain_message(_HTMX_REQUIRED, status_code=403)
         return await call_next(request)
 

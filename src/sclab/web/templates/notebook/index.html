@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Notebooks{% endblock %}
+{% block content %}
+<p class="today">Today in the lab is {{ today }}.</p>
+<h1>Notebooks</h1>
+<form hx-post="/notebooks">
+  <label for="notebook-title">New notebook</label>
+  <input id="notebook-title" name="title" type="text" maxlength="80">
+  <div class="actions">
+    <button type="submit">Create notebook</button>
+  </div>
+</form>
+{% if notebooks %}
+<ul class="lesson-list">
+  {% for notebook in notebooks %}
+  <li>
+    <a href="/notebooks/{{ notebook.id }}">
+      <span class="lesson-number">{{ loop.index }}</span>
+      <span>
+        <strong>{{ notebook.title }}</strong>
+        <small>{% if notebook.target == "sandbox" %}Practice database{% else %}Lesson database{% endif %}</small>
+      </span>
+      <span class="progress">{{ notebook.updated_at }}</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty">No notebooks yet.</p>
+{% endif %}
+{% endblock %}

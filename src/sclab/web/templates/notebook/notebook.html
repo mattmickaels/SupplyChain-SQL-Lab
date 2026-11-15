@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ notebook.title }}{% endblock %}
+{% block head_scripts %}
+<script src="/static/vendor/chart.umd.min.js"></script>
+{% endblock %}
+{% block content %}
+<p class="today">Today in the lab is {{ today }}.</p>
+<h1>{{ notebook.title }}</h1>
+<p>Run each cell. The last cell is yours to write.</p>
+<form>
+  <label for="notebook-target">Database</label>
+  <select id="notebook-target" name="target" data-autosave="/notebooks/{{ notebook.id }}/target" data-notebook-target>
+    <option value="lesson"{% if notebook.target == "lesson" %} selected{% endif %}>Lesson database</option>
+    <option value="sandbox"{% if notebook.target == "sandbox" %} selected{% endif %}>Practice database</option>
+  </select>
+</form>
+<div id="cells">
+{% include "notebook/_cells.html" %}
+</div>
+<div class="actions">
+  <button type="button" hx-post="/notebooks/{{ notebook.id }}/cells" hx-vals='{"kind":"sql"}' hx-target="#cells" hx-swap="beforeend">Add SQL cell</button>
+  <button type="button" hx-post="/notebooks/{{ notebook.id }}/cells" hx-vals='{"kind":"markdown"}' hx-target="#cells" hx-swap="beforeend">Add note</button>
+</div>
+{% endblock %}

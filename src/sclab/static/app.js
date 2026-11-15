@@ -111,14 +111,145 @@
     scope.querySelectorAll("[data-remaining]").forEach(armCountdown);
   }
 
+  function fireAutosave(el) {
+    var form = el.form;
+    var url = el.getAttribute("data-autosave");
+    if (!form || !url) {
+      return Promise.resolve();
+    }
+    saveEditors();
+    return fetch(url, {
+      method: "POST",
+      headers: {
+        "HX-Request": "true",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams(new FormData(form)),
+    }).catch(function () {});
+  }
+
+  function flushAutosaves() {
+    saveEditors();
+    var forms = [];
+    document.querySelectorAll("[data-autosave]").forEach(function (el) {
+      clearTimeout(el._sclabAutosaveTimer);
+      var form = el.form;
+      if (!form || forms.indexOf(form) !== -1) {
+        return;
+      }
+      forms.push(form);
+    });
+    return Promise.all(
+      forms.map(function (form) {
+        var el = form.querySelector("[data-autosave]");
+        if (!el) {
+          return Promise.resolve();
+        }
+        return fireAutosave(el);
+      })
+    );
+  }
+
+  var keptResults = null;
+
+  function restoreResults() {
+    var kept = keptResults;
+    keptResults = null;
+    if (!kept) {
+      return;
+    }
+    Object.keys(kept).forEach(function (id) {
+      var node = document.getElementById(id);
+      var prior = kept[id];
+      if (!node || !prior || !prior.trim()) {
+        return;
+      }
+      node.innerHTML = prior;
+    });
+  }
+
+  function armAutosave(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    scope.querySelectorAll("[data-autosave]").forEach(function (el) {
+      if (el._sclabAutosave) {
+        return;
+      }
+      el._sclabAutosave = true;
+      function schedule() {
+        clearTimeout(el._sclabAutosaveTimer);
+        el._sclabAutosaveTimer = setTimeout(fire, 1000);
+      }
+      function fire() {
+        fireAutosave(el);
+      }
+      el.addEventListener("input", schedule);
+      el.addEventListener("change", schedule);
+      if (el.editor) {
+        el.editor.on("change", schedule);
+      }
+    });
+  }
+
+  function mountCharts(root) {
+    if (typeof Chart === "undefined") {
+      return;
+    }
+    var scope = root && root.querySelectorAll ? root : document;
+    scope.querySelectorAll("canvas[data-chart]").forEach(function (canvas) {
+      if (canvas._sclabChart) {
+        return;
+      }
+      var spec;
+      try {
+        spec = JSON.parse(canvas.getAttribute("data-chart"));
+      } catch (error) {
+        return;
+      }
+      canvas._sclabChart = new Chart(canvas, {
+        type: spec.type,
+        data: {
+          labels: spec.labels,
+          datasets: [
+            {
+              label: spec.y,
+              data: spec.values,
+              backgroundColor: "#0f6e6b",
+              borderColor: "#0f6e6b",
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { title: { display: true, text: spec.x } },
+            y: { title: { display: true, text: spec.y }, beginAtZero: true },
+          },
+        },
+      });
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     mountEditors(document);
+    armAutosave(document);
     armCountdowns(document);
+    mountCharts(document);
   });
 
   document.body.addEventListener("htmx:afterSwap", function () {
+    restoreResults();
     mountEditors(document);
+    armAutosave(document);
     armCountdowns(document);
+    mountCharts(document);
+  });
+
+  document.body.addEventListener("htmx:responseError", function () {
+    keptResults = null;
+  });
+  document.body.addEventListener("htmx:sendError", function () {
+    keptResults = null;
   });
 
   document.body.addEventListener("drill-summary", function (event) {
@@ -180,6 +311,47 @@
         button.disabled = false;
       });
   }
+
+  document.addEventListener("change", function (event) {
+    var select = event.target.closest("[data-notebook-target]");
+    if (!select) {
+      return;
+    }
+    document.querySelectorAll("[data-notebook-target-value]").forEach(function (input) {
+      input.value = select.value;
+    });
+  });
+
+  document.addEventListener(
+    "click",
+    function (event) {
+      var target = event.target;
+      if (!target || !target.closest) {
+        return;
+      }
+      var button = target.closest("[data-move]");
+      if (!button || button._sclabMoveReady) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (button._sclabMovePending) {
+        return;
+      }
+      button._sclabMovePending = true;
+      flushAutosaves().then(function () {
+        button._sclabMovePending = false;
+        keptResults = {};
+        document.querySelectorAll(".cell [id^='result-']").forEach(function (node) {
+          keptResults[node.id] = node.innerHTML;
+        });
+        button._sclabMoveReady = true;
+        button.click();
+        button._sclabMoveReady = false;
+      });
+    },
+    true
+  );
 
   document.addEventListener("click", function (event) {
     var button = event.target.closest("[data-export]");
