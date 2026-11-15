@@ -5,7 +5,7 @@ prompt_md = """
 List candidate materials whose descriptions match once spaces at the ends are removed.
 A match is a candidate, not proof that two material numbers are the same part.
 Materials that share an exact description are different parts.
-The RF generators are one example, and the gas box variants are another.
+The factory interface modules are one example, and the gas box variants are another.
 A planted copy is the row whose description adds only trailing spaces.
 Return every material_no in a candidate group, including the real parts and the copies.
 Return material_no, description, and trimmed_description.

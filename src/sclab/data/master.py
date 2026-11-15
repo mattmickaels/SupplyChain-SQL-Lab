@@ -5,7 +5,7 @@ from datetime import timedelta
 import numpy as np
 import pandas as pd
 
-from sclab.constants import AS_OF_DATE, HISTORY_START
+from sclab.constants import AS_OF_DATE, HISTORY_START, SEED
 from sclab.data.schema import table
 from sclab.data.story import CORVANE_SUPPLIER_NO, HALCYON_CUSTOMER_NO, OVERLOADED_BAY
 
@@ -137,10 +137,119 @@ LONG_LEAD_OTHER = (
     "Process controller",
     "Turbo pump",
 )
+HOME_PLANT = {"DEP": "AU01", "ETC": "SC01", "CMP": "SG01", "INS": "AU01"}
+# Tool list price in USD: a base plus an amount per chamber.
+TOOL_PRICES = {
+    "DEP": (1_400_000, 900_000),
+    "ETC": (1_200_000, 850_000),
+    "CMP": (1_300_000, 800_000),
+    "INS": (2_200_000, 800_000),
+}
+RF_DELIVERY = "RF delivery"
+RF_FAMILIES = ("DEP", "ETC")
+TOOL_VARIANTS = {
+    "DEP": ("PECVD", "PEALD"),
+    "ETC": ("conductor", "dielectric"),
+    "CMP": ("oxide", "copper"),
+    "INS": ("optical", "e-beam"),
+}
+# RF generators: six source units and six bias units, as (frequency, power in kW, price in USD).
+RF_GENERATORS = (
+    ("13.56 MHz", "1.5 kW", 52000),
+    ("13.56 MHz", "3 kW", 76000),
+    ("13.56 MHz", "5 kW", 112000),
+    ("27.12 MHz", "3 kW", 82000),
+    ("60 MHz", "3 kW", 91000),
+    ("60 MHz", "5 kW", 118000),
+    ("2 MHz", "1 kW", 41000),
+    ("2 MHz", "3 kW", 63000),
+    ("2 MHz", "5 kW", 94000),
+    ("400 kHz", "1 kW", 44000),
+    ("400 kHz", "3 kW", 68000),
+    ("13.56 MHz", "1 kW", 47000),
+)
+LONG_LEAD_PRICES = {
+    "Dry vacuum pump": (18000, 32000),
+    "Wafer handling robot": (55000, 95000),
+    "Ceramic heater": (9000, 18000),
+    "Quartz liner": (2500, 6000),
+    "Gas box": (12000, 25000),
+    "Process controller": (15000, 30000),
+    "Turbo pump": (14000, 28000),
+}
+SPARE_KIT_PRICE = (1500, 2200)
+# Supplier price ranges in USD by purchased part class.
+COMPONENT_PRICES = {
+    "Gas distribution plate": (900, 2500),
+    "Gas inlet fitting": (15, 45),
+    "Heater element": (400, 1200),
+    "Thermocouple": (60, 180),
+    "Lift pin": (25, 50),
+    "Lift actuator": (350, 900),
+    "RF electrode plate": (800, 2200),
+    "Electrode insulator": (120, 400),
+    "Throttle valve body": (1500, 3800),
+    "Throttle valve seal": (12, 35),
+    "Edge ring": (300, 900),
+    "Liner retaining clip": (5, 18),
+    "Showerhead faceplate": (2500, 6500),
+    "Showerhead seal": (15, 45),
+    "ESC ceramic puck": (3500, 8000),
+    "Chuck electrode": (400, 1200),
+    "RF match network": (6000, 14000),
+    "Variable capacitor": (800, 2500),
+    "RF coaxial cable": (90, 300),
+    "Platen bearing": (2500, 6500),
+    "Platen drive belt": (400, 1200),
+    "Carrier membrane": (900, 2600),
+    "Carrier retaining ring": (1500, 3800),
+    "Slurry dispense nozzle": (400, 1200),
+    "Slurry filter": (300, 900),
+    "Pressure transducer": (1500, 4000),
+    "Pressure regulator": (1200, 3200),
+    "Conditioner disk": (1100, 3000),
+    "Conditioner spindle": (6000, 15000),
+    "Objective lens": (10000, 30000),
+    "Optical mount": (1500, 4000),
+    "Stage encoder": (2500, 8000),
+    "Linear stage bearing": (1800, 4800),
+    "Illumination source": (8000, 24000),
+    "Beam splitter": (2000, 6000),
+    "Camera sensor": (6000, 18000),
+    "Image acquisition board": (3000, 9000),
+    "Vacuum chuck plate": (2000, 6000),
+    "Chuck O-ring kit": (12, 40),
+    "FOUP door latch": (60, 180),
+    "Load port sensor": (80, 260),
+    "Aligner spindle": (700, 2000),
+    "Wafer edge sensor": (120, 420),
+    "Vacuum manifold block": (300, 900),
+    "Vacuum pressure gauge": (250, 700),
+    "Isolation valve gate": (900, 2600),
+    "Isolation valve O-ring kit": (14, 45),
+    "Robot servo motor": (1200, 3500),
+    "Robot drive encoder": (250, 800),
+    "Wafer end effector": (600, 2000),
+    "Robot arm bearing": (150, 500),
+    "Valve manifold block": (500, 1500),
+    "Pneumatic valve": (60, 220),
+    "Mass flow sensor": (250, 700),
+    "Proportional flow valve": (150, 500),
+    "Control PCB assembly": (400, 1500),
+    "Power supply board": (250, 800),
+    "Cable harness": (120, 450),
+    "Harness connector": (6, 30),
+    "Dry pump seal kit": (18, 50),
+    "Pump exhaust fitting": (15, 45),
+    "Turbo pump bearing kit": (350, 900),
+    "Turbo pump controller": (900, 2400),
+    "Spare RF generator kit": SPARE_KIT_PRICE,
+}
 N_TOOLS = 40
 N_MODULES = 280
 N_SUBASSEMBLIES = 1000
 N_COMPONENTS = 4000
+COMPONENT_START = N_TOOLS + N_MODULES + N_SUBASSEMBLIES + 1
 N_LONG_LEAD = 240
 N_RF = 12
 N_SUPPLIERS = 150
@@ -218,23 +327,31 @@ def generate_master(rng: np.random.Generator) -> dict[str, pd.DataFrame]:
     supplier_ids = [f"V-{10001 + i:05d}" for i in range(N_SUPPLIERS)]
     module_subs, sub_functions = _assign_subassemblies(module_ids, sub_ids)
     sub_components = _assign_components(sub_functions, comp_ids)
+    rf_parts = _rf_delivery_components(module_ids, module_subs, sub_functions, comp_ids)
+    sub_components.update(rf_parts)
     edges = _bom_edges(tool_ids, module_ids, module_subs, sub_components)
     materials = _materials(rng, tool_ids, module_ids, sub_ids, comp_ids, sub_functions)
+    shared = _shared_bom_rows(sub_functions, comp_ids, edges)
+    structure = [
+        {"parent_material_no": parent, "component_material_no": component}
+        for parent, component in edges
+    ] + shared
+    used_plants = _used_plants(tool_ids, materials, structure)
+    # The random draws below keep their original order so earlier values stay put.
+    plant_rows = _material_plants(rng, materials, used_plants)
+    supplier_rows = _suppliers(rng, supplier_ids)
+    source_rows = _sources(rng, comp_ids, supplier_ids)
+    customer_rows = _customers(rng)
+    bom = _bom_rows(rng, edges, _rf_subs(sub_functions)) + shared
     return {
         "plant": _plants(),
         "product_family": _families(),
         "material": _frame("material", materials),
-        "material_plant": _frame("material_plant", _material_plants(rng, materials)),
-        "supplier": _frame("supplier", _suppliers(rng, supplier_ids)),
-        "material_supplier": _frame(
-            "material_supplier",
-            _sources(rng, comp_ids, supplier_ids),
-        ),
-        "customer": _frame("customer", _customers(rng)),
-        "bom_item": _frame(
-            "bom_item",
-            _bom_rows(rng, edges) + _shared_bom_rows(sub_functions, comp_ids, edges),
-        ),
+        "material_plant": _frame("material_plant", plant_rows),
+        "supplier": _frame("supplier", supplier_rows),
+        "material_supplier": _frame("material_supplier", source_rows),
+        "customer": _frame("customer", customer_rows),
+        "bom_item": _frame("bom_item", bom),
         "build_bay": _frame("build_bay", _bays(rng)),
     }
 
@@ -264,17 +381,18 @@ def _safe_name(name: str) -> str:
 
 def _component_function(index: int) -> str:
     if index < N_RF:
-        return "RF match network"
+        return RF_DELIVERY
     if index < N_LONG_LEAD:
         return LONG_LEAD_FUNCTIONS[(index - N_RF) % len(LONG_LEAD_FUNCTIONS)]
     if index == N_LONG_LEAD:
-        return "RF match network"
+        return RF_DELIVERY
     return tuple(COMPONENT_RECIPES)[(index - N_LONG_LEAD - 1) % len(COMPONENT_RECIPES)]
 
 
 def _component_description(index: int) -> str:
     if index < N_RF:
-        return "RF generator"
+        frequency, power, _price = RF_GENERATORS[index]
+        return f"RF generator, {frequency}, {power}"
     if index < N_LONG_LEAD:
         kind = LONG_LEAD_OTHER[(index - N_RF) % len(LONG_LEAD_OTHER)]
         variant = (index - N_RF) // len(LONG_LEAD_OTHER) + 1
@@ -285,8 +403,6 @@ def _component_description(index: int) -> str:
     recipes = COMPONENT_RECIPES[function]
     variant = (index - N_LONG_LEAD - 1) // len(COMPONENT_RECIPES)
     name = recipes[variant % len(recipes)]
-    if name == "RF match network":
-        return name
     return f"{name}, variant {variant + 1}"
 
 
@@ -325,10 +441,11 @@ def _materials(rng, tool_ids, module_ids, sub_ids, comp_ids, sub_functions) -> l
     for index, material_no in enumerate(tool_ids):
         code, family_name = FAMILIES[index // 10]
         chambers = 2 + (index % 5)
+        variant = TOOL_VARIANTS[code][(index % 10) // 5]
         rows.append(
             {
                 "material_no": material_no,
-                "description": f"{family_name} system, 300mm, {chambers}-chamber",
+                "description": f"{family_name} system, 300mm, {chambers}-chamber, {variant}",
                 "material_type": "TOOL",
                 "family_code": code,
                 "base_uom": "EA",
@@ -376,20 +493,55 @@ def _materials(rng, tool_ids, module_ids, sub_ids, comp_ids, sub_functions) -> l
     return rows
 
 
-def _material_plants(rng, materials: list[dict]) -> list[dict]:
+RF_PART_NUMBERS = frozenset(f"M-{COMPONENT_START + number:06d}" for number in range(N_RF))
+
+
+def _material_plants(rng, materials: list[dict], used_plants: dict[str, set[str]]) -> list[dict]:
     rows = []
     for material in materials:
+        used = used_plants.get(material["material_no"], set())
         for code, _name, _city, _country in PLANTS:
+            lead = _lead_days(rng, material["is_long_lead"])
+            safety = int(rng.integers(0, 25))
+            if material["material_no"] in RF_PART_NUMBERS:
+                # Costly RF generators are held at one to three units.
+                safety = 1 + safety % 3
             rows.append(
                 {
                     "material_no": material["material_no"],
                     "plant_code": code,
                     "mrp_type": "PD",
-                    "planned_lead_time_days": _lead_days(rng, material["is_long_lead"]),
-                    "safety_stock": int(rng.integers(0, 25)),
+                    "planned_lead_time_days": lead,
+                    # Safety stock only makes sense where a tool using the part is built.
+                    "safety_stock": safety if code in used else 0,
                 }
             )
     return rows
+
+
+def _rf_subs(sub_functions: dict[str, str]) -> set[str]:
+    return {sub for sub, function in sub_functions.items() if function == RF_DELIVERY}
+
+
+def _used_plants(tool_ids, materials: list[dict], bom: list[dict]) -> dict[str, set[str]]:
+    """Plants that build a tool using each material, at any BOM depth."""
+    family = {row["material_no"]: row["family_code"] for row in materials}
+    children: dict[str, list[str]] = {}
+    for row in bom:
+        children.setdefault(row["parent_material_no"], []).append(row["component_material_no"])
+    used: dict[str, set[str]] = {}
+    for tool in tool_ids:
+        plant = HOME_PLANT[family[tool]]
+        stack = [tool]
+        seen: set[str] = set()
+        while stack:
+            node = stack.pop()
+            if node in seen:
+                continue
+            seen.add(node)
+            used.setdefault(node, set()).add(plant)
+            stack.extend(children.get(node, ()))
+    return used
 
 
 def _suppliers(rng, supplier_ids: list[str]) -> list[dict]:
@@ -425,6 +577,7 @@ def _pick_suppliers(rng, pool: np.ndarray, count: int) -> list[str]:
 
 def _sources(rng, comp_ids: list[str], supplier_ids: list[str]) -> list[dict]:
     pool = np.array([s for s in supplier_ids if s != CORVANE_SUPPLIER_NO])
+    prices = np.random.default_rng(SEED + 9)
     rows = []
     for index, material_no in enumerate(comp_ids):
         long_lead = index < N_LONG_LEAD
@@ -438,7 +591,7 @@ def _sources(rng, comp_ids: list[str], supplier_ids: list[str]) -> list[dict]:
             function = _component_function(index)
             specialty = (
                 0
-                if function in ("RF match network", "RF electrode")
+                if function in ("RF match network", "RF electrode", RF_DELIVERY)
                 else 10
                 if function in ("PCB assembly", "Harness", "Image acquisition", "Illumination")
                 else 11
@@ -467,24 +620,50 @@ def _sources(rng, comp_ids: list[str], supplier_ids: list[str]) -> list[dict]:
             )
             specialists = np.array([s for s in pool if (int(s[2:]) - 10001) % 12 == specialty])
             chosen = _pick_suppliers(rng, specialists, int(rng.integers(1, 4)))
-            if _component_description(index) == "RF match network":
+            if _component_description(index).startswith("RF match network, "):
                 # Preserve a second qualified RF specialist for every match unit.
                 chosen = (
                     [CORVANE_SUPPLIER_NO, chosen[0]]
                     if ((index - N_LONG_LEAD - 1) // len(COMPONENT_RECIPES)) % 2 == 0
                     else [chosen[0], CORVANE_SUPPLIER_NO]
                 )
+        low, high = _price_range(index)
+        base = low + (high - low) * float(prices.random())
         for position, supplier_no in enumerate(chosen):
+            quoted_lead = _lead_days(rng, long_lead)
+            rng.integers(500, 250000)  # keeps the shared stream in step with earlier versions
             rows.append(
                 {
                     "material_no": material_no,
                     "supplier_no": supplier_no,
-                    "quoted_lead_time_days": _lead_days(rng, long_lead),
-                    "unit_price": round(int(rng.integers(500, 250000)) / 100, 2),
+                    "quoted_lead_time_days": quoted_lead,
+                    "unit_price": _quote(base * float(prices.uniform(0.93, 1.12)), index),
                     "is_primary": position == 0,
                 }
             )
     return rows
+
+
+def _quote(price: float, index: int) -> float:
+    if index < N_RF:
+        # RF generators stay inside the $40k-$120k band whatever the quote spread.
+        price = min(max(price, 40500.0), 119000.0)
+    return round(price, 2)
+
+
+def _price_range(index: int) -> tuple[float, float]:
+    """Supplier price range in USD for the component at this index."""
+    if index < N_RF:
+        price = RF_GENERATORS[index][2]
+        return price * 0.97, price * 1.03
+    if index < N_LONG_LEAD:
+        return LONG_LEAD_PRICES[LONG_LEAD_OTHER[(index - N_RF) % len(LONG_LEAD_OTHER)]]
+    if index == N_LONG_LEAD:
+        return SPARE_KIT_PRICE
+    function = _component_function(index)
+    recipes = COMPONENT_RECIPES[function]
+    variant = (index - N_LONG_LEAD - 1) // len(COMPONENT_RECIPES)
+    return COMPONENT_PRICES[recipes[variant % len(recipes)]]
 
 
 def _customers(rng) -> list[dict]:
@@ -518,9 +697,19 @@ def _assign_subassemblies(module_ids, sub_ids):
         family, description = _module_function(index)
         recipe = CHAMBER_FUNCTIONS[family] if family else PLATFORM_FUNCTIONS[description]
         owners.extend((module, function) for function in recipe)
+    # RF delivery subassemblies are appended so the other subassembly numbers stay in place.
+    for index, module in enumerate(module_ids):
+        family, _description = _module_function(index)
+        if family in RF_FAMILIES:
+            owners.append((module, RF_DELIVERY))
     # Every module gets its complete functional recipe before adding variants.
+    # Variants are spread across every tool, never onto an RF delivery assembly.
+    plain = [owner for owner in owners if owner[1] != RF_DELIVERY]
     for index, sub in enumerate(sub_ids):
-        module, function = owners[index % len(owners)]
+        if index < len(owners):
+            module, function = owners[index]
+        else:
+            module, function = plain[((index - len(owners)) * 17) % len(plain)]
         assigned[module].append(sub)
         functions[sub] = function
     return assigned, functions
@@ -534,6 +723,8 @@ def _assign_components(sub_functions, comp_ids):
     counts = {}
     for index, component in enumerate(comp_ids):
         function = _component_function(index)
+        if function == RF_DELIVERY:
+            continue
         choices = by_function[function]
         position = counts.get(function, 0)
         assigned[choices[position % len(choices)]].append(component)
@@ -541,6 +732,33 @@ def _assign_components(sub_functions, comp_ids):
         # Reuse qualified standard parts only within compatible assemblies.
         if N_RF <= index < N_LONG_LEAD and len(choices) > 1:
             assigned[choices[(position + 1) % len(choices)]].append(component)
+    return assigned
+
+
+def _rf_delivery_components(module_ids, module_subs, sub_functions, comp_ids):
+    """Give each plasma tool one RF delivery subassembly with shared RF generators.
+
+    Etch tools carry a source and a bias generator per chamber.
+    Deposition tools carry one source generator per chamber, plus a bias generator on PEALD.
+    Six source and six bias part numbers are shared across the etch and deposition variants.
+    """
+    sources, biases = comp_ids[:6], comp_ids[6:N_RF]
+    spare_kit = comp_ids[N_LONG_LEAD]
+    assigned: dict[str, list[str]] = {}
+    for tool_index in range(N_TOOLS):
+        code = FAMILIES[tool_index // 10][0]
+        if code not in RF_FAMILIES:
+            continue
+        position = tool_index % 10
+        module = module_ids[tool_index * 7]
+        sub = next(item for item in module_subs[module] if sub_functions[item] == RF_DELIVERY)
+        if code == "ETC":
+            parts = [sources[position % 6], biases[(position + 2) % 6]]
+        else:
+            parts = [sources[(position + 4) % 6]]
+            if position >= 5:
+                parts.append(biases[position % 6])
+        assigned[sub] = [*parts, spare_kit]
     return assigned
 
 
@@ -589,21 +807,30 @@ def _bom_edges(tool_ids, module_ids, module_subs, sub_components):
     return edges
 
 
-def _bom_rows(rng, edges: list[tuple[str, str]]) -> list[dict]:
-    return [
-        {
-            "parent_material_no": parent,
-            "component_material_no": component,
-            "qty_per": (
-                float(2 + ((int(parent[2:]) - 1) % 5))
-                if int(parent[2:]) <= N_TOOLS and (int(component[2:]) - N_TOOLS - 1) % 7 == 0
-                else 1.0
-                if int(parent[2:]) <= N_TOOLS
-                else float(int(rng.integers(1, 5)))
-            ),
-        }
-        for parent, component in edges
-    ]
+def _bom_rows(rng, edges: list[tuple[str, str]], rf_subs: set[str]) -> list[dict]:
+    rows = []
+    for parent, component in edges:
+        if int(parent[2:]) <= N_TOOLS:
+            if (int(component[2:]) - N_TOOLS - 1) % 7 == 0:
+                qty = float(2 + ((int(parent[2:]) - 1) % 5))
+            else:
+                qty = 1.0
+        else:
+            # Draw for every lower-level edge so the random stream does not shift.
+            draw = int(rng.integers(1, 5))
+            qty = 1.0
+            number = int(component[2:])
+            if number >= COMPONENT_START and parent not in rf_subs:
+                # Cheap hardware comes in handfuls; costly parts come one at a time.
+                low, high = _price_range(number - COMPONENT_START)
+                if (low + high) / 2 < 60:
+                    qty = float(2 * draw)
+                elif (low + high) / 2 < 400:
+                    qty = float(1 + draw % 2)
+        rows.append(
+            {"parent_material_no": parent, "component_material_no": component, "qty_per": qty}
+        )
+    return rows
 
 
 def _bays(rng) -> list[dict]:
@@ -615,12 +842,16 @@ def _bays(rng) -> list[dict]:
                 family_code = "ETC"
             else:
                 family_code = FAMILIES[(number - 1) % len(FAMILIES)][0]
+            slots = int(rng.integers(2, 7))
+            if code == "SC01" and family_code == "ETC" and bay_id != OVERLOADED_BAY:
+                # The other Etch bay carries all normal Etch work, so it needs real capacity.
+                slots = max(slots, 4)
             rows.append(
                 {
                     "bay_id": bay_id,
                     "plant_code": code,
                     "family_code": family_code,
-                    "weekly_slots": int(rng.integers(2, 7)),
+                    "weekly_slots": slots,
                 }
             )
     return rows

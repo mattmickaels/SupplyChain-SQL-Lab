@@ -177,7 +177,12 @@ def test_monthly_volumes_and_status(lab_conn) -> None:
     expected = pd.date_range("2021-11-01", "2026-10-01", freq="MS")
     assert list(pd.to_datetime(tools["month_start"])) == list(expected)
     assert list(pd.to_datetime(spares["month_start"])) == list(expected)
-    assert tools["n"].between(25, 45).all()
+    assert tools["n"].between(18, 60).all()
+    # The industry cycle moves bookings by several lines a month, in both directions.
+    changes = tools["n"].diff().dropna()
+    assert (changes >= 4).sum() >= 8 and (changes <= -4).sum() >= 8
+    assert changes.abs().median() >= 3
+    assert tools["n"].max() - tools["n"].min() >= 25
     assert spares["n"].between(300, 600).all()
     tools["year"] = pd.to_datetime(tools["month_start"]).dt.year
     by_year = tools.groupby("year")["n"].mean()

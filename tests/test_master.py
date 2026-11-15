@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -18,8 +20,8 @@ MASTER_TABLES = (
     "bom_item",
     "build_bay",
 )
+RF_GENERATOR = re.compile(r"^RF generator, \d+(\.\d+)? (MHz|kHz), \d+(\.\d+)? kW$")
 LONG_LEAD = {
-    "RF generator",
     "Dry vacuum pump",
     "Wafer handling robot",
     "Ceramic heater",
@@ -85,8 +87,9 @@ def test_volumes_within_targets(frames: dict[str, pd.DataFrame]) -> None:
         "CMP": 10,
         "INS": 10,
     }
-    tool_pattern = r"^(Deposition|Etch|CMP|Inspection) system, 300mm, [1-9]\d*-chamber$"
+    tool_pattern = r"^(Deposition|Etch|CMP|Inspection) system, 300mm, [1-9]\d*-chamber, \w[\w-]*$"
     assert tools["description"].str.match(tool_pattern).all()
+    assert tools["description"].is_unique
     assert 250 <= len(modules) <= 350
     assert 800 <= len(subassemblies) <= 1200
     assert 3000 <= len(components) <= 4500
@@ -94,10 +97,13 @@ def test_volumes_within_targets(frames: dict[str, pd.DataFrame]) -> None:
 
     long_lead = components[components["is_long_lead"]]
     assert 0.05 <= len(long_lead) / len(components) <= 0.08
+    is_rf = long_lead["description"].str.match(RF_GENERATOR)
+    assert is_rf.sum() == 12
+    assert long_lead.loc[is_rf, "description"].is_unique
     assert {
-        description.split(", variant ")[0] for description in long_lead["description"]
+        description.split(", variant ")[0] for description in long_lead.loc[~is_rf, "description"]
     } <= LONG_LEAD
-    variants = long_lead.loc[long_lead["description"].ne("RF generator"), "description"]
+    variants = long_lead.loc[~is_rf, "description"]
     assert variants.is_unique
     assert variants.str.match(r".+, variant [1-9]\d*$").all()
     assert not materials.loc[materials["material_type"] != "COMPONENT", "is_long_lead"].any()
@@ -219,8 +225,8 @@ def test_every_rf_generator_single_sourced_from_corvane(
     frames: dict[str, pd.DataFrame],
 ) -> None:
     materials = frames["material"]
-    rf = materials[materials["description"] == "RF generator"]
-    assert not rf.empty
+    rf = materials[materials["description"].str.match(RF_GENERATOR)]
+    assert len(rf) == 12
     assert set(rf["material_type"]) == {"COMPONENT"}
     assert bool(rf["is_long_lead"].all())
     sources = frames["material_supplier"]
@@ -264,7 +270,7 @@ def test_realistic_tool_boms(lab_conn):
         else:
             assert module_family is None
     for tool, description, *_ in rows:
-        assert counts[tool] == int(description.split(", ")[-1].split("-")[0])
+        assert counts[tool] == int(re.search(r"(\d+)-chamber", description).group(1))
     assert (
         lab_conn.execute("""
         SELECT COUNT(*) FROM material WHERE description LIKE '%Process fitting%'
@@ -286,7 +292,8 @@ def test_realistic_sources_and_prices(lab_conn):
         lab_conn.execute("""
         SELECT COUNT(*) FROM material_supplier s JOIN material m USING (material_no)
         WHERE supplier_no = 'V-10017'
-          AND description NOT IN ('RF generator', 'RF match network')
+          AND description NOT LIKE 'RF generator, %'
+          AND description NOT LIKE 'RF match network, %'
     """).fetchone()[0]
         == 0
     )
@@ -312,14 +319,31 @@ def test_round2_corvane_categories_and_unique_suppliers(lab_conn):
         SELECT m.description, s.is_primary FROM material_supplier s
         JOIN material m USING (material_no) WHERE s.supplier_no = 'V-10017'
     """).fetchall()
-    assert {description for description, _ in categories} == {"RF generator", "RF match network"}
-    assert any(description == "RF match network" and primary for description, primary in categories)
+    kinds = {
+        "RF match network" if description.startswith("RF match network, ") else "RF generator"
+        for description, _ in categories
+        if description.startswith("RF match network, ") or RF_GENERATOR.match(description)
+    }
+    assert kinds == {"RF generator", "RF match network"}
+    assert all(
+        description.startswith("RF match network, ") or RF_GENERATOR.match(description)
+        for description, _ in categories
+    )
+    assert any(
+        description.startswith("RF match network, ") and primary
+        for description, primary in categories
+    )
     purchased = lab_conn.execute("""
         SELECT DISTINCT m.description FROM purchase_order h
         JOIN purchase_order_item i USING (po_no) JOIN material m USING (material_no)
         WHERE h.supplier_no = 'V-10017'
     """).fetchall()
-    assert {description for (description,) in purchased} == {"RF generator", "RF match network"}
+    assert all(
+        description.startswith("RF match network, ") or RF_GENERATOR.match(description)
+        for (description,) in purchased
+    )
+    assert any(RF_GENERATOR.match(description) for (description,) in purchased)
+    assert any(description.startswith("RF match network, ") for (description,) in purchased)
     assert lab_conn.execute("SELECT COUNT(*), COUNT(DISTINCT name) FROM supplier").fetchone() == (
         150,
         150,
@@ -338,6 +362,7 @@ def test_round2_functional_bom_paths(lab_conn):
         "ESC chuck",
         "Wafer lift assembly",
         "RF match network",
+        "RF delivery",
         "Throttle valve",
         "Liner and edge ring kit",
         "Gas distribution",
@@ -363,13 +388,8 @@ def test_round2_functional_bom_paths(lab_conn):
         "Vacuum pumping module": {"Dry pump", "Turbo pump"},
     }
     purchased_parts = {
-        "RF match network": (
-            "RF generator",
-            "Spare RF generator kit",
-            "RF match network",
-            "Variable capacitor",
-            "RF coaxial cable",
-        ),
+        "RF delivery": ("RF generator, ", "Spare RF generator kit"),
+        "RF match network": ("RF match network, ", "Variable capacitor", "RF coaxial cable"),
         "Valve manifold": ("Gas box", "Valve manifold block", "Pneumatic valve"),
         "Mass flow controller": ("Mass flow sensor", "Proportional flow valve"),
         "PCB assembly": ("Process controller", "Control PCB assembly", "Power supply board"),
@@ -398,6 +418,6 @@ def test_round2_functional_bom_paths(lab_conn):
         WHERE t.family_code='ETC' AND t.material_type='TOOL'
           AND m.description='Etch chamber module'
           AND s.description LIKE 'RF match network subassembly,%'
-          AND c.description='RF match network'
+          AND c.description LIKE 'RF match network, %'
     """).fetchall()
     assert paths

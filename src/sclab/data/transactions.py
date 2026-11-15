@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from sclab.constants import AS_OF_DATE, HISTORY_START
-from sclab.data.master import _segment
+from sclab.data.master import HOME_PLANT, TOOL_PRICES, _segment
 from sclab.data.mrp import plan_purchases
 from sclab.data.story import (
     CORVANE_SUPPLIER_NO,
@@ -30,7 +30,37 @@ COMPONENT_LOCATION = "RM01"
 TOOL_LOCATION = "FG01"
 BUILD_DAYS = {"DEP": 56, "ETC": 70, "CMP": 84, "INS": 42}
 PROMISE_GAP = 7
-HOME_PLANT = {"DEP": "AU01", "ETC": "SC01", "CMP": "SG01", "INS": "AU01"}
+# Monthly tool bookings follow an industry cycle: strong 2022, a 2023 downturn, then an upswing.
+CYCLE_ANCHORS = (
+    (0, 34),
+    (7, 41),
+    (13, 38),
+    (19, 29),
+    (25, 26),
+    (31, 31),
+    (37, 36),
+    (43, 42),
+    (49, 47),
+    (55, 50),
+    (59, 50),
+)
+# Quarter-end months book more, and the summer shutdown books less.
+SEASONALITY = {
+    1: 0.90,
+    2: 0.95,
+    3: 1.12,
+    4: 0.98,
+    5: 1.00,
+    6: 1.10,
+    7: 0.88,
+    8: 0.85,
+    9: 1.08,
+    10: 1.00,
+    11: 1.00,
+    12: 1.15,
+}
+TWO_UNIT_SHARE = 0.05
+TOOL_PRICE_DRIFT = 0.025
 
 
 def generate_transactions(
@@ -106,12 +136,20 @@ def _order_lines(rng, master: dict[str, pd.DataFrame], plant_of: pd.Series) -> p
     family_of = tools.set_index("material_no")["family_code"]
     customers = np.sort(master["customer"]["customer_no"].to_numpy())
     months = pd.date_range(HISTORY_MONTH, AS_OF_TS - pd.Timedelta(days=1), freq="MS")
-    counts, halcyon_n = _month_counts(months)
-    normal = _normal_tool_lines(rng, months, counts, halcyon_n, tool_ids, etch_ids, customers)
+    counts, halcyon_n = _month_counts(rng, months)
+    list_price = _tool_list_prices(tools)
+    normal = _normal_tool_lines(
+        rng, months, counts, halcyon_n, tool_ids, etch_ids, customers, list_price
+    )
     normal["promised_date"] = normal["order_date"] + pd.to_timedelta(
         rng.integers(90, 366, size=len(normal)), unit="D"
     )
     tools_frame = _schedule_overload(normal, master, etch_ids)
+    # Price after scheduling, because the bay schedule can move a booking to another Etch tool.
+    base_price = list_price.loc[tools_frame["material_no"]].to_numpy()
+    tools_frame["unit_price"] = (
+        np.round(base_price * tools_frame["price_factor"] / 500) * 500
+    ).astype(int)
     tools_frame["family_code"] = tools_frame["material_no"].map(family_of)
     tools_frame["plant_code"] = tools_frame["family_code"].map(HOME_PLANT)
     missing_bay = tools_frame["bay_id"].isna()
@@ -119,7 +157,7 @@ def _order_lines(rng, master: dict[str, pd.DataFrame], plant_of: pd.Series) -> p
         tools_frame.loc[missing_bay, ["plant_code", "family_code"]],
         master["build_bay"],
     )
-    spares = _spare_lines(rng, plant_of, customers)
+    spares = _spare_lines(rng, plant_of, customers, _spare_prices(master))
     spares["promised_date"] = spares["order_date"] + pd.Timedelta(days=21)
     lines = pd.concat([tools_frame, spares], ignore_index=True)
     lines["order_date"] = pd.to_datetime(lines["order_date"])
@@ -127,18 +165,34 @@ def _order_lines(rng, master: dict[str, pd.DataFrame], plant_of: pd.Series) -> p
     return lines
 
 
-def _month_counts(months: pd.DatetimeIndex) -> tuple[np.ndarray, np.ndarray]:
+def _month_counts(rng, months: pd.DatetimeIndex) -> tuple[np.ndarray, np.ndarray]:
     index = np.arange(len(months))
-    counts = np.rint(28 + 14 * index / (len(months) - 1)).astype(int)
-    counts[months.year == 2023] = np.maximum(counts[months.year == 2023] - 8, 25)
-    counts = np.clip(counts, 25, 45)
+    anchors = np.array(CYCLE_ANCHORS, dtype=float)
+    cycle = np.interp(index, anchors[:, 0], anchors[:, 1])
+    season = np.array([SEASONALITY[int(month)] for month in months.month])
+    noise = rng.integers(-3, 4, size=len(months))
+    counts = np.clip(np.rint(cycle * season).astype(int) + noise, 18, 60)
     halcyon = np.zeros(len(months), dtype=int)
     halcyon[(months.year == 2025) & months.month.isin([7, 8, 9, 10])] = 4
     halcyon[(months.year == 2026) & months.month.isin([7, 8, 9, 10])] = 8
     return counts, halcyon
 
 
-def _normal_tool_lines(rng, months, counts, halcyon_n, tool_ids, etch_ids, customers):
+def _tool_list_prices(tools: pd.DataFrame) -> pd.Series:
+    """List price by family and chamber count, in USD."""
+    chambers = tools["description"].str.extract(r"(\d+)-chamber")[0].astype(int)
+    base = tools["family_code"].map(lambda code: TOOL_PRICES[code][0])
+    per_chamber = tools["family_code"].map(lambda code: TOOL_PRICES[code][1])
+    return pd.Series((base + per_chamber * chambers).to_numpy(), index=tools["material_no"])
+
+
+def _spare_prices(master: dict[str, pd.DataFrame]) -> pd.Series:
+    sources = master["material_supplier"]
+    primary = sources.loc[sources["is_primary"]].sort_values(["material_no", "supplier_no"])
+    return primary.drop_duplicates("material_no").set_index("material_no")["unit_price"]
+
+
+def _normal_tool_lines(rng, months, counts, halcyon_n, tool_ids, etch_ids, customers, list_price):
     month_of_row = np.repeat(np.arange(len(months)), counts)
     total = len(month_of_row)
     starts = np.repeat(np.cumsum(counts) - counts, counts)
@@ -153,13 +207,17 @@ def _normal_tool_lines(rng, months, counts, halcyon_n, tool_ids, etch_ids, custo
     order_date = pd.to_datetime(months[month_of_row]) + pd.to_timedelta(offset, unit="D")
     protected = np.zeros(total, dtype=bool)
     protected[halcyon_at] = True
+    qty = np.where(rng.random(total) < TWO_UNIT_SHARE, 2, 1)
+    # Sell price: list price with a negotiated spread, drifting up about 2.5% a year.
+    years = (order_date - pd.Timestamp(HISTORY_MONTH)).days.to_numpy() / 365.25
+    price_factor = (1 + TOOL_PRICE_DRIFT * years) * rng.uniform(0.95, 1.04, size=total)
     return pd.DataFrame(
         {
             "order_date": order_date,
             "customer_no": customer_no,
             "material_no": tool_no,
-            "qty": np.ones(total, dtype=int),
-            "unit_price": rng.integers(500_000, 1_500_000, size=total),
+            "qty": qty,
+            "price_factor": price_factor,
             "protected": protected,
             "bay_id": pd.Series(pd.NA, index=np.arange(total), dtype="object"),
             "kind": "tool",
@@ -239,7 +297,9 @@ def _assign_bays(frame: pd.DataFrame, bays: pd.DataFrame) -> pd.Series:
     return assigned
 
 
-def _spare_lines(rng, plant_of: pd.Series, customers: np.ndarray) -> pd.DataFrame:
+def _spare_lines(
+    rng, plant_of: pd.Series, customers: np.ndarray, prices: pd.Series
+) -> pd.DataFrame:
     months = pd.date_range(HISTORY_MONTH, AS_OF_TS - pd.Timedelta(days=1), freq="MS")
     counts = rng.integers(300, 601, size=len(months))
     month_of_row = np.repeat(np.arange(len(months)), counts)
@@ -248,13 +308,15 @@ def _spare_lines(rng, plant_of: pd.Series, customers: np.ndarray) -> pd.DataFram
     material_no = rng.choice(components, size=total)
     offset = rng.integers(0, 28, size=total)
     order_date = pd.to_datetime(months[month_of_row]) + pd.to_timedelta(offset, unit="D")
+    # Spares sell at a markup over the part's supplier price.
+    markup = rng.uniform(1.35, 2.0, size=total)
     return pd.DataFrame(
         {
             "order_date": order_date,
             "customer_no": rng.choice(customers, size=total),
             "material_no": material_no,
             "qty": np.ones(total, dtype=int),
-            "unit_price": rng.integers(50, 5000, size=total),
+            "unit_price": np.round(prices.loc[material_no].to_numpy(dtype=float) * markup, 2),
             "protected": False,
             "bay_id": pd.NA,
             "kind": "spare",
@@ -403,7 +465,9 @@ def _purchase_orders(rng, master, demand: pd.DataFrame) -> dict[str, pd.DataFram
         .drop_duplicates("material_no")
     )
     rf_materials = set(
-        master["material"].loc[master["material"]["description"].eq("RF generator"), "material_no"]
+        master["material"].loc[
+            master["material"]["description"].str.startswith("RF generator,"), "material_no"
+        ]
     )
     planning = master["material_plant"].merge(primary, on="material_no")
     planning = planning.set_index(["material_no", "plant_code"])

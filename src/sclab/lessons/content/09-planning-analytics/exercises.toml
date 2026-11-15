@@ -149,7 +149,7 @@ WITH RECURSIVE tree AS (
 ), targets AS (
     SELECT mp.material_no, mp.plant_code, mp.safety_stock
     FROM material_plant mp JOIN material m ON m.material_no = mp.material_no
-    WHERE (m.is_long_lead = true OR m.description = 'RF generator')
+    WHERE (m.is_long_lead = true OR m.description LIKE 'RF generator,%')
       AND EXISTS (
           SELECT 1 FROM production_order p JOIN leaves l ON l.root = p.material_no
           WHERE l.material_no = mp.material_no AND p.plant_code = mp.plant_code
@@ -198,7 +198,7 @@ id = "plan-shortages"
 title = "First shortage week"
 prompt_md = """
 Use the same 26 seven-day buckets and production-only RM01 balance convention as the preceding exercise, from DATE '2026-11-01' inclusive to DATE '2027-05-02' exclusive.
-Across all plants, find materials marked is_long_lead or described exactly as RF generator whose end-of-bucket projected balance is below that plant's safety_stock.
+Across all plants, find materials marked is_long_lead or whose description starts with RF generator, whose end-of-bucket projected balance is below that plant's safety_stock.
 Return material_no, plant_code, first_shortage_week (DATE), sorted by material_no then plant_code.
 Include material-plant pairs already below safety stock even when they have no future production demand.
 Keep only material-plant pairs with a breach, and return their earliest breach, not their lowest balance week.
@@ -243,7 +243,7 @@ WITH RECURSIVE tree AS (
 ), targets AS (
     SELECT mp.material_no, mp.plant_code, mp.safety_stock
     FROM material_plant mp JOIN material m ON m.material_no = mp.material_no
-    WHERE (m.is_long_lead = true OR m.description = 'RF generator')
+    WHERE (m.is_long_lead = true OR m.description LIKE 'RF generator,%')
 ), demand AS (
     SELECT l.material_no, p.plant_code, p.planned_start AS day, SUM(p.qty * l.qty) AS qty
     FROM production_order p JOIN leaves l ON l.root = p.material_no
@@ -339,13 +339,13 @@ WITH RECURSIVE tree AS (
            p.qty * l.qty AS qty
     FROM production_order p JOIN leaves l ON l.root = p.material_no
     JOIN material m ON m.material_no = l.material_no
-    WHERE p.planned_start > DATE '2026-11-01' AND m.description = 'RF generator'
+    WHERE p.planned_start > DATE '2026-11-01' AND m.description LIKE 'RF generator,%'
     UNION ALL
     SELECT NULL, i.material_no, sp.plant_code, i.promised_date, i.qty
     FROM sales_order_item i JOIN spare_plant sp ON sp.material_no = i.material_no
     JOIN material m ON m.material_no = i.material_no
     WHERE i.status = 'Open' AND i.promised_date > DATE '2026-11-01'
-      AND m.description = 'RF generator'
+      AND m.description LIKE 'RF generator,%'
     ) combined
 ), daily_demand AS (
     SELECT material_no, plant_code, need_date, SUM(qty) AS qty FROM requirements
@@ -510,13 +510,13 @@ WITH RECURSIVE tree AS (
            p.qty * l.qty AS qty
     FROM production_order p JOIN leaves l ON l.root = p.material_no
     JOIN material m ON m.material_no = l.material_no
-    WHERE p.planned_start > DATE '2026-11-01' AND m.description = 'RF generator'
+    WHERE p.planned_start > DATE '2026-11-01' AND m.description LIKE 'RF generator,%'
     UNION ALL
     SELECT NULL, i.material_no, sp.plant_code, i.promised_date, i.qty
     FROM sales_order_item i JOIN spare_plant sp ON sp.material_no = i.material_no
     JOIN material m ON m.material_no = i.material_no
     WHERE i.status = 'Open' AND i.promised_date > DATE '2026-11-01'
-      AND m.description = 'RF generator'
+      AND m.description LIKE 'RF generator,%'
     ) combined
 ), daily_demand AS (
     SELECT material_no, plant_code, need_date, SUM(qty) AS qty FROM requirements

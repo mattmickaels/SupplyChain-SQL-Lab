@@ -3,7 +3,9 @@
 import numpy as np
 import pandas as pd
 
+from sclab.constants import AS_OF_DATE
 from sclab.data.story import CORVANE_SUPPLIER_NO
+from sclab.data.transactions import _tool_components
 
 
 def apply_messiness(
@@ -55,6 +57,7 @@ def apply_messiness(
     movements["posting_date"] = pd.Timestamp("2021-11-01")
     out["stock_movement"] = pd.concat([out["stock_movement"], movements], ignore_index=True)
     out["inventory"] = pd.concat([out["inventory"], balances], ignore_index=True)
+    out["material_plant"] = _raise_idle_safety_stock(frames, out["material_plant"])
     out["material_plant"] = _mess_lead_times(rng, out["material_plant"])
     out["purchase_order_item"] = _mess_uom(rng, out["purchase_order_item"])
     out["customer"] = _mess_country(rng, out["customer"])
@@ -66,7 +69,9 @@ def apply_messiness(
     quotes.loc[picked[len(picked) // 2 :]] = 0
     sources["quoted_lead_time_days"] = quotes
     items = out["purchase_order_item"]
-    non_rf = out["material"].loc[~out["material"]["description"].eq("RF generator"), "material_no"]
+    non_rf = out["material"].loc[
+        ~out["material"]["description"].str.startswith("RF generator,"), "material_no"
+    ]
     pool = items.index[
         items["confirmed_delivery_date"].gt(pd.Timestamp("2026-11-01"))
         & items["material_no"].isin(non_rf)
@@ -90,6 +95,47 @@ def apply_messiness(
     # Append historical quotes after planting blanks to preserve the seeded draws.
     out["material_supplier"] = pd.concat([out["material_supplier"], historical], ignore_index=True)
     return out
+
+
+def _raise_idle_safety_stock(frames: dict[str, pd.DataFrame], planning: pd.DataFrame):
+    """Raise the safety stock of idle long-lead parts above what is on hand.
+
+    These parts are built into a tool at the plant, but no open production order uses
+    them in the next 26 weeks, so nothing replenishes them.
+    A buyer raised the target after a supplier warning, which leaves them below safety stock.
+    """
+    start = pd.Timestamp(AS_OF_DATE)
+    end = start + pd.Timedelta(weeks=26)
+    production = frames["production_order"]
+    window = production[
+        production["status"].isin(["Planned", "Released"])
+        & (production["planned_start"] > start)
+        & (production["planned_start"] < end)
+    ]
+    leaf = _tool_components(frames)[["root", "material_no"]]
+    demand = window[["material_no", "plant_code"]].rename(columns={"material_no": "root"})
+    demand = demand.merge(leaf, on="root")[["material_no", "plant_code"]].drop_duplicates()
+    material = frames["material"].set_index("material_no")
+    long_lead = material["is_long_lead"] & ~material["description"].str.startswith("RF generator,")
+    stock = (
+        frames["inventory"]
+        .loc[frames["inventory"]["storage_location"].eq("RM01")]
+        .groupby(["material_no", "plant_code"])["qty_on_hand"]
+        .sum()
+    )
+    frame = planning.copy()
+    idle = (
+        frame["material_no"].map(long_lead).fillna(False).astype(bool)
+        & frame["safety_stock"].gt(0)
+        & ~pd.MultiIndex.from_frame(frame[["material_no", "plant_code"]]).isin(
+            pd.MultiIndex.from_frame(demand)
+        )
+    )
+    on_hand = pd.Series(
+        list(zip(frame["material_no"], frame["plant_code"], strict=True)), index=frame.index
+    ).map(stock.to_dict())
+    frame.loc[idle, "safety_stock"] = on_hand[idle].fillna(0).astype(int) + 4
+    return frame
 
 
 def _count_for_ratio(total: int, target: float, low: float, high: float) -> int:

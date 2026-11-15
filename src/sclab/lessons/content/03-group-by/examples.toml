@@ -91,7 +91,7 @@ FROM material_plant
 WHERE plant_code = 'AU01'
 GROUP BY plant_code
 """
-expected_rows = [["AU01", 164, 5156]]
+expected_rows = [["AU01", 153, 5167]]
 order_matters = false
 
 [[fact]]
@@ -101,7 +101,7 @@ SELECT COUNT(*)
 FROM sales_order_item
 WHERE EXTRACT(YEAR FROM requested_date) = 2021
 """
-expected = 625
+expected = 628
 
 [[fact]]
 id = "requested-year-2027"
@@ -110,4 +110,4 @@ SELECT COUNT(*)
 FROM sales_order_item
 WHERE EXTRACT(YEAR FROM requested_date) = 2027
 """
-expected = 242
+expected = 261

@@ -36,8 +36,8 @@ databricks_note = "Databricks: date_trunc('MONTH', d) and date_trunc('WEEK', d) 
 time_limit_s = 900
 summary_prompt = "Write three lines: the main result with numbers, the planning implication or limitation, and a specific next action."
 model_summary = """
-Cedar Wafer Robotics led with 82 late receipt events (1.92%); the top 10 supplied 700 of 4275 (16.37%) in Nov 2025-Oct 2026.
-Late events are spread across 138 suppliers; this is an event count, not a quantity or supplier late-rate ranking.
+Harbor Precision Assemblies led with 82 late receipt events (1.86%); the top 10 supplied 694 of 4404 (15.76%) in Nov 2025-Oct 2026.
+Late events are spread across 136 suppliers; this is an event count, not a quantity or supplier late-rate ranking.
 Review the top contributors and their receipt volumes before assigning supplier recovery actions.
 """
 summary_checklist = ["Names the number that matters", "States the date window and scope", "Separates evidence from inference", "Recommends an action", "Three lines or fewer"]
@@ -89,7 +89,7 @@ databricks_note = "Databricks: date_trunc('MONTH', d) and date_trunc('WEEK', d) 
 time_limit_s = 900
 summary_prompt = "Write three lines: the main result with numbers, the planning implication or limitation, and a specific next action."
 model_summary = """
-Halcyon Etch bookings rose from 19 to 33 units in Jul-Oct year over year, up 73.68%, so the increase includes real orders.
+Halcyon Etch bookings rose from 19 to 43 units in Jul-Oct year over year, up 126.32%, so the increase includes real orders.
 The separate Nov-Jan Etch forecast doubled from 30 to 60 units; it has no customer key and cannot be assigned to Halcyon.
 Validate customer delivery priorities and reconcile family capacity to the increased forward plan.
 """
@@ -180,8 +180,8 @@ databricks_note = "Databricks: date_trunc('MONTH', d) and date_trunc('WEEK', d) 
 time_limit_s = 900
 summary_prompt = "Write three lines: the main result with numbers, the planning implication or limitation, and a specific next action."
 model_summary = """
-Nov 2025-Oct 2026 spare-line OTD was Foundry 92.16% (2010/2181), Logic 82.14% (1357/1652), and Memory 70.31% (997/1418).
-Memory trails Foundry by 21.85 percentage points; shipment cohorts show a service gap, not its cause.
+Nov 2025-Oct 2026 spare-line OTD was Foundry 92.04% (1838/1997), Logic 82.16% (1326/1614), and Memory 70.05% (994/1419).
+Memory trails Foundry by 21.99 percentage points; shipment cohorts show a service gap, not its cause.
 Review late Memory shipments by material and supplier, then prioritize recovery with the service team.
 """
 summary_checklist = ["Names the number that matters", "States the date window and scope", "Separates evidence from inference", "Recommends an action", "Three lines or fewer"]
@@ -224,8 +224,8 @@ databricks_note = "Databricks: date_trunc('MONTH', d) and date_trunc('WEEK', d) 
 time_limit_s = 900
 summary_prompt = "Write three lines: the main result with numbers, the planning implication or limitation, and a specific next action."
 model_summary = """
-The top 10 materials with no usage in Nov 2025-Oct 2026 hold 487688.09 of stock at the snapshot.
-M-005429 leads at 59284.68 for 39 units; this uses a primary-source quote rather than an accounting valuation.
+The top 10 materials with no usage in Nov 2025-Oct 2026 hold 1063696.15 of stock at the snapshot.
+M-005407 leads at 213618.60 for 17 units; this uses a primary-source quote rather than an accounting valuation.
 Check forward service demand and disposition options for these ten before reducing purchases or writing stock off.
 """
 summary_checklist = ["Names the number that matters", "States the date window and scope", "Separates evidence from inference", "Recommends an action", "Three lines or fewer"]
@@ -287,7 +287,7 @@ databricks_note = "Databricks: date_trunc('MONTH', d) and date_trunc('WEEK', d) 
 time_limit_s = 900
 summary_prompt = "Write three lines: the main result with numbers, the planning implication or limitation, and a specific next action."
 model_summary = """
-M-001324 depends on V-10017 for 1200 component units across 20 open tool lines, exposing 21547113.00 in sales value.
+M-001324 depends on V-10017 for 233 component units across 43 open tool lines, exposing 286059500.00 in sales value.
 The result contains 12 single-source long-lead dependencies; exposure overlaps across parts and does not prove a shortage or lost revenue.
 Review RF supply coverage and qualification of alternative sources before committing additional customer demand.
 """

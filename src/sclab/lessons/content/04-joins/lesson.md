@@ -18,7 +18,7 @@ WHERE h.po_no = 'PO-0043687'
 ```
 
 One row comes back.
-The supplier name is Kindred Precision Assemblies.
+The supplier name is Kindred Vacuum Pumps.
 
 A left join keeps every row from the first table.
 When nothing matches, the columns from the second table are NULL.
@@ -155,13 +155,13 @@ Write the test as confirmed_delivery_date >= requested_delivery_date + INTERVAL 
 A date-time still compares correctly with a date.
 Date minus date is not used here, because those engines do not return the same kind of value.
 
-Line 1 of PO-0006802 was requested for 28 December 2026 and confirmed for 22 February 2027.
+Line 1 of PO-0006661 was requested for 11 April 2027 and confirmed for 6 June 2027.
 The confirmed date is the requested date plus 56 days.
 
 ```sql
 SELECT i.po_no, i.line_no
 FROM purchase_order_item AS i
-WHERE i.po_no = 'PO-0006802'
+WHERE i.po_no = 'PO-0006661'
   AND i.line_no = 1
   AND i.confirmed_delivery_date >= i.requested_delivery_date + INTERVAL 56 DAY
 ```

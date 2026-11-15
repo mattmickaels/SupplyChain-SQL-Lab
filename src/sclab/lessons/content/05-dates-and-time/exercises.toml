@@ -216,7 +216,7 @@ Find customers whose most recent tool order is more than 90 days before 1 Novemb
 A tool order is a sales order line whose material has material_type = 'TOOL'.
 Use one row per customer, not per product family.
 365 days, 270 days, and 180 days before 1 November 2026 each match no customer.
-Every customer ordered a tool on or after 1 August 2026, so the threshold that still leaves a customer out is 90 days.
+Every customer ordered a tool on or after 24 June 2026, so the threshold that still leaves a customer out is 90 days.
 More than 90 days means last_tool_order_date + INTERVAL 90 DAY is still before DATE '2026-11-01'.
 Return customer_no, name, and last_tool_order_date.
 name is customer.name.

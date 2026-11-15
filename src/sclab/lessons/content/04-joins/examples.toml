@@ -6,7 +6,7 @@ FROM purchase_order AS h
 JOIN supplier AS s ON s.supplier_no = h.supplier_no
 WHERE h.po_no = 'PO-0043687'
 """
-expected_rows = [["PO-0043687", "Kindred Precision Assemblies"]]
+expected_rows = [["PO-0043687", "Kindred Vacuum Pumps"]]
 order_matters = false
 
 [[example]]
@@ -137,11 +137,11 @@ id = "late-line-stays"
 sql = """
 SELECT i.po_no, i.line_no
 FROM purchase_order_item AS i
-WHERE i.po_no = 'PO-0006802'
+WHERE i.po_no = 'PO-0006661'
   AND i.line_no = 1
   AND i.confirmed_delivery_date >= i.requested_delivery_date + INTERVAL 56 DAY
 """
-expected_rows = [["PO-0006802", 1]]
+expected_rows = [["PO-0006661", 1]]
 order_matters = false
 
 [[fact]]
@@ -153,7 +153,7 @@ FROM (
     FROM purchase_order_item AS i
     JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
     WHERE i.po_no IN (
-        'PO-0000003', 'PO-0000006', 'PO-0000009', 'PO-0000012', 'PO-0000015'
+        'PO-0000003', 'PO-0000006', 'PO-0000009', 'PO-0000013', 'PO-0000016'
     )
     GROUP BY i.po_no, i.line_no
     HAVING COUNT(*) = 3
@@ -168,14 +168,14 @@ SELECT description
 FROM material
 WHERE material_no = 'M-000011'
 """
-expected = "Etch system, 300mm, 2-chamber"
+expected = "Etch system, 300mm, 2-chamber, conductor"
 
 [[fact]]
 id = "etch-tool-same-description"
 sql = """
 SELECT COUNT(*)
 FROM material
-WHERE description = 'Etch system, 300mm, 2-chamber'
+WHERE description LIKE 'Etch system, 300mm, 2-chamber%'
 """
 expected = 2
 
@@ -202,15 +202,15 @@ id = "late-line-requested"
 sql = """
 SELECT requested_delivery_date
 FROM purchase_order_item
-WHERE po_no = 'PO-0006802' AND line_no = 1
+WHERE po_no = 'PO-0006661' AND line_no = 1
 """
-expected = "2026-12-28"
+expected = "2027-04-11"
 
 [[fact]]
 id = "late-line-confirmed"
 sql = """
 SELECT confirmed_delivery_date
 FROM purchase_order_item
-WHERE po_no = 'PO-0006802' AND line_no = 1
+WHERE po_no = 'PO-0006661' AND line_no = 1
 """
-expected = "2027-02-22"
+expected = "2027-06-06"

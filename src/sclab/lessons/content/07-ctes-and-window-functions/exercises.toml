@@ -207,7 +207,7 @@ id = "cte-rf-running-total"
 title = "Running total of RF generator receipts"
 prompt_md = """
 Build a running total of goods-receipt quantity for RF generators in 2026.
-Keep materials whose description is exactly RF generator.
+Keep materials whose description starts with RF generator, (the comma matters, so the spare kit is out).
 The receipt dates run from 1 January 2026 up to, and not including, 1 November 2026.
 One row per month that has a receipt.
 month is the first day of that month.
@@ -229,7 +229,7 @@ WITH monthly AS (
     FROM goods_receipt AS g
     JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
     JOIN material AS m ON m.material_no = i.material_no
-    WHERE m.description = 'RF generator'
+    WHERE m.description LIKE 'RF generator,%'
       AND g.receipt_date >= DATE '2026-01-01'
       AND g.receipt_date < DATE '2026-11-01'
     GROUP BY CAST(date_trunc('month', g.receipt_date) AS DATE)

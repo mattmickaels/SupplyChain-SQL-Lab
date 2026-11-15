@@ -4,7 +4,7 @@ sql = """
 SELECT datediff('day', i.confirmed_delivery_date, g.receipt_date) AS days_late
 FROM goods_receipt AS g
 JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
-WHERE g.gr_no = 'GR-0000036'
+WHERE g.gr_no = 'GR-0010740'
 """
 expected_rows = [[1]]
 order_matters = false
@@ -14,10 +14,10 @@ id = "day-after-confirmed"
 sql = """
 SELECT confirmed_delivery_date + INTERVAL 1 DAY AS day_after_confirmed
 FROM purchase_order_item
-WHERE po_no = 'PO-0017001'
-  AND line_no = 2
+WHERE po_no = 'PO-0000010'
+  AND line_no = 1
 """
-expected_rows = [["2021-11-21"]]
+expected_rows = [["2022-07-07"]]
 order_matters = false
 
 [[example]]
@@ -27,11 +27,11 @@ SELECT datediff('day', h.order_date, MIN(g.receipt_date)) AS actual_lead_time_da
 FROM purchase_order_item AS i
 JOIN purchase_order AS h ON h.po_no = i.po_no
 JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
-WHERE i.po_no = 'PO-0017001'
-  AND i.line_no = 2
+WHERE i.po_no = 'PO-0000010'
+  AND i.line_no = 1
 GROUP BY h.order_date
 """
-expected_rows = [[19]]
+expected_rows = [[48]]
 order_matters = false
 
 [[example]]
@@ -45,8 +45,8 @@ SELECT COUNT(*) AS receipt_count,
        ) AS late_pct
 FROM goods_receipt AS g
 JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
-WHERE g.po_no = 'PO-0017001'
-  AND g.line_no = 2
+WHERE g.po_no = 'PO-0000010'
+  AND g.line_no = 1
 """
 expected_rows = [[3, 100.0]]
 order_matters = false
@@ -62,7 +62,7 @@ WHERE h.order_date >= DATE '2025-01-01'
   AND h.order_date < DATE '2025-02-01'
 GROUP BY date_trunc('month', h.order_date)
 """
-expected_rows = [["2025-01-01", 385]]
+expected_rows = [["2025-01-01", 576]]
 order_matters = false
 
 [[example]]
@@ -70,7 +70,7 @@ id = "week-of-1-november-2026"
 sql = """
 SELECT date_trunc('week', confirmed_delivery_date) AS week_start
 FROM purchase_order_item
-WHERE po_no = 'PO-0002536'
+WHERE po_no = 'PO-0002506'
   AND line_no = 1
 """
 expected_rows = [["2026-10-26"]]
@@ -82,13 +82,13 @@ sql = """
 SELECT EXTRACT(YEAR FROM receipt_date) AS receipt_year,
        EXTRACT(QUARTER FROM receipt_date) AS receipt_quarter
 FROM goods_receipt
-WHERE gr_no = 'GR-0000036'
+WHERE gr_no = 'GR-0010740'
 """
-expected_rows = [[2021, 4]]
+expected_rows = [[2022, 3]]
 order_matters = false
 
 [[example]]
-id = "harbor-tool-recency"
+id = "quiet-tool-recency"
 sql = """
 SELECT c.customer_no,
        c.name,
@@ -98,65 +98,65 @@ FROM customer AS c
 JOIN sales_order AS h ON h.customer_no = c.customer_no
 JOIN sales_order_item AS i ON i.so_no = h.so_no
 JOIN material AS m ON m.material_no = i.material_no
-WHERE c.customer_no = 'C-2002'
+WHERE c.customer_no = 'C-2009'
   AND m.material_type = 'TOOL'
 GROUP BY c.customer_no, c.name
 """
-expected_rows = [["C-2002", "Harbor Foundry", "2026-08-01", "2026-10-30"]]
+expected_rows = [["C-2009", "Quiet Memory", "2026-06-24", "2026-09-22"]]
 order_matters = false
 
 [[fact]]
-id = "po-0017001-order-date"
+id = "po-0000010-order-date"
 sql = """
 SELECT order_date
 FROM purchase_order
-WHERE po_no = 'PO-0017001'
+WHERE po_no = 'PO-0000010'
 """
-expected = "2021-11-02"
+expected = "2022-05-20"
 
 [[fact]]
-id = "po-0017001-line-2-confirmed"
+id = "po-0000010-line-1-confirmed"
 sql = """
 SELECT confirmed_delivery_date
 FROM purchase_order_item
-WHERE po_no = 'PO-0017001'
-  AND line_no = 2
+WHERE po_no = 'PO-0000010'
+  AND line_no = 1
 """
-expected = "2021-11-20"
+expected = "2022-07-06"
 
 [[fact]]
 id = "gr-0000036-po"
 sql = """
 SELECT po_no
 FROM goods_receipt
-WHERE gr_no = 'GR-0000036'
+WHERE gr_no = 'GR-0010740'
 """
-expected = "PO-0017001"
+expected = "PO-0000010"
 
 [[fact]]
 id = "gr-0000036-line"
 sql = """
 SELECT line_no
 FROM goods_receipt
-WHERE gr_no = 'GR-0000036'
+WHERE gr_no = 'GR-0010740'
 """
-expected = 2
+expected = 1
 
 [[fact]]
 id = "gr-0000036-receipt-date"
 sql = """
 SELECT receipt_date
 FROM goods_receipt
-WHERE gr_no = 'GR-0000036'
+WHERE gr_no = 'GR-0010740'
 """
-expected = "2021-11-21"
+expected = "2022-07-07"
 
 [[fact]]
-id = "po-0002536-line-1-confirmed"
+id = "po-0002506-line-1-confirmed"
 sql = """
 SELECT confirmed_delivery_date
 FROM purchase_order_item
-WHERE po_no = 'PO-0002536'
+WHERE po_no = 'PO-0002506'
   AND line_no = 1
 """
 expected = "2026-11-01"
@@ -180,7 +180,7 @@ FROM (
     GROUP BY customer_no
 )
 """
-expected = "2026-10-26"
+expected = "2026-10-22"
 
 [[fact]]
 id = "customers-without-a-late-october-order"
@@ -190,13 +190,13 @@ FROM (
     SELECT customer_no
     FROM sales_order
     GROUP BY customer_no
-    HAVING MAX(order_date) < DATE '2026-10-26'
+    HAVING MAX(order_date) < DATE '2026-10-22'
 )
 """
 expected = 0
 
 [[fact]]
-id = "customers-without-august-tool-order"
+id = "customers-without-july-tool-order"
 sql = """
 SELECT COUNT(*)
 FROM customer AS c
@@ -209,7 +209,7 @@ LEFT JOIN (
     GROUP BY h.customer_no
 ) AS latest ON latest.customer_no = c.customer_no
 WHERE latest.last_tool_order_date IS NULL
-   OR latest.last_tool_order_date < DATE '2026-08-01'
+   OR latest.last_tool_order_date < DATE '2026-06-24'
 """
 expected = 0
 
@@ -246,16 +246,16 @@ FROM (
 expected = 0
 
 [[fact]]
-id = "harbor-tool-order-plus-180-days"
+id = "quiet-tool-order-plus-180-days"
 sql = """
 SELECT MAX(h.order_date) + INTERVAL 180 DAY
 FROM sales_order AS h
 JOIN sales_order_item AS i ON i.so_no = h.so_no
 JOIN material AS m ON m.material_no = i.material_no
-WHERE h.customer_no = 'C-2002'
+WHERE h.customer_no = 'C-2009'
   AND m.material_type = 'TOOL'
 """
-expected = "2027-01-28"
+expected = "2026-12-21"
 
 [[fact]]
 id = "tool-customers-quiet-180-days"
@@ -293,7 +293,7 @@ GROUP BY EXTRACT(QUARTER FROM g.receipt_date)
 ORDER BY receipt_quarter
 """
 expected_rows = [
-  [3, 23, 43.5],
+  [3, 28, 53.6],
   [4, 2, 0.0],
 ]
 order_matters = true

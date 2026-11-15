@@ -29,11 +29,7 @@ JOIN material AS m ON m.material_no = t.material_no
 GROUP BY t.level, m.material_type
 ORDER BY t.level, m.material_type
 """
-expected_rows = [
-  [1, "MODULE", 7],
-  [2, "SUBASSY", 36],
-  [3, "COMPONENT", 178],
-]
+expected_rows = [[1, "MODULE", 7], [2, "SUBASSY", 26], [3, "COMPONENT", 145]]
 order_matters = true
 
 [[example]]
@@ -53,16 +49,13 @@ WITH RECURSIVE tree AS (
     FROM tree AS t
     JOIN bom_item AS b ON b.parent_material_no = t.material_no
     WHERE t.level < 10
-      AND b.component_material_no = 'M-000501'
+      AND b.component_material_no IN ('M-000503', 'M-001874')
 )
 SELECT level, material_no, extended_qty
 FROM tree
 ORDER BY level
 """
-expected_rows = [
-  [1, "M-000111", 2.0],
-  [2, "M-000501", 4.0],
-]
+expected_rows = [[1, "M-000111", 2.0], [2, "M-000503", 2.0], [3, "M-001874", 12.0]]
 order_matters = true
 
 [[example]]
@@ -84,9 +77,18 @@ JOIN material AS t ON t.material_no = u.material_no
 ORDER BY u.level, t.material_no
 """
 expected_rows = [
-  [1, "M-000504", "RF match network subassembly, variant 184", "SUBASSY"],
+  [1, "M-001043", "RF delivery subassembly, variant 723", "SUBASSY"],
+  [1, "M-001049", "RF delivery subassembly, variant 729", "SUBASSY"],
+  [1, "M-001051", "RF delivery subassembly, variant 731", "SUBASSY"],
+  [1, "M-001057", "RF delivery subassembly, variant 737", "SUBASSY"],
+  [2, "M-000055", "Deposition chamber module", "MODULE"],
+  [2, "M-000097", "Deposition chamber module", "MODULE"],
   [2, "M-000111", "Etch chamber module", "MODULE"],
-  [3, "M-000011", "Etch system, 300mm, 2-chamber", "TOOL"],
+  [2, "M-000153", "Etch chamber module", "MODULE"],
+  [3, "M-000003", "Deposition system, 300mm, 4-chamber, PECVD", "TOOL"],
+  [3, "M-000009", "Deposition system, 300mm, 5-chamber, PEALD", "TOOL"],
+  [3, "M-000011", "Etch system, 300mm, 2-chamber, conductor", "TOOL"],
+  [3, "M-000017", "Etch system, 300mm, 3-chamber, dielectric", "TOOL"],
 ]
 order_matters = true
 
@@ -97,7 +99,7 @@ SELECT description
 FROM material
 WHERE material_no = 'M-000001'
 """
-expected = "Deposition system, 300mm, 2-chamber"
+expected = "Deposition system, 300mm, 2-chamber, PECVD"
 
 [[fact]]
 id = "etch-tool-type"
@@ -115,7 +117,7 @@ SELECT description
 FROM material
 WHERE material_no = 'M-000011'
 """
-expected = "Etch system, 300mm, 2-chamber"
+expected = "Etch system, 300mm, 2-chamber, conductor"
 
 [[fact]]
 id = "max-descendant-level"
@@ -152,4 +154,4 @@ SELECT description
 FROM material
 WHERE material_no = 'M-001321'
 """
-expected = "RF generator"
+expected = "RF generator, 13.56 MHz, 1.5 kW"

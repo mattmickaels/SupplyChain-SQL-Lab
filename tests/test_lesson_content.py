@@ -747,12 +747,10 @@ def test_worked_examples_match_text(lab_home) -> None:
             ]
 
 
-@pytest.mark.parametrize("last_order", [None, "2026-07-31", "2026-08-01"])
+@pytest.mark.parametrize("last_order", [None, "2026-06-23", "2026-06-24"])
 def test_tool_recency_fact_includes_every_customer(last_order) -> None:
     data = tomllib.loads((_CONTENT / "05-dates-and-time/examples.toml").read_text())
-    fact = next(
-        item for item in data["fact"] if item["id"] == "customers-without-august-tool-order"
-    )
+    fact = next(item for item in data["fact"] if item["id"] == "customers-without-july-tool-order")
     with duckdb.connect(":memory:") as connection:
         connection.execute("CREATE TABLE customer (customer_no VARCHAR)")
         connection.execute(
@@ -763,7 +761,7 @@ def test_tool_recency_fact_includes_every_customer(last_order) -> None:
         connection.execute("INSERT INTO customer VALUES ('recent'), ('other')")
         connection.execute("INSERT INTO material VALUES ('tool', 'TOOL'), ('spare', 'SPARE')")
         connection.execute(
-            "INSERT INTO sales_order VALUES ('one', 'recent', DATE '2026-08-01'), "
+            "INSERT INTO sales_order VALUES ('one', 'recent', DATE '2026-06-24'), "
             "('two', 'other', DATE '2026-10-31')"
         )
         connection.execute("INSERT INTO sales_order_item VALUES ('one', 'tool'), ('two', 'spare')")
@@ -772,7 +770,7 @@ def test_tool_recency_fact_includes_every_customer(last_order) -> None:
             connection.execute("INSERT INTO sales_order_item VALUES ('three', 'tool')")
         actual = connection.execute(fact["sql"]).fetchone()[0]
     matches = normalize_value(actual) == normalize_value(fact["expected"])
-    assert matches == (last_order == "2026-08-01")
+    assert matches == (last_order == "2026-06-24")
 
 
 def test_hints_are_not_reference_queries() -> None:
@@ -799,7 +797,7 @@ _WRONG_ANSWERS = (
             FROM goods_receipt
             GROUP BY po_no, line_no
         ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
-        WHERE m.description = 'RF generator'
+        WHERE m.description LIKE 'RF generator,%'
           AND h.order_date <= DATE '2026-11-01'
         ORDER BY i.confirmed_delivery_date, i.po_no, i.line_no
         """,
@@ -813,7 +811,7 @@ _WRONG_ANSWERS = (
         JOIN supplier AS s ON s.supplier_no = h.supplier_no
         JOIN material AS m ON m.material_no = i.material_no
         JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
-        WHERE m.description = 'RF generator'
+        WHERE m.description LIKE 'RF generator,%'
           AND h.order_date <= DATE '2026-11-01'
           AND g.qty < i.order_qty
         ORDER BY i.confirmed_delivery_date, i.po_no, i.line_no
@@ -899,7 +897,7 @@ _WRONG_ANSWERS = (
         SELECT m.material_no, m.description, s.supplier_no
         FROM material AS m
         JOIN material_supplier AS s ON s.material_no = m.material_no
-        WHERE m.description = 'RF generator'
+        WHERE m.description LIKE 'RF generator,%'
         ORDER BY m.material_no
         """,
     ),
@@ -1403,7 +1401,7 @@ _WRONG_ANSWERS = (
         ), targets AS (
             SELECT mp.material_no, mp.plant_code, mp.safety_stock
             FROM material_plant mp JOIN material m ON m.material_no = mp.material_no
-            WHERE (m.is_long_lead = true OR m.description = 'RF generator')
+            WHERE (m.is_long_lead = true OR m.description LIKE 'RF generator,%')
               AND EXISTS (
                   SELECT 1 FROM production_order p JOIN leaves l ON l.root = p.material_no
                   WHERE l.material_no = mp.material_no AND p.plant_code = mp.plant_code
@@ -1484,7 +1482,7 @@ _WRONG_ANSWERS = (
         ), targets AS (
             SELECT mp.material_no, mp.plant_code, mp.safety_stock
             FROM material_plant mp JOIN material m ON m.material_no = mp.material_no
-            WHERE (m.is_long_lead = true OR m.description = 'RF generator')
+            WHERE (m.is_long_lead = true OR m.description LIKE 'RF generator,%')
               AND EXISTS (
                   SELECT 1 FROM production_order p JOIN leaves l ON l.root = p.material_no
                   WHERE l.material_no = mp.material_no AND p.plant_code = mp.plant_code
@@ -1565,7 +1563,7 @@ _WRONG_ANSWERS = (
         ), targets AS (
             SELECT mp.material_no, mp.plant_code, mp.safety_stock
             FROM material_plant mp JOIN material m ON m.material_no = mp.material_no
-            WHERE (m.is_long_lead = true OR m.description = 'RF generator')
+            WHERE (m.is_long_lead = true OR m.description LIKE 'RF generator,%')
               AND EXISTS (
                   SELECT 1 FROM production_order p JOIN leaves l ON l.root = p.material_no
                   WHERE l.material_no = mp.material_no AND p.plant_code = mp.plant_code
@@ -1646,7 +1644,7 @@ _WRONG_ANSWERS = (
         ), targets AS (
             SELECT mp.material_no, mp.plant_code, mp.safety_stock
             FROM material_plant mp JOIN material m ON m.material_no = mp.material_no
-            WHERE (m.is_long_lead = true OR m.description = 'RF generator')
+            WHERE (m.is_long_lead = true OR m.description LIKE 'RF generator,%')
               AND EXISTS (
                   SELECT 1 FROM production_order p JOIN leaves l ON l.root = p.material_no
                   WHERE l.material_no = mp.material_no AND p.plant_code = mp.plant_code
@@ -1728,13 +1726,13 @@ _WRONG_ANSWERS = (
                    p.qty * l.qty AS qty
             FROM production_order p JOIN leaves l ON l.root = p.material_no
             JOIN material m ON m.material_no = l.material_no
-            WHERE p.planned_start > DATE '2026-11-01' AND m.description = 'RF generator'
+            WHERE p.planned_start > DATE '2026-11-01' AND m.description LIKE 'RF generator,%'
             UNION ALL
             SELECT NULL, i.material_no, sp.plant_code, i.promised_date, i.qty
             FROM sales_order_item i JOIN spare_plant sp ON sp.material_no = i.material_no
             JOIN material m ON m.material_no = i.material_no
             WHERE i.status = 'Open' AND i.promised_date > DATE '2026-11-01'
-              AND m.description = 'RF generator'
+              AND m.description LIKE 'RF generator,%'
         ), daily_demand AS (
             SELECT material_no, plant_code, need_date, SUM(qty) AS qty FROM requirements
             GROUP BY material_no, plant_code, need_date
@@ -1834,13 +1832,13 @@ _WRONG_ANSWERS = (
                    p.qty * l.qty AS qty
             FROM production_order p JOIN leaves l ON l.root = p.material_no
             JOIN material m ON m.material_no = l.material_no
-            WHERE p.planned_start > DATE '2026-11-01' AND m.description = 'RF generator'
+            WHERE p.planned_start > DATE '2026-11-01' AND m.description LIKE 'RF generator,%'
             UNION ALL
             SELECT NULL, i.material_no, sp.plant_code, i.promised_date, i.qty
             FROM sales_order_item i JOIN spare_plant sp ON sp.material_no = i.material_no
             JOIN material m ON m.material_no = i.material_no
             WHERE i.status = 'Open' AND i.promised_date > DATE '2026-11-01'
-              AND m.description = 'RF generator'
+              AND m.description LIKE 'RF generator,%'
         ), daily_demand AS (
             SELECT material_no, plant_code, need_date, SUM(qty) AS qty FROM requirements
             GROUP BY material_no, plant_code, need_date
@@ -1988,13 +1986,13 @@ _WRONG_ANSWERS = (
                    p.qty * l.qty AS qty
             FROM production_order p JOIN leaves l ON l.root = p.material_no
             JOIN material m ON m.material_no = l.material_no
-            WHERE p.planned_start > DATE '2026-11-01' AND m.description = 'RF generator'
+            WHERE p.planned_start > DATE '2026-11-01' AND m.description LIKE 'RF generator,%'
             UNION ALL
             SELECT NULL, i.material_no, sp.plant_code, i.promised_date, i.qty
             FROM sales_order_item i JOIN spare_plant sp ON sp.material_no = i.material_no
             JOIN material m ON m.material_no = i.material_no
             WHERE i.status = 'Open' AND i.promised_date > DATE '2026-11-01'
-              AND m.description = 'RF generator'
+              AND m.description LIKE 'RF generator,%'
         ), daily_demand AS (
             SELECT material_no, plant_code, need_date, SUM(qty) AS qty FROM requirements
             GROUP BY material_no, plant_code, need_date
@@ -2100,13 +2098,13 @@ _WRONG_ANSWERS = (
                    p.qty * l.qty AS qty
             FROM production_order p JOIN leaves l ON l.root = p.material_no
             JOIN material m ON m.material_no = l.material_no
-            WHERE p.planned_start > DATE '2026-11-01' AND m.description = 'RF generator'
+            WHERE p.planned_start > DATE '2026-11-01' AND m.description LIKE 'RF generator,%'
             UNION ALL
             SELECT NULL, i.material_no, sp.plant_code, i.promised_date, i.qty
             FROM sales_order_item i JOIN spare_plant sp ON sp.material_no = i.material_no
             JOIN material m ON m.material_no = i.material_no
             WHERE i.status = 'Open' AND i.promised_date > DATE '2026-11-01'
-              AND m.description = 'RF generator'
+              AND m.description LIKE 'RF generator,%'
         ), daily_demand AS (
             SELECT material_no, plant_code, need_date, SUM(qty) AS qty FROM requirements
             GROUP BY material_no, plant_code, need_date
@@ -2487,7 +2485,7 @@ WITH RECURSIVE tree AS (
 ), targets AS (
     SELECT mp.material_no, mp.plant_code, mp.safety_stock
     FROM material_plant mp JOIN material m ON m.material_no = mp.material_no
-    WHERE (m.is_long_lead = true OR m.description = 'RF generator')
+    WHERE (m.is_long_lead = true OR m.description LIKE 'RF generator,%')
       AND EXISTS (
           SELECT 1 FROM production_order p JOIN leaves l ON l.root = p.material_no
           WHERE l.material_no = mp.material_no AND p.plant_code = mp.plant_code
@@ -2713,7 +2711,7 @@ GROUP BY material_no, plant_code ORDER BY material_no, plant_code
             FROM goods_receipt AS g
             JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
             JOIN material AS m ON m.material_no = i.material_no
-            WHERE m.description = 'RF generator'
+            WHERE m.description LIKE 'RF generator,%'
               AND g.receipt_date >= DATE '2026-01-01'
               AND g.receipt_date < DATE '2026-11-01'
             GROUP BY CAST(date_trunc('month', g.receipt_date) AS DATE)
@@ -2732,7 +2730,7 @@ GROUP BY material_no, plant_code ORDER BY material_no, plant_code
             FROM goods_receipt AS g
             JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
             JOIN material AS m ON m.material_no = i.material_no
-            WHERE m.description IN ('RF generator', 'Spare RF generator kit')
+            WHERE (m.description LIKE 'RF generator,%' OR m.description = 'Spare RF generator kit')
               AND g.receipt_date >= DATE '2026-01-01'
               AND g.receipt_date < DATE '2026-11-01'
             GROUP BY CAST(date_trunc('month', g.receipt_date) AS DATE)
@@ -2948,7 +2946,7 @@ GROUP BY material_no, plant_code ORDER BY material_no, plant_code
             SELECT t.tool_no, t.material_no, SUM(t.extended_qty) AS qty_per_tool
             FROM tree AS t
             JOIN material AS c ON c.material_no = t.material_no
-            WHERE c.material_type = 'COMPONENT' AND c.description = 'RF generator'
+            WHERE c.material_type = 'COMPONENT' AND c.description LIKE 'RF generator,%'
             GROUP BY t.tool_no, t.material_no
         )
         SELECT p.material_no, c.description, SUM(p.qty_per_tool) AS required_qty
@@ -2980,7 +2978,7 @@ GROUP BY material_no, plant_code ORDER BY material_no, plant_code
             SELECT t.tool_no, t.material_no, SUM(t.extended_qty) AS qty_per_tool
             FROM tree AS t
             JOIN material AS c ON c.material_no = t.material_no
-            WHERE c.material_type = 'COMPONENT' AND c.description = 'RF generator'
+            WHERE c.material_type = 'COMPONENT' AND c.description LIKE 'RF generator,%'
             GROUP BY t.tool_no, t.material_no
         )
         SELECT p.material_no, c.description, SUM(p.qty_per_tool * i.qty) AS required_qty
@@ -3038,7 +3036,7 @@ def rf_open_order_scenario():
             INSERT INTO material VALUES
                 ('TOOL', 'Test tool', 'TOOL'),
                 ('ASSEMBLY', 'Test assembly', 'ASSEMBLY'),
-                ('RF', 'RF generator', 'COMPONENT');
+                ('RF', 'RF generator, 13.56 MHz, 3 kW', 'COMPONENT');
             INSERT INTO bom_item VALUES
                 ('TOOL', 'ASSEMBLY', 2), ('ASSEMBLY', 'RF', 3), ('TOOL', 'RF', 1);
             INSERT INTO sales_order_item VALUES ('TOOL', 3, 'Open'), ('TOOL', 5, 'Closed');
@@ -3050,7 +3048,7 @@ def test_rf_reference_multiplies_open_quantity_only(rf_open_order_scenario):
     exercise = next(item for item in _exercises() if item.id == "bom-rf-for-open-orders")
     run = _scenario_runner(rf_open_order_scenario)
     for sql in exercise.reference_sql:
-        assert run(sql).rows == [("RF", "RF generator", 21)]
+        assert run(sql).rows == [("RF", "RF generator, 13.56 MHz, 3 kW", 21)]
 
 
 def test_common_wrong_answers_fail(

@@ -12,35 +12,35 @@ SQL AVG does the same: it skips NULL and still counts 0.
 
 TRIM removes spaces at both ends of text.
 Two descriptions that match after TRIM are candidates, not proof that the material numbers are the same part.
-Twelve materials share the exact description RF generator, from M-001321 through M-001332.
+Forty materials share the exact description Factory interface module, from M-000042 through M-000315.
 Those are different parts.
 Gas box, variant 2 is M-001344, and Gas box, variant 15 is M-001435.
 The variant number makes them different parts.
 A planted copy is a row whose description differs from a real material only by trailing spaces.
-M-004744 is Aligner spindle, variant 103.
-M-005363 is the same words with a trailing space, so its description is 29 characters and M-004744 is 28.
-M-005339 is Gas box, variant 15 with a trailing space, and M-001435 is the real row.
+M-002019 is Robot servo motor, variant 15.
+M-005351 is the same words with a trailing space, so its description is 30 characters and M-002019 is 29.
+M-005352 is Gas box, variant 20 with a trailing space, and M-001470 is the real row.
 
 ```sql
 SELECT material_no, description, LENGTH(description) AS description_length
 FROM material
-WHERE material_no IN ('M-004744', 'M-005363')
+WHERE material_no IN ('M-002019', 'M-005351')
 ORDER BY material_no
 ```
 
-After TRIM, both descriptions are Aligner spindle, variant 103.
+After TRIM, both descriptions are Robot servo motor, variant 15.
 
 ```sql
 SELECT material_no, TRIM(description) AS trimmed_description
 FROM material
-WHERE material_no IN ('M-004744', 'M-005363')
+WHERE material_no IN ('M-002019', 'M-005351')
 ORDER BY material_no
 ```
 
 CASE picks a value row by row.
 SUM of a CASE that returns 1 or 0 counts the rows that match.
 COUNT(planned_lead_time_days) cannot do this job, because it counts 0 and skips only NULL.
-At plant AU01, 164 lead times are NULL, 44 are 0, and 5112 are greater than 0.
+At plant AU01, 153 lead times are NULL, 43 are 0, and 5124 are greater than 0.
 
 ```sql
 SELECT plant_code,
@@ -56,7 +56,7 @@ The same rows produce three different averages.
 AVG(planned_lead_time_days) skips NULL and keeps 0.
 AVG(COALESCE(planned_lead_time_days, 0)) treats NULL as 0.
 AVG of a CASE that returns NULL for 0 and for NULL drops both.
-At AU01 those averages are 56.8, 55.1, and 57.3 days.
+At AU01 those averages are 56.9, 55.3, and 57.4 days.
 
 ```sql
 SELECT ROUND(AVG(planned_lead_time_days), 1) AS avg_ignoring_null,
@@ -67,7 +67,7 @@ WHERE plant_code = 'AU01'
 ```
 
 Purchase order units were typed three ways.
-EA has 59892 lines, ea has 767 lines, and EA with a trailing space has 768 lines.
+EA has 60714 lines, ea has 778 lines, and EA with a trailing space has 779 lines.
 UPPER(TRIM(uom)) turns all three into EA.
 
 ```sql
@@ -78,16 +78,16 @@ ORDER BY uom
 ```
 
 Customer country has the same kind of split.
-NL has 2 customers and NL with a trailing space has 1 customer.
-TRIM makes one country, NL, with 3 customers.
-Customer C-2016 is the row whose country has the trailing space.
+US has 2 customers and US with a trailing space has 1 customer.
+TRIM makes one country, US, with 3 customers.
+Customer C-2001 is the row whose country has the trailing space.
 
 ```sql
 SELECT country AS country_raw,
        TRIM(country) AS country,
        COUNT(*) AS raw_count
 FROM customer
-WHERE TRIM(country) = 'NL'
+WHERE TRIM(country) = 'US'
 GROUP BY country, TRIM(country)
 ORDER BY country_raw
 ```
@@ -95,9 +95,9 @@ ORDER BY country_raw
 COALESCE(first, second) returns the first value when it is not NULL, and the second value otherwise.
 It does not replace 0, because 0 is a real number.
 It also stays NULL when both sides are NULL.
-M-001344 at SC01 has no planned lead time and a primary quote of 131, so the filled value is 131.
-M-001334 at AU01 has no planned lead time and a primary quote of 0, so the filled value is 0.
-M-000002 at SC01 has no planned lead time and no quote to copy, so the filled value stays blank.
+M-001345 at AU01 has no planned lead time and a primary quote of 176, so the filled value is 176.
+M-004879 at SG01 has no planned lead time and a primary quote of 0, so the filled value is 0.
+M-000002 at AU01 has no planned lead time and no quote to copy, so the filled value stays blank.
 
 ```sql
 SELECT p.material_no,
@@ -109,22 +109,22 @@ FROM material_plant AS p
 LEFT JOIN material_supplier AS s
   ON s.material_no = p.material_no
  AND s.is_primary = true
-WHERE (p.material_no = 'M-000002' AND p.plant_code = 'SC01')
-   OR (p.material_no = 'M-001334' AND p.plant_code = 'AU01')
-   OR (p.material_no = 'M-001344' AND p.plant_code = 'SC01')
+WHERE (p.material_no = 'M-000002' AND p.plant_code = 'AU01')
+   OR (p.material_no = 'M-004879' AND p.plant_code = 'SG01')
+   OR (p.material_no = 'M-001345' AND p.plant_code = 'AU01')
 ORDER BY p.material_no
 ```
 
 A cleaned material list removes only those planted copies.
 Keep the real row: the lower material_no whose description has no extra space.
-For Aligner spindle, variant 103, the kept number is M-004744 and the removed number is M-005363.
+For Robot servo motor, variant 15, the kept number is M-002019 and the removed number is M-005351.
 Do not drop every material that shares a trimmed description.
-Doing that to RF generator would keep only M-001321 and delete the other 11 real parts.
+Doing that to Factory interface module would keep only M-000042 and delete the other 39 real parts.
 
 ```sql
 SELECT material_no
 FROM material
-WHERE TRIM(description) = 'Aligner spindle, variant 103'
+WHERE TRIM(description) = 'Robot servo motor, variant 15'
   AND description <> TRIM(description)
 ```
 
@@ -132,7 +132,7 @@ WHERE TRIM(description) = 'Aligner spindle, variant 103'
 SELECT MIN(material_no) AS kept_material_no,
        COUNT(*) AS material_count
 FROM material
-WHERE description = 'RF generator'
+WHERE description = 'Factory interface module'
 ```
 
 Check yourself.

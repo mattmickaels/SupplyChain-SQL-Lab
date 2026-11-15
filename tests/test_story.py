@@ -178,7 +178,7 @@ RISK_ROWS_SQL = (
     JOIN material m ON m.material_no = p.material_no
     JOIN material rf ON rf.material_no = r.material_no
     LEFT JOIN stock st ON st.material_no = r.material_no AND st.plant_code = r.plant_code
-    WHERE s.status = 'Open' AND m.family_code = 'ETC' AND rf.description = 'RF generator'
+    WHERE s.status = 'Open' AND m.family_code = 'ETC' AND rf.description LIKE 'RF generator,%'
       AND h.order_date <= DATE '2026-11-01'
       AND COALESCE(st.qty, 0)
         + COALESCE((SELECT SUM(o.qty) FROM outstanding o
@@ -210,7 +210,7 @@ def test_at_risk_orders_exist(lab_conn) -> None:
 
 def _projected_shortages(lab_conn, *, requested: bool, rf_only: bool, horizon: date):
     delivery = "requested_delivery_date" if requested else "confirmed_delivery_date"
-    rf_filter = "=" if rf_only else "<>"
+    rf_filter = "LIKE" if rf_only else "NOT LIKE"
     return lab_conn.execute(
         PROJECTION_CTES
         + f"""
@@ -232,7 +232,7 @@ def _projected_shortages(lab_conn, *, requested: bool, rf_only: bool, horizon: d
             FROM daily
         )
         SELECT b.* FROM balances b JOIN material m ON m.material_no = b.material_no
-        WHERE m.description {rf_filter} 'RF generator' AND b.qty < 0
+        WHERE m.description {rf_filter} 'RF generator,%' AND b.qty < 0
         """,
         [horizon, horizon],
     ).fetchall()
@@ -302,7 +302,7 @@ def test_rf_snapshot_at_safety_stock(lab_conn) -> None:
         FROM material_plant p JOIN material m ON m.material_no = p.material_no
         LEFT JOIN inventory i ON i.material_no = p.material_no
           AND i.plant_code = p.plant_code AND i.storage_location = 'RM01'
-        WHERE m.description = 'RF generator'
+        WHERE m.description LIKE 'RF generator,%'
           AND EXISTS (SELECT 1 FROM stock_movement s
                       WHERE s.material_no = p.material_no AND s.plant_code = p.plant_code)
           AND COALESCE(i.qty_on_hand, 0) <> p.safety_stock

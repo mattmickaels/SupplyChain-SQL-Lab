@@ -48,7 +48,7 @@ id = "corvane-po-supplier-no"
 sql = """
 SELECT supplier_no
 FROM purchase_order
-WHERE po_no = 'PO-0006431'
+WHERE po_no = 'PO-0006693'
 """
 expected = "V-10017"
 
@@ -58,7 +58,7 @@ sql = """
 SELECT s.name
 FROM purchase_order AS h
 JOIN supplier AS s ON s.supplier_no = h.supplier_no
-WHERE h.po_no = 'PO-0006431'
+WHERE h.po_no = 'PO-0006693'
 """
 expected = "Corvane RF Systems"
 
@@ -67,6 +67,6 @@ id = "corvane-po-line-count"
 sql = """
 SELECT COUNT(*)
 FROM purchase_order_item
-WHERE po_no = 'PO-0006431'
+WHERE po_no = 'PO-0006693'
 """
 expected = 3

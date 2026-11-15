@@ -265,7 +265,7 @@ def test_projected_balance_goes_negative(lab_conn) -> None:
             JOIN material AS part ON part.material_no = leaves.material_no
             WHERE production_order.status IN ('Planned', 'Released')
               AND production_order.plant_code = 'SC01'
-              AND part.description = 'RF generator'
+              AND part.description LIKE 'RF generator,%'
               AND production_order.planned_start > DATE '2026-11-01'
               AND production_order.planned_start
                   <= DATE '2026-11-01' + INTERVAL 182 DAY
@@ -285,7 +285,7 @@ def test_projected_balance_goes_negative(lab_conn) -> None:
              AND goods_receipt.line_no = purchase_order_item.line_no
             WHERE purchase_order.plant_code = 'SC01'
               AND purchase_order.order_date <= DATE '2026-11-01'
-              AND part.description = 'RF generator'
+              AND part.description LIKE 'RF generator,%'
               AND purchase_order_item.confirmed_delivery_date IS NOT NULL
             GROUP BY purchase_order_item.po_no, purchase_order_item.line_no,
                      purchase_order_item.material_no,
@@ -301,7 +301,7 @@ def test_projected_balance_goes_negative(lab_conn) -> None:
             FROM inventory
             JOIN material ON material.material_no = inventory.material_no
             WHERE inventory.plant_code = 'SC01'
-              AND material.description = 'RF generator'
+              AND material.description LIKE 'RF generator,%'
             GROUP BY inventory.material_no
         ), events AS (
             SELECT material_no, DATE '2026-11-01' AS day, qty FROM stock
@@ -417,3 +417,132 @@ def test_spare_part_on_time_varies_by_segment(lab_conn) -> None:
     spread = (max(values) - min(values)) if len(values) >= 2 else 0.0
     print(f"spare_on_time={rates} spread={spread:.4f}")
     assert len(values) >= 2 and spread >= 0.05, f"spare_on_time={rates} spread={spread:.4f}"
+
+
+_COMPONENT_COSTS = """
+    WITH RECURSIVE tree AS (
+        SELECT m.material_no AS root, b.component_material_no AS material_no,
+               b.qty_per AS qty, 1 AS level
+        FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+        WHERE m.material_type = 'TOOL'
+        UNION ALL
+        SELECT t.root, b.component_material_no, t.qty * b.qty_per, t.level + 1
+        FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+        WHERE t.level < 10
+    ), leaves AS (
+        SELECT t.root, t.material_no, SUM(t.qty) AS qty
+        FROM tree t JOIN material m ON m.material_no = t.material_no
+        WHERE m.material_type = 'COMPONENT'
+        GROUP BY t.root, t.material_no
+    )
+"""
+
+
+def test_rf_generators_are_realistic_shared_hardware(lab_conn) -> None:
+    per_tool = lab_conn.execute(
+        _COMPONENT_COSTS
+        + r"""
+        SELECT t.material_no, SUM(l.qty) / CAST(regexp_extract(t.description, '(\d+)-chamber', 1)
+                                                 AS INTEGER) AS per_chamber
+        FROM leaves l JOIN material g ON g.material_no = l.material_no
+        JOIN material t ON t.material_no = l.root
+        WHERE g.description LIKE 'RF generator, %'
+        GROUP BY t.material_no, t.description
+        """
+    ).fetchall()
+    assert per_tool and all(1 <= per_chamber <= 2 for _, per_chamber in per_tool)
+    tools_per_generator = lab_conn.execute(
+        _COMPONENT_COSTS
+        + """
+        SELECT g.material_no, COUNT(DISTINCT l.root)
+        FROM material g JOIN leaves l ON l.material_no = g.material_no
+        WHERE g.description LIKE 'RF generator, %'
+        GROUP BY g.material_no
+        """
+    ).fetchall()
+    assert len(tools_per_generator) == 12
+    assert all(count >= 2 for _, count in tools_per_generator)
+    assert (
+        lab_conn.execute("""
+        SELECT COUNT(*) FROM bom_item b
+        JOIN material p ON p.material_no = b.parent_material_no
+        JOIN material c ON c.material_no = b.component_material_no
+        WHERE c.description LIKE 'RF generator, %' AND p.description NOT LIKE 'RF delivery%'
+    """).fetchone()[0]
+        == 0
+    )
+
+
+def test_safety_stock_only_where_part_is_used(lab_conn) -> None:
+    assert (
+        lab_conn.execute(
+            _COMPONENT_COSTS
+            + """
+        , used AS (
+            SELECT DISTINCT l.material_no,
+                   CASE t.family_code WHEN 'ETC' THEN 'SC01' WHEN 'CMP' THEN 'SG01'
+                                      ELSE 'AU01' END AS plant_code
+            FROM leaves l JOIN material t ON t.material_no = l.root
+        )
+        SELECT COUNT(*) FROM material_plant p
+        JOIN material m ON m.material_no = p.material_no
+        WHERE m.material_type = 'COMPONENT' AND p.safety_stock > 0
+          AND NOT EXISTS (SELECT 1 FROM used u
+                          WHERE u.material_no = p.material_no AND u.plant_code = p.plant_code)
+    """
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_prices_by_part_class_with_margin(lab_conn) -> None:
+    price = lambda like: lab_conn.execute(  # noqa: E731
+        """
+        SELECT MIN(s.unit_price), MAX(s.unit_price) FROM material_supplier s
+        JOIN material m USING (material_no) WHERE m.description LIKE ?
+    """,
+        [like],
+    ).fetchone()
+    low, high = price("RF generator, %")
+    assert 40_000 <= low and high <= 125_000
+    low, high = price("Liner retaining clip%")
+    assert 5 <= low and high <= 50
+    low, high = price("Throttle valve seal%")
+    assert 5 <= low and high <= 50
+    tools = lab_conn.execute("""
+        SELECT MIN(i.unit_price), MAX(i.unit_price) FROM sales_order_item i
+        JOIN material m USING (material_no) WHERE m.material_type = 'TOOL'
+    """).fetchone()
+    assert 2_500_000 <= tools[0] and tools[1] <= 8_800_000
+    margins = lab_conn.execute(
+        _COMPONENT_COSTS
+        + """
+        , cost AS (
+            SELECT l.root, SUM(l.qty * s.unit_price) AS cost
+            FROM leaves l JOIN material_supplier s
+              ON s.material_no = l.material_no AND s.is_primary
+            GROUP BY l.root
+        )
+        SELECT c.root, c.cost / MIN(i.unit_price) FROM cost c
+        JOIN sales_order_item i ON i.material_no = c.root
+        GROUP BY c.root, c.cost
+    """
+    ).fetchall()
+    assert len(margins) == 40
+    assert all(ratio < 0.7 for _, ratio in margins), margins
+
+
+def test_tool_lines_have_multi_unit_quantities(lab_conn) -> None:
+    share, lines = lab_conn.execute("""
+        SELECT AVG(CASE WHEN i.qty = 2 THEN 1.0 ELSE 0.0 END), COUNT(*)
+        FROM sales_order_item i JOIN material m USING (material_no)
+        WHERE m.material_type = 'TOOL'
+    """).fetchone()
+    assert 0.03 <= share <= 0.08 and lines > 1000
+    assert set(
+        q
+        for (q,) in lab_conn.execute(
+            "SELECT DISTINCT i.qty FROM sales_order_item i JOIN material m USING (material_no) "
+            "WHERE m.material_type = 'TOOL'"
+        ).fetchall()
+    ) == {1, 2}

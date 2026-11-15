@@ -16,7 +16,7 @@ ORDER BY bay_id
 ```
 
 Seven bays come back.
-AU01-B4, AU01-B5, SC01-B1, SC01-B2, SC01-B3, SC01-B4, and SG01-B4 are above the average.
+AU01-B5, SC01-B1, SC01-B3, SC01-B5, SG01-B1, SG01-B3, and SG01-B4 are above the average.
 
 The average is computed on the whole table.
 A filter in the outer query does not change that average.
@@ -42,7 +42,7 @@ Sum goods receipts by po_no and line_no first, then subtract that total from ord
 Keep a line when the order date is on or before 1 November 2026 and the remaining quantity is above zero.
 
 M-001331 is one RF generator.
-Its open quantity is 32.
+Its open quantity is 152.
 
 ```sql
 SELECT i.material_no,
@@ -60,12 +60,12 @@ WHERE h.order_date <= DATE '2026-11-01'
 GROUP BY i.material_no
 ```
 
-Twelve materials are described exactly as RF generator.
+Twelve materials have a description that starts with RF generator, each with its own frequency and power.
 Spare RF generator kit, M-001561, is a different material.
 It is not a long-lead part.
 
 Compare each RF generator's open quantity with the average of those twelve totals.
-Three of them are above that average.
+Eight of them are above that average.
 
 ```sql
 WITH received AS (
@@ -81,7 +81,7 @@ open_by_material AS (
     JOIN material AS m ON m.material_no = i.material_no
     LEFT JOIN received AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
     WHERE h.order_date <= DATE '2026-11-01'
-      AND m.description = 'RF generator'
+      AND m.description LIKE 'RF generator,%'
       AND i.order_qty > COALESCE(r.received_qty, 0)
     GROUP BY i.material_no
 )
@@ -91,7 +91,7 @@ WHERE open_qty > (SELECT AVG(open_qty) FROM open_by_material)
 ORDER BY open_qty DESC, material_no
 ```
 
-M-001325 has 1153 still open, M-001324 has 1020, and M-001323 has 864.
+M-001324 and M-001332 have 193 still open each, M-001322 has 161, M-001323 has 158, M-001331 has 152, M-001330 has 151, M-001325 has 137, and M-001327 has 136.
 
 Check yourself.
 Average the material totals, not the individual purchase lines.
@@ -102,7 +102,7 @@ On time means receipt_date is on or before confirmed_delivery_date.
 The last 12 months run from 1 November 2025 up to, and not including, 1 November 2026.
 
 These three suppliers show the tie.
-Both Harbor suppliers are rank 2.
+The last two suppliers tie, so both are rank 2.
 
 ```sql
 WITH rates AS (
@@ -124,7 +124,7 @@ WITH rates AS (
     JOIN supplier AS s ON s.supplier_no = h.supplier_no
     WHERE g.receipt_date >= DATE '2025-11-01'
       AND g.receipt_date < DATE '2026-11-01'
-      AND s.supplier_no IN ('V-10064', 'V-10076', 'V-10078')
+      AND s.supplier_no IN ('V-10064', 'V-10073', 'V-10089')
     GROUP BY s.supplier_no, s.name
 )
 SELECT supplier_no,
@@ -136,12 +136,12 @@ FROM rates
 ORDER BY rank_no, supplier_no
 ```
 
-Fern Thermal Systems is rank 1 at 95.8 percent, on 24 receipts.
-Harbor Thermal Systems and Harbor Gas Delivery are both rank 2 at 90.7 percent, on 43 receipts each.
+Fern Thermal Systems is rank 1 at 91.3 percent, on 23 receipts.
+Harbor RF Systems and Ivory Quartz Ceramics are both rank 2 at 85.2 percent, on 81 and 203 receipts.
 
 A window function cannot be filtered in the same WHERE that builds the rows.
 Compute ROW_NUMBER() in a named step, then keep row 1 in an outer query.
-Line 1 of PO-0000104 has three receipts.
+Line 1 of PO-0000105 has three receipts.
 The latest date wins, and the higher gr_no wins when the date is the same.
 
 ```sql
@@ -152,17 +152,17 @@ SELECT gr_no,
            ORDER BY receipt_date DESC, gr_no DESC
        ) AS rn
 FROM goods_receipt
-WHERE po_no = 'PO-0000104'
+WHERE po_no = 'PO-0000105'
   AND line_no = 1
 ORDER BY rn
 ```
 
-GR-0109573 on 23 October 2026 is row 1, for a quantity of 2.
+GR-0001856 on 5 February 2022 is row 1, for a quantity of 21.
 The other two receipts stay in the list until an outer query drops them.
 
 SUM() OVER (ORDER BY month) is a running total.
 Aggregate to one row per month first, or each receipt is added on its own.
-Rows from January through March 2026, for materials described exactly as RF generator, look like this.
+Rows from January through March 2026, for materials whose description starts with RF generator, look like this.
 
 ```sql
 WITH monthly AS (
@@ -171,7 +171,7 @@ WITH monthly AS (
     FROM goods_receipt AS g
     JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
     JOIN material AS m ON m.material_no = i.material_no
-    WHERE m.description = 'RF generator'
+    WHERE m.description LIKE 'RF generator,%'
       AND g.receipt_date >= DATE '2026-01-01'
       AND g.receipt_date < DATE '2026-04-01'
     GROUP BY CAST(date_trunc('month', g.receipt_date) AS DATE)
@@ -185,9 +185,9 @@ FROM monthly
 ORDER BY month
 ```
 
-January is 371 and the running total is 371.
-February is 385 and the running total is 756.
-March is 188 and the running total is 944.
+January is 169 and the running total is 169.
+February is 78 and the running total is 247.
+March is 266 and the running total is 513.
 
 On Databricks, date_trunc('MONTH', receipt_date) matches date_trunc('month', receipt_date).
 
@@ -217,9 +217,9 @@ FROM monthly
 ORDER BY month
 ```
 
-Each of those months has order quantity 40.
+January has order quantity 46, February has 46, and March has 61.
 January's change is NULL.
-February and March change by 0.
+February changes by 0 and March changes by 15.
 
 On Databricks, date_trunc('MONTH', order_date) matches date_trunc('month', order_date).
 
@@ -227,8 +227,8 @@ SUM(open_qty) OVER () is the total of every row in the window, with no partition
 Filter after that total is computed.
 A WHERE in the same query as the window would drop the other customers from the total.
 
-Halcyon Memory, customer C-2003, has 41 open tools.
-That is 13.4 percent of open tool quantity, rounded to 1 decimal.
+Halcyon Memory, customer C-2003, has 50 open tools.
+That is 13.2 percent of open tool quantity, rounded to 1 decimal.
 
 ```sql
 WITH open_lines AS (
@@ -291,7 +291,7 @@ FROM ranked
 WHERE rank_no = 1
 ```
 
-Kindred Quartz Ceramics, V-10113, is rank 1 in the US, with spend 26119815.52.
+Corvane RF Systems, V-10017, is rank 1 in the US, with spend 205861634.39.
 
 Check yourself.
 Name the grain of each step before you rank, lag, or take a share.

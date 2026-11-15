@@ -2,7 +2,7 @@
 id = "bom-direct-children"
 title = "Direct children of one etch tool"
 prompt_md = """
-List the direct components of tool M-000011, Etch system, 300mm, 2-chamber.
+List the direct components of tool M-000011, Etch system, 300mm, 2-chamber, conductor.
 The parent is parent_material_no on bom_item.
 Return component_material_no, description, and qty_per.
 The description comes from material.
@@ -184,7 +184,7 @@ Guard the recursive term with level < 10.
 Keep rows whose material_type is TOOL.
 Return material_no and description.
 Order by material_no.
-A tool that only shares the description RF generator is not this part.
+A different RF generator, with another frequency or power, is not this part.
 """
 hints = [
   "Start from bom_item rows whose component is M-001324, then keep joining parents.",
@@ -220,7 +220,7 @@ title = "RF generators for open tool orders"
 prompt_md = """
 How many of each RF generator are needed for all open tool sales orders?
 A tool sales line has status = 'Open' and the ordered material has material_type TOOL.
-An RF generator has material_type COMPONENT and description exactly RF generator.
+An RF generator has material_type COMPONENT and description starting with RF generator,.
 Explode every tool, multiply qty_per down the path, and sum that extended quantity by tool and component.
 Then multiply by the sales line quantity and sum across open lines.
 Guard the recursive term with level < 10.
@@ -258,7 +258,7 @@ per_tool AS (
     FROM tree AS t
     JOIN material AS c ON c.material_no = t.material_no
     WHERE c.material_type = 'COMPONENT'
-      AND c.description = 'RF generator'
+      AND c.description LIKE 'RF generator,%'
     GROUP BY t.tool_no, t.material_no
 )
 SELECT p.material_no,

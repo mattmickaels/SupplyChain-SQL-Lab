@@ -7,12 +7,12 @@ WHERE weekly_slots > (SELECT AVG(weekly_slots) FROM build_bay)
 ORDER BY bay_id
 """
 expected_rows = [
-  ["AU01-B4", 6],
   ["AU01-B5", 5],
   ["SC01-B1", 6],
-  ["SC01-B2", 6],
   ["SC01-B3", 6],
-  ["SC01-B4", 5],
+  ["SC01-B5", 5],
+  ["SG01-B1", 5],
+  ["SG01-B3", 5],
   ["SG01-B4", 6],
 ]
 order_matters = true
@@ -30,12 +30,12 @@ WHERE weekly_slots > (SELECT AVG(weekly_slots) FROM bay_slots)
 ORDER BY bay_id
 """
 expected_rows = [
-  ["AU01-B4", 6],
   ["AU01-B5", 5],
   ["SC01-B1", 6],
-  ["SC01-B2", 6],
   ["SC01-B3", 6],
-  ["SC01-B4", 5],
+  ["SC01-B5", 5],
+  ["SG01-B1", 5],
+  ["SG01-B3", 5],
   ["SG01-B4", 6],
 ]
 order_matters = true
@@ -57,7 +57,7 @@ WHERE h.order_date <= DATE '2026-11-01'
   AND i.order_qty > COALESCE(r.received_qty, 0)
 GROUP BY i.material_no
 """
-expected_rows = [["M-001331", 32]]
+expected_rows = [["M-001331", 152]]
 order_matters = false
 
 [[example]]
@@ -76,7 +76,7 @@ open_by_material AS (
     JOIN material AS m ON m.material_no = i.material_no
     LEFT JOIN received AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
     WHERE h.order_date <= DATE '2026-11-01'
-      AND m.description = 'RF generator'
+      AND m.description LIKE 'RF generator,%'
       AND i.order_qty > COALESCE(r.received_qty, 0)
     GROUP BY i.material_no
 )
@@ -85,11 +85,7 @@ FROM open_by_material
 WHERE open_qty > (SELECT AVG(open_qty) FROM open_by_material)
 ORDER BY open_qty DESC, material_no
 """
-expected_rows = [
-  ["M-001325", 1153],
-  ["M-001324", 1020],
-  ["M-001323", 864],
-]
+expected_rows = [["M-001324", 193], ["M-001332", 193], ["M-001322", 161], ["M-001323", 158], ["M-001331", 152], ["M-001330", 151], ["M-001325", 137], ["M-001327", 136]]
 order_matters = true
 
 [[example]]
@@ -114,7 +110,7 @@ WITH rates AS (
     JOIN supplier AS s ON s.supplier_no = h.supplier_no
     WHERE g.receipt_date >= DATE '2025-11-01'
       AND g.receipt_date < DATE '2026-11-01'
-      AND s.supplier_no IN ('V-10064', 'V-10076', 'V-10078')
+      AND s.supplier_no IN ('V-10064', 'V-10073', 'V-10089')
     GROUP BY s.supplier_no, s.name
 )
 SELECT supplier_no,
@@ -125,11 +121,7 @@ SELECT supplier_no,
 FROM rates
 ORDER BY rank_no, supplier_no
 """
-expected_rows = [
-  ["V-10064", "Fern Thermal Systems", 24, 95.8, 1],
-  ["V-10076", "Harbor Thermal Systems", 43, 90.7, 2],
-  ["V-10078", "Harbor Gas Delivery", 43, 90.7, 2],
-]
+expected_rows = [["V-10064", "Fern Thermal Systems", 23, 91.3, 1], ["V-10073", "Harbor RF Systems", 81, 85.2, 2], ["V-10089", "Ivory Quartz Ceramics", 203, 85.2, 2]]
 order_matters = true
 
 [[example]]
@@ -142,15 +134,11 @@ SELECT gr_no,
            ORDER BY receipt_date DESC, gr_no DESC
        ) AS rn
 FROM goods_receipt
-WHERE po_no = 'PO-0000104'
+WHERE po_no = 'PO-0000105'
   AND line_no = 1
 ORDER BY rn
 """
-expected_rows = [
-  ["GR-0109573", "2026-10-23", 2, 1],
-  ["GR-0109520", "2026-10-21", 3, 2],
-  ["GR-0109420", "2026-10-19", 3, 3],
-]
+expected_rows = [["GR-0001856", "2022-02-05", 21, 1], ["GR-0001697", "2022-02-02", 21, 2], ["GR-0001610", "2022-01-30", 22, 3]]
 order_matters = true
 
 [[example]]
@@ -162,7 +150,7 @@ WITH monthly AS (
     FROM goods_receipt AS g
     JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
     JOIN material AS m ON m.material_no = i.material_no
-    WHERE m.description = 'RF generator'
+    WHERE m.description LIKE 'RF generator,%'
       AND g.receipt_date >= DATE '2026-01-01'
       AND g.receipt_date < DATE '2026-04-01'
     GROUP BY CAST(date_trunc('month', g.receipt_date) AS DATE)
@@ -175,11 +163,7 @@ SELECT month,
 FROM monthly
 ORDER BY month
 """
-expected_rows = [
-  ["2026-01-01", 371, 371],
-  ["2026-02-01", 385, 756],
-  ["2026-03-01", 188, 944],
-]
+expected_rows = [["2026-01-01", 169, 169], ["2026-02-01", 78, 247], ["2026-03-01", 266, 513]]
 order_matters = true
 
 [[example]]
@@ -202,11 +186,7 @@ SELECT month,
 FROM monthly
 ORDER BY month
 """
-expected_rows = [
-  ["2026-01-01", 40, "NULL"],
-  ["2026-02-01", 40, 0],
-  ["2026-03-01", 40, 0],
-]
+expected_rows = [["2026-01-01", 46, "NULL"], ["2026-02-01", 46, 0], ["2026-03-01", 61, 15]]
 order_matters = true
 
 [[example]]
@@ -235,7 +215,7 @@ SELECT customer_no, customer_name, open_qty, share_pct
 FROM shares
 WHERE customer_no = 'C-2003'
 """
-expected_rows = [["C-2003", "Halcyon Memory", 41, 13.4]]
+expected_rows = [["C-2003", "Halcyon Memory", 50, 13.2]]
 order_matters = false
 
 [[example]]
@@ -269,7 +249,7 @@ SELECT country, supplier_no, supplier_name, spend, rank_no
 FROM ranked
 WHERE rank_no = 1
 """
-expected_rows = [["US", "V-10113", "Kindred Quartz Ceramics", 26119815.52, 1]]
+expected_rows = [["US", "V-10017", "Corvane RF Systems", 205861634.39, 1]]
 order_matters = false
 
 [[fact]]
@@ -277,7 +257,7 @@ id = "rf-generator-count"
 sql = """
 SELECT COUNT(*)
 FROM material
-WHERE description = 'RF generator'
+WHERE description LIKE 'RF generator,%'
 """
 expected = 12
 
@@ -306,7 +286,7 @@ SELECT COUNT(*)
 FROM goods_receipt AS g
 JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
 JOIN material AS m ON m.material_no = i.material_no
-WHERE m.description = 'RF generator'
+WHERE m.description LIKE 'RF generator,%'
   AND g.receipt_date >= DATE '2026-09-01'
   AND g.receipt_date < DATE '2026-11-01'
 """

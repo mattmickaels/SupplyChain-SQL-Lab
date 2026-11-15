@@ -3,12 +3,12 @@ id = "spindle-description-lengths"
 sql = """
 SELECT material_no, description, LENGTH(description) AS description_length
 FROM material
-WHERE material_no IN ('M-004744', 'M-005363')
+WHERE material_no IN ('M-002019', 'M-005351')
 ORDER BY material_no
 """
 expected_rows = [
-  ["M-004744", "Aligner spindle, variant 103", 28],
-  ["M-005363", "Aligner spindle, variant 103 ", 29],
+  ["M-002019", "Robot servo motor, variant 15", 29],
+  ["M-005351", "Robot servo motor, variant 15 ", 30],
 ]
 order_matters = true
 
@@ -17,12 +17,12 @@ id = "spindle-trimmed-description"
 sql = """
 SELECT material_no, TRIM(description) AS trimmed_description
 FROM material
-WHERE material_no IN ('M-004744', 'M-005363')
+WHERE material_no IN ('M-002019', 'M-005351')
 ORDER BY material_no
 """
 expected_rows = [
-  ["M-004744", "Aligner spindle, variant 103"],
-  ["M-005363", "Aligner spindle, variant 103"],
+  ["M-002019", "Robot servo motor, variant 15"],
+  ["M-005351", "Robot servo motor, variant 15"],
 ]
 order_matters = true
 
@@ -37,7 +37,7 @@ FROM material_plant
 WHERE plant_code = 'AU01'
 GROUP BY plant_code
 """
-expected_rows = [["AU01", 164, 44, 5112]]
+expected_rows = [["AU01", 153, 43, 5124]]
 order_matters = false
 
 [[example]]
@@ -49,7 +49,7 @@ SELECT ROUND(AVG(planned_lead_time_days), 1) AS avg_ignoring_null,
 FROM material_plant
 WHERE plant_code = 'AU01'
 """
-expected_rows = [[56.8, 55.1, 57.3]]
+expected_rows = [[56.9, 55.3, 57.4]]
 order_matters = false
 
 [[example]]
@@ -61,9 +61,9 @@ GROUP BY uom, LENGTH(uom)
 ORDER BY uom
 """
 expected_rows = [
-  ["EA", 2, 59892],
-  ["EA ", 3, 768],
-  ["ea", 2, 767],
+  ["EA", 2, 60714],
+  ["EA ", 3, 779],
+  ["ea", 2, 778],
 ]
 order_matters = true
 
@@ -74,31 +74,31 @@ SELECT country AS country_raw,
        TRIM(country) AS country,
        COUNT(*) AS raw_count
 FROM customer
-WHERE TRIM(country) = 'NL'
+WHERE TRIM(country) = 'US'
 GROUP BY country, TRIM(country)
 ORDER BY country_raw
 """
 expected_rows = [
-  ["NL", "NL", 2],
-  ["NL ", "NL", 1],
+  ["US", "US", 2],
+  ["US ", "US", 1],
 ]
 order_matters = true
 
 [[fact]]
-id = "dusky-country-has-trailing-space"
+id = "c2001-country-has-trailing-space"
 sql = """
 SELECT country
 FROM customer
-WHERE customer_no = 'C-2016'
+WHERE customer_no = 'C-2001'
 """
-expected = "NL "
+expected = "US "
 
 [[fact]]
-id = "nl-customers-after-trim"
+id = "us-customers-after-trim"
 sql = """
 SELECT COUNT(*)
 FROM customer
-WHERE TRIM(country) = 'NL'
+WHERE TRIM(country) = 'US'
 """
 expected = 3
 
@@ -114,35 +114,35 @@ FROM material_plant AS p
 LEFT JOIN material_supplier AS s
   ON s.material_no = p.material_no
  AND s.is_primary = true
-WHERE (p.material_no = 'M-000002' AND p.plant_code = 'SC01')
-   OR (p.material_no = 'M-001334' AND p.plant_code = 'AU01')
-   OR (p.material_no = 'M-001344' AND p.plant_code = 'SC01')
+WHERE (p.material_no = 'M-000002' AND p.plant_code = 'AU01')
+   OR (p.material_no = 'M-004879' AND p.plant_code = 'SG01')
+   OR (p.material_no = 'M-001345' AND p.plant_code = 'AU01')
 ORDER BY p.material_no
 """
 expected_rows = [
-  ["M-000002", "SC01", "NULL", "NULL", "NULL"],
-  ["M-001334", "AU01", "NULL", 0, 0],
-  ["M-001344", "SC01", "NULL", 131, 131],
+  ["M-000002", "AU01", "NULL", "NULL", "NULL"],
+  ["M-001345", "AU01", "NULL", 176, 176],
+  ["M-004879", "SG01", "NULL", 0, 0],
 ]
 order_matters = true
 
 [[fact]]
-id = "rf-generator-highest-material"
+id = "interface-module-highest-material"
 sql = """
 SELECT MAX(material_no)
 FROM material
-WHERE description = 'RF generator'
+WHERE description = 'Factory interface module'
 """
-expected = "M-001332"
+expected = "M-000315"
 
 [[example]]
-id = "rf-generator-same-description"
+id = "interface-module-same-description"
 sql = """
 SELECT COUNT(*) AS material_count
 FROM material
-WHERE description = 'RF generator'
+WHERE description = 'Factory interface module'
 """
-expected_rows = [[12]]
+expected_rows = [[40]]
 order_matters = false
 
 [[example]]
@@ -164,12 +164,12 @@ id = "gas-box-trailing-space-copy"
 sql = """
 SELECT material_no, description, LENGTH(description) AS description_length
 FROM material
-WHERE material_no IN ('M-001435', 'M-005339')
+WHERE material_no IN ('M-001470', 'M-005352')
 ORDER BY material_no
 """
 expected_rows = [
-  ["M-001435", "Gas box, variant 15", 19],
-  ["M-005339", "Gas box, variant 15 ", 20],
+  ["M-001470", "Gas box, variant 20", 19],
+  ["M-005352", "Gas box, variant 20 ", 20],
 ]
 order_matters = true
 
@@ -178,19 +178,19 @@ id = "spindle-copy-row"
 sql = """
 SELECT material_no
 FROM material
-WHERE TRIM(description) = 'Aligner spindle, variant 103'
+WHERE TRIM(description) = 'Robot servo motor, variant 15'
   AND description <> TRIM(description)
 """
-expected_rows = [["M-005363"]]
+expected_rows = [["M-005351"]]
 order_matters = false
 
 [[example]]
-id = "rf-generator-lowest-material"
+id = "interface-module-lowest-material"
 sql = """
 SELECT MIN(material_no) AS kept_material_no,
        COUNT(*) AS material_count
 FROM material
-WHERE description = 'RF generator'
+WHERE description = 'Factory interface module'
 """
-expected_rows = [["M-001321", 12]]
+expected_rows = [["M-000042", 40]]
 order_matters = false

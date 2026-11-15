@@ -41,10 +41,10 @@ FROM booked b FULL OUTER JOIN forecast f ON f.family_code = b.family_code
 ORDER BY family_code
 """
 expected_rows = [
-  ["CMP", 8, 10, 80.0],
-  ["DEP", 11, 10, 110.0],
+  ["CMP", 12, 10, 120.0],
+  ["DEP", 8, 10, 80.0],
   ["ETC", 10, 20, 50.0],
-  ["INS", 7, 10, 70.0]
+  ["INS", 19, 10, 190.0],
 ]
 order_matters = true
 
@@ -64,8 +64,8 @@ SELECT level, COUNT(*) AS paths FROM tree GROUP BY level ORDER BY level
 """
 expected_rows = [
   [1, 7],
-  [2, 36],
-  [3, 178]
+  [2, 26],
+  [3, 145],
 ]
 order_matters = true
 
@@ -99,9 +99,9 @@ SELECT w.week_start, s.qty AS opening_qty,
 FROM periods w CROSS JOIN stock s ORDER BY w.week_start
 """
 expected_rows = [
-  ["2026-11-01", 11, 11],
-  ["2026-11-08", 11, 11],
-  ["2026-11-15", 11, 11]
+  ["2026-11-01", 3, 3],
+  ["2026-11-08", 3, 3],
+  ["2026-11-15", 3, 3],
 ]
 order_matters = true
 
@@ -111,7 +111,7 @@ sql = """
 SELECT material_no, description FROM material WHERE material_no = 'M-001324'
 """
 expected_rows = [
-  ["M-001324", "RF generator"]
+  ["M-001324", "RF generator, 27.12 MHz, 3 kW"],
 ]
 order_matters = true
 
@@ -135,7 +135,7 @@ SELECT m.material_no,
 FROM material m WHERE m.material_no = 'M-001324'
 """
 expected_rows = [
-  ["M-001324", 900]
+  ["M-001324", 139],
 ]
 order_matters = true
 
@@ -149,21 +149,21 @@ FROM build_bay b LEFT JOIN production_order p ON p.bay_id = b.bay_id
 GROUP BY b.bay_id, b.weekly_slots ORDER BY b.bay_id
 """
 expected_rows = [
-  ["AU01-B1", 2, 5],
-  ["AU01-B2", 3, 0],
-  ["AU01-B3", 3, 0],
-  ["AU01-B4", 6, 6],
-  ["AU01-B5", 5, 8],
+  ["AU01-B1", 2, 0],
+  ["AU01-B2", 4, 0],
+  ["AU01-B3", 4, 0],
+  ["AU01-B4", 2, 9],
+  ["AU01-B5", 5, 4],
   ["SC01-B1", 6, 0],
-  ["SC01-B2", 6, 13],
+  ["SC01-B2", 4, 7],
   ["SC01-B3", 6, 37],
-  ["SC01-B4", 5, 0],
-  ["SC01-B5", 3, 0],
-  ["SG01-B1", 2, 0],
-  ["SG01-B2", 3, 0],
-  ["SG01-B3", 2, 7],
+  ["SC01-B4", 3, 0],
+  ["SC01-B5", 5, 0],
+  ["SG01-B1", 5, 0],
+  ["SG01-B2", 4, 0],
+  ["SG01-B3", 5, 4],
   ["SG01-B4", 6, 0],
-  ["SG01-B5", 3, 0]
+  ["SG01-B5", 2, 0],
 ]
 order_matters = true
 
