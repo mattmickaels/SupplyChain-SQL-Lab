@@ -3263,3 +3263,360 @@ def test_production_derived_calendar_wrong_answers_fail(planning_scenario, exerc
     exercise = next(item for item in _exercises() if item.id == exercise_id)
     outcome = check_answer(exercise, sql, runner=_scenario_runner(planning_scenario))
     assert outcome.passed is False
+
+
+# --- Lesson 9 rework: Databricks-safe subqueries, one status rule, staged exercises ---
+
+_EQUALITY_COMPARISONS = frozenset({"COMPARE_EQUAL", "COMPARE_NOT_DISTINCT_FROM"})
+_TABLE_NODE_TYPES = frozenset({"BASE_TABLE", "SUBQUERY", "EXPRESSION_LIST", "TABLE_FUNCTION"})
+
+
+def _subquery_scope_names(subquery: dict) -> set[str]:
+    """Aliases and table names that the subquery defines for itself."""
+    names: set[str] = set()
+    for node in _walk(subquery):
+        if "class" in node or node.get("type") not in _TABLE_NODE_TYPES:
+            continue
+        if node.get("alias"):
+            names.add(node["alias"].casefold())
+        if node.get("table_name"):
+            names.add(node["table_name"].casefold())
+    return names
+
+
+def _subquery_predicates(subquery: dict) -> list[dict]:
+    """Every WHERE, HAVING and JOIN ON expression inside the subquery, split on AND."""
+    roots: list[dict] = []
+    for node in _walk(subquery):
+        if node.get("type") == "SELECT_NODE":
+            roots.extend(item for item in (node.get("where_clause"), node.get("having")) if item)
+        elif node.get("type") == "JOIN" and node.get("condition"):
+            roots.append(node["condition"])
+    predicates: list[dict] = []
+    pending = list(roots)
+    while pending:
+        item = pending.pop()
+        if item.get("class") == "CONJUNCTION" and item.get("type") == "CONJUNCTION_AND":
+            pending.extend(item["children"])
+        else:
+            predicates.append(item)
+    return predicates
+
+
+def _non_equality_outer_reference(sql: str) -> str | None:
+    """Name the outer column a subquery compares without equality, if any.
+
+    Databricks rejects a correlated subquery whose outer column appears in a range
+    or other non-equality predicate (CORRELATED_COLUMN_IS_NOT_ALLOWED_IN_NON_EQUALITY_PREDICATE).
+    Outer columns are the qualified columns whose qualifier the subquery does not define.
+    Only scalar subqueries are checked: EXISTS and IN subqueries become semi-joins and may
+    use a non-equality predicate on both engines.
+    """
+    for node in _walk(_parse_sql(sql)):
+        if node.get("class") != "SUBQUERY" or node.get("subquery_type") != "SCALAR":
+            continue
+        inner = _subquery_scope_names(node["subquery"])
+        for predicate in _subquery_predicates(node["subquery"]):
+            outer = [
+                ".".join(item["column_names"])
+                for item in _walk(predicate)
+                if item.get("class") == "COLUMN_REF"
+                and len(item.get("column_names", [])) >= 2
+                and item["column_names"][0].casefold() not in inner
+            ]
+            if outer and predicate.get("type") not in _EQUALITY_COMPARISONS:
+                return outer[0]
+    return None
+
+
+def test_reference_subqueries_compare_outer_columns_by_equality_only() -> None:
+    for exercise in _exercises():
+        for sql in exercise.reference_sql:
+            outer = _non_equality_outer_reference(sql)
+            assert outer is None, (
+                f"{exercise.id}: a subquery uses outer column {outer} in a non-equality "
+                "predicate; use a join with GROUP BY or a window function"
+            )
+
+
+@pytest.mark.parametrize(
+    ("sql", "flagged"),
+    [
+        (
+            "SELECT t.a, COALESCE((SELECT SUM(d.q) FROM d WHERE d.k = t.a AND d.day >= t.day), 0) "
+            "FROM t",
+            True,
+        ),
+        (
+            "SELECT r.id, (SELECT MIN(s.day) FROM s WHERE s.k = r.k AND s.total >= r.need) FROM r",
+            True,
+        ),
+        (
+            "SELECT t.a FROM t WHERE (SELECT COUNT(*) FROM d WHERE d.k = t.a OR d.j = t.b) > 0",
+            True,
+        ),
+        (
+            "SELECT t.a FROM t WHERE (SELECT COUNT(*) FROM d WHERE d.day BETWEEN t.s AND t.e) > 0",
+            True,
+        ),
+        (
+            "SELECT t.a, (SELECT SUM(d.q) FROM d WHERE d.k = t.a AND d.q > 0 "
+            "AND d.day >= DATE '2026-11-01') FROM t",
+            False,
+        ),
+        (
+            "SELECT t.a FROM t WHERE EXISTS (SELECT 1 FROM d JOIN e ON e.k = d.k "
+            "WHERE d.k = t.a AND e.day > d.day)",
+            False,
+        ),
+        ("SELECT t.a, (SELECT MAX(p.n) FROM p) FROM t", False),
+        (
+            "SELECT t.a FROM t WHERE NOT EXISTS (SELECT 1 FROM d WHERE d.k = t.a AND d.n < t.n)",
+            False,
+        ),
+        (
+            "SELECT w.week_start, SUM(d.q) FROM weeks w LEFT JOIN d ON d.day >= w.week_start "
+            "AND d.day < w.week_start + INTERVAL 7 DAY GROUP BY w.week_start",
+            False,
+        ),
+    ],
+)
+def test_outer_column_check_flags_only_non_equality_use(sql: str, flagged: bool) -> None:
+    assert (_non_equality_outer_reference(sql) is not None) is flagged
+
+
+def _planning_exercises() -> list[Exercise]:
+    return [item for item in _exercises() if item.id.startswith("plan-")]
+
+
+def _is_production_status_rule(node: dict) -> bool:
+    if node.get("type") != "COMPARE_IN":
+        return False
+    children = node.get("children", [])
+    if not children or children[0].get("class") != "COLUMN_REF":
+        return False
+    if children[0]["column_names"][-1].casefold() != "status":
+        return False
+    values = {_string_constant(child) for child in children[1:]}
+    return values == {"planned", "released"}
+
+
+def test_planning_exercises_share_one_production_status_rule() -> None:
+    planning = _planning_exercises()
+    assert planning
+    for exercise in planning:
+        for sql in exercise.reference_sql:
+            tree = list(_walk(_parse_sql(sql)))
+            reads_production = any(
+                node.get("type") == "BASE_TABLE" and node.get("table_name") == "production_order"
+                for node in tree
+            )
+            if not reads_production:
+                continue
+            assert any(_is_production_status_rule(node) for node in tree), (
+                f"{exercise.id} reads production_order without status IN ('Planned', 'Released')"
+            )
+            statuses = {
+                _string_constant(node)
+                for node in tree
+                if node.get("class") == "CONSTANT"
+                and _string_constant(node) in {"completed", "cancelled", "released", "planned"}
+            }
+            assert statuses <= {"planned", "released"}, exercise.id
+
+
+def test_planning_databricks_notes_name_an_exception_form() -> None:
+    for exercise in _planning_exercises():
+        allowed = [form for sql in exercise.reference_sql for form in _date_exception_forms(sql)[0]]
+        has_note = _has_databricks_note(exercise.databricks_note)
+        assert has_note == bool(allowed), (
+            f"{exercise.id}: a note belongs exactly where a date exception form is used"
+        )
+        if exercise.databricks_note:
+            folded = exercise.databricks_note.casefold()
+            assert not folded.startswith(("databricks", "on databricks")), exercise.id
+
+
+def test_planning_lesson_sql_blocks_are_checked_examples() -> None:
+    folder = _CONTENT / "09-planning-analytics"
+    text = (folder / "lesson.md").read_text(encoding="utf-8")
+    blocks = re.findall(r"```sql\n(.*?)```", text, flags=re.DOTALL)
+    assert blocks
+    data = tomllib.loads((folder / "examples.toml").read_text(encoding="utf-8"))
+    checked = {_normalize_ws(item["sql"]) for item in data["example"]}
+    for block in blocks:
+        assert _normalize_ws(block) in checked, f"Lesson 9 block has no checked result:\n{block}"
+
+
+def test_planning_lesson_states_the_status_rule_and_spare_convention() -> None:
+    text = (_CONTENT / "09-planning-analytics" / "lesson.md").read_text(encoding="utf-8")
+    assert "Planned or Released" in text
+    assert "started on or before the snapshot" in text
+    assert "alphabetically first plant" in text
+    assert not re.search(r"\b(8|10|18) (sales )?lines\b", text), "never hard-code the at-risk count"
+
+
+_STAGED_PLANNING_MISTAKES = (
+    ("plan-rf-spare-plant", "MIN(CASE", "MAX(CASE"),
+    ("plan-rf-spare-plant", "ELSE 'AU01'", "ELSE 'SC01'"),
+    (
+        "plan-rf-spare-plant",
+        "WHERE m.description LIKE 'RF generator,%'\n    GROUP BY t.root",
+        "WHERE m.material_type = 'COMPONENT'\n    GROUP BY t.root",
+    ),
+    (
+        "plan-rf-need-ledger",
+        "SELECT material_no, plant_code, need_date, qty FROM spare_need",
+        "SELECT material_no, plant_code, need_date, qty FROM spare_need WHERE 1 = 0",
+    ),
+    ("plan-rf-need-ledger", "ROWS UNBOUNDED PRECEDING", "ROWS BETWEEN CURRENT ROW AND CURRENT ROW"),
+    (
+        "plan-rf-need-ledger",
+        "p.status IN ('Planned', 'Released') AND p.planned_start > DATE '2026-11-01'",
+        "p.status IN ('Planned', 'Released')",
+    ),
+    (
+        "plan-rf-supply-ledger",
+        "FROM stock s JOIN material m ON m.material_no = s.material_no",
+        "FROM stock s JOIN material m ON m.material_no = s.material_no AND 1 = 0",
+    ),
+    (
+        "plan-rf-supply-ledger",
+        "ROWS UNBOUNDED PRECEDING",
+        "ROWS BETWEEN CURRENT ROW AND CURRENT ROW",
+    ),
+    (
+        "plan-corvane-line-compare",
+        "SELECT 0 AS slip_days",
+        "SELECT 28 AS slip_days",
+    ),
+    (
+        "plan-corvane-line-compare",
+        "WHERE baseline_days > 0 OR slipped_days > 0",
+        "WHERE baseline_days = 0 AND slipped_days > 0",
+    ),
+    ("plan-corvane-line-compare", "GREATEST(MAX(datediff", "GREATEST(MIN(datediff"),
+)
+
+
+@pytest.mark.parametrize(
+    ("exercise_id", "old", "new"),
+    _STAGED_PLANNING_MISTAKES,
+    ids=[f"{item[0]}-{index}" for index, item in enumerate(_STAGED_PLANNING_MISTAKES)],
+)
+def test_staged_planning_mistakes_fail(lab_home, exercise_id, old, new) -> None:
+    assert lab_home is not None
+    exercise = next(item for item in _exercises() if item.id == exercise_id)
+    reference = exercise.reference_sql[0]
+    assert old in reference, f"{exercise_id}: reference no longer contains {old!r}"
+    wrong = reference.replace(old, new)
+    assert wrong != reference
+    outcome = check_answer(exercise, wrong, runner=_run)
+    assert outcome.passed is False, f"{exercise_id}: the mistake {old!r} -> {new!r} still passes"
+
+
+@pytest.fixture
+def rf_ledger_scenario():
+    """One RF generator with every data quirk the real RF supply lines do not have."""
+    with duckdb.connect(":memory:") as connection:
+        create_all(connection)
+        connection.execute("""
+            INSERT INTO plant VALUES ('SC01', 'Test plant', 'Santa Clara', 'US');
+            INSERT INTO product_family VALUES ('ETC', 'Etch');
+            INSERT INTO material VALUES
+                ('TOOL1', 'Test tool', 'TOOL', 'ETC', 'EA', false, DATE '2021-11-01'),
+                ('M-001327', 'RF generator, test', 'COMPONENT', NULL, 'EA', false,
+                 DATE '2021-11-01');
+            INSERT INTO bom_item VALUES ('TOOL1', 'M-001327', 2);
+            INSERT INTO production_order
+                (prod_order_no, material_no, plant_code, qty, planned_start, planned_finish, status)
+            VALUES
+                ('P1', 'TOOL1', 'SC01', 3, DATE '2026-12-10', DATE '2027-01-10', 'Planned'),
+                ('P2', 'TOOL1', 'SC01', 1, DATE '2027-01-05', DATE '2027-02-05', 'Planned'),
+                ('P3', 'TOOL1', 'SC01', 5, DATE '2026-10-20', DATE '2026-11-20', 'Released'),
+                ('P4', 'TOOL1', 'SC01', 4, DATE '2026-12-20', DATE '2027-01-20', 'Cancelled');
+            INSERT INTO sales_order_item VALUES
+                ('SO1', 1, 'M-001327', 1, 100, DATE '2026-12-01', DATE '2026-12-10', 'Open', NULL),
+                ('SO2', 1, 'M-001327', 4, 100, DATE '2026-10-01', DATE '2026-10-30', 'Open', NULL),
+                ('SO3', 1, 'M-001327', 8, 100, DATE '2026-12-01', DATE '2026-12-12', 'Shipped',
+                 DATE '2026-12-12');
+            INSERT INTO inventory VALUES
+                ('M-001327', 'SC01', 'RM01', 3), ('M-001327', 'SC01', 'RM02', 100);
+            INSERT INTO purchase_order VALUES
+                ('PO-A', 'V-10017', 'SC01', DATE '2026-09-01'),
+                ('PO-B', 'V-10017', 'SC01', DATE '2026-09-01'),
+                ('PO-C', 'V-10017', 'SC01', DATE '2026-09-02'),
+                ('PO-D', 'V-10017', 'SC01', DATE '2026-11-02'),
+                ('PO-E', 'V-10099', 'SC01', DATE '2026-09-03');
+            INSERT INTO purchase_order_item VALUES
+                ('PO-A', 1, 'M-001327', 10, 'EA', 1, DATE '2026-12-01', DATE '2026-12-01'),
+                ('PO-B', 1, 'M-001327', 5, 'EA', 1, DATE '2026-12-01', NULL),
+                ('PO-C', 1, 'M-001327', 7, 'EA', 1, DATE '2026-10-01', DATE '2026-10-15'),
+                ('PO-D', 1, 'M-001327', 9, 'EA', 1, DATE '2026-12-01', DATE '2026-12-05'),
+                ('PO-E', 1, 'M-001327', 4, 'EA', 1, DATE '2026-12-01', DATE '2026-12-02');
+            INSERT INTO goods_receipt VALUES
+                ('GR-1', 'PO-A', 1, DATE '2026-10-01', 4, 'SC01', 'RM01');
+        """)
+        yield connection
+
+
+def _scenario_rows(connection, exercise_id: str):
+    exercise = next(item for item in _exercises() if item.id == exercise_id)
+    return _scenario_runner(connection)(exercise.reference_sql[0]).rows
+
+
+def test_staged_references_handle_every_data_quirk(rf_ledger_scenario) -> None:
+    need = _scenario_rows(rf_ledger_scenario, "plan-rf-need-ledger")
+    assert [(row[2], row[3], row[4]) for row in need] == [
+        (date(2026, 12, 10), 7, 7),
+        (date(2027, 1, 5), 2, 9),
+    ]
+    supply = _scenario_rows(rf_ledger_scenario, "plan-rf-supply-ledger")
+    assert [(row[2], row[3], row[4]) for row in supply] == [
+        (date(2026, 11, 1), 10, 10),
+        (date(2026, 12, 1), 6, 16),
+        (date(2026, 12, 2), 4, 20),
+    ]
+    exposure = _scenario_rows(rf_ledger_scenario, "plan-corvane-exposure")
+    assert exposure == [("SC01", 2, 13)]
+
+
+_SNAPSHOT_RULE = "p.status IN ('Planned', 'Released') AND p.planned_start > DATE '2026-11-01'"
+_SPARE_OFF = "SELECT material_no, plant_code, need_date, qty FROM spare_need"
+_SCENARIO_MISTAKES = (
+    ("plan-rf-need-ledger", _SPARE_OFF, _SPARE_OFF + " WHERE 1 = 0"),
+    ("plan-rf-need-ledger", _SNAPSHOT_RULE, "p.status IN ('Planned', 'Released')"),
+    ("plan-rf-need-ledger", _SNAPSHOT_RULE, "p.planned_start > DATE '2026-11-01'"),
+    ("plan-rf-need-ledger", "WHERE i.status = 'Open' AND", "WHERE"),
+    ("plan-rf-need-ledger", "AND i.promised_date > DATE '2026-11-01'", ""),
+    ("plan-rf-supply-ledger", "i.order_qty - COALESCE(SUM(g.qty), 0) AS qty", "i.order_qty AS qty"),
+    ("plan-rf-supply-ledger", "AND o.confirmed_delivery_date IS NOT NULL", ""),
+    (
+        "plan-rf-supply-ledger",
+        "GREATEST(o.confirmed_delivery_date, DATE '2026-11-01')",
+        "o.confirmed_delivery_date",
+    ),
+    ("plan-rf-supply-ledger", "WHERE h.order_date <= DATE '2026-11-01'", ""),
+    ("plan-rf-supply-ledger", "WHERE storage_location = 'RM01'", ""),
+    ("plan-corvane-exposure", "o.supplier_no = 'V-10017' AND ", ""),
+    ("plan-corvane-exposure", "AND o.confirmed_delivery_date IS NOT NULL", ""),
+    ("plan-corvane-exposure", "i.order_qty - COALESCE(SUM(g.qty), 0) AS qty", "i.order_qty AS qty"),
+    ("plan-corvane-exposure", "WHERE h.order_date <= DATE '2026-11-01'", ""),
+)
+
+
+@pytest.mark.parametrize(
+    ("exercise_id", "old", "new"),
+    _SCENARIO_MISTAKES,
+    ids=[f"{item[0]}-{index}" for index, item in enumerate(_SCENARIO_MISTAKES)],
+)
+def test_staged_planning_data_quirk_mistakes_fail(
+    rf_ledger_scenario, exercise_id, old, new
+) -> None:
+    exercise = next(item for item in _exercises() if item.id == exercise_id)
+    reference = exercise.reference_sql[0]
+    assert old in reference, f"{exercise_id}: reference no longer contains {old!r}"
+    wrong = reference.replace(old, new)
+    assert wrong != reference
+    outcome = check_answer(exercise, wrong, runner=_scenario_runner(rf_ledger_scenario))
+    assert outcome.passed is False, f"{exercise_id}: the mistake {old!r} -> {new!r} still passes"

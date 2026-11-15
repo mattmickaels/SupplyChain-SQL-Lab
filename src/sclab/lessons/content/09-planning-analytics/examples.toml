@@ -1,5 +1,24 @@
 [[example]]
-id = "worked-1"
+id = "status-split"
+sql = """
+SELECT status,
+       CASE WHEN planned_start > DATE '2026-11-01' THEN 'after snapshot'
+            ELSE 'on or before snapshot' END AS start_vs_snapshot,
+       COUNT(*) AS orders
+FROM production_order
+GROUP BY status, CASE WHEN planned_start > DATE '2026-11-01' THEN 'after snapshot'
+                      ELSE 'on or before snapshot' END
+ORDER BY status
+"""
+expected_rows = [
+  ["Completed", "on or before snapshot", 1875],
+  ["Planned", "after snapshot", 250],
+  ["Released", "on or before snapshot", 93]
+]
+order_matters = true
+
+[[example]]
+id = "forecast-by-family"
 sql = """
 SELECT m.family_code, SUM(f.qty) AS forecast_qty
 FROM demand_forecast f
@@ -19,37 +38,47 @@ expected_rows = [
 order_matters = true
 
 [[example]]
-id = "worked-2"
+id = "nullif"
 sql = """
-WITH booked AS (
-    SELECT m.family_code, SUM(i.qty) AS qty
-    FROM sales_order_item i JOIN material m ON m.material_no = i.material_no
-    WHERE i.status = 'Open' AND m.material_type = 'TOOL'
-      AND i.promised_date >= DATE '2026-11-01' AND i.promised_date < DATE '2026-12-01'
-    GROUP BY m.family_code
-), forecast AS (
-    SELECT m.family_code, SUM(f.qty) AS qty
-    FROM demand_forecast f JOIN material m ON m.material_no = f.material_no
-    WHERE f.forecast_version = '2026-10' AND f.forecast_month = DATE '2026-11-01'
-      AND m.material_type = 'TOOL'
-    GROUP BY m.family_code
-)
-SELECT COALESCE(b.family_code, f.family_code) AS family_code,
-       COALESCE(b.qty, 0) AS booked_qty, COALESCE(f.qty, 0) AS forecast_qty,
-       ROUND(100.0 * COALESCE(b.qty, 0) / NULLIF(f.qty, 0), 2) AS coverage_pct
-FROM booked b FULL OUTER JOIN forecast f ON f.family_code = b.family_code
-ORDER BY family_code
+SELECT 100.0 * 12 / NULLIF(10, 0) AS coverage_pct,
+       100.0 * 12 / NULLIF(0, 0) AS coverage_when_forecast_is_zero
 """
 expected_rows = [
-  ["CMP", 12, 10, 120.0],
-  ["DEP", 8, 10, 80.0],
-  ["ETC", 10, 20, 50.0],
-  ["INS", 19, 10, 190.0],
+  [120.0, "NULL"]
 ]
 order_matters = true
 
 [[example]]
-id = "worked-3"
+id = "full-outer-join"
+sql = """
+WITH booked AS (
+    SELECT m.family_code, CAST(date_trunc('month', i.promised_date) AS DATE) AS month,
+           SUM(i.qty) AS qty
+    FROM sales_order_item i JOIN material m ON m.material_no = i.material_no
+    WHERE i.status = 'Open' AND m.family_code = 'DEP' AND m.material_type = 'TOOL'
+      AND i.promised_date >= DATE '2027-03-01' AND i.promised_date < DATE '2027-06-01'
+    GROUP BY m.family_code, CAST(date_trunc('month', i.promised_date) AS DATE)
+), forecast AS (
+    SELECT m.family_code, f.forecast_month AS month, SUM(f.qty) AS qty
+    FROM demand_forecast f JOIN material m ON m.material_no = f.material_no
+    WHERE f.forecast_version = '2026-10' AND m.family_code = 'DEP' AND m.material_type = 'TOOL'
+      AND f.forecast_month >= DATE '2027-03-01' AND f.forecast_month < DATE '2027-06-01'
+    GROUP BY m.family_code, f.forecast_month
+)
+SELECT COALESCE(b.month, f.month) AS month, COALESCE(b.qty, 0) AS booked_qty,
+       COALESCE(f.qty, 0) AS forecast_qty
+FROM booked b FULL OUTER JOIN forecast f ON f.family_code = b.family_code AND f.month = b.month
+ORDER BY month
+"""
+expected_rows = [
+  ["2027-03-01", 6, 10],
+  ["2027-04-01", 0, 10],
+  ["2027-05-01", 0, 10]
+]
+order_matters = true
+
+[[example]]
+id = "bom-depth"
 sql = """
 WITH RECURSIVE tree AS (
     SELECT b.component_material_no AS material_no,
@@ -65,110 +94,236 @@ SELECT level, COUNT(*) AS paths FROM tree GROUP BY level ORDER BY level
 expected_rows = [
   [1, 7],
   [2, 26],
-  [3, 145],
+  [3, 145]
 ]
 order_matters = true
 
 [[example]]
-id = "worked-4"
+id = "rf-in-one-tool"
+sql = """
+WITH RECURSIVE tree AS (
+    SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+           CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+    FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+    WHERE m.material_type = 'TOOL'
+    UNION ALL
+    SELECT t.root, t.family_code, b.component_material_no,
+           CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+    FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+    WHERE t.level < 10
+)
+SELECT t.material_no, m.description, SUM(t.qty) AS qty_per_tool
+FROM tree t JOIN material m ON m.material_no = t.material_no
+WHERE t.root = 'M-000011' AND m.description LIKE 'RF generator,%'
+GROUP BY t.material_no, m.description
+ORDER BY t.material_no
+"""
+expected_rows = [
+  ["M-001321", "RF generator, 13.56 MHz, 1.5 kW", 2],
+  ["M-001329", "RF generator, 2 MHz, 5 kW", 2]
+]
+order_matters = true
+
+[[example]]
+id = "rf-need-one-tool"
+sql = """
+WITH RECURSIVE tree AS (
+    SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+           CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+    FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+    WHERE m.material_type = 'TOOL'
+    UNION ALL
+    SELECT t.root, t.family_code, b.component_material_no,
+           CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+    FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+    WHERE t.level < 10
+)
+SELECT p.prod_order_no, p.planned_start, p.qty AS tools, p.qty * t.qty AS rf_needed
+FROM production_order p JOIN tree t ON t.root = p.material_no
+WHERE p.material_no = 'M-000011' AND t.material_no = 'M-001321'
+  AND p.status IN ('Planned', 'Released')
+  AND p.planned_start >= DATE '2027-01-31' AND p.planned_start < DATE '2027-02-10'
+ORDER BY p.planned_start
+"""
+expected_rows = [
+  ["PR-0002132", "2027-01-31", 1, 2],
+  ["PR-0002137", "2027-02-03", 2, 4],
+  ["PR-0002148", "2027-02-08", 1, 2]
+]
+order_matters = true
+
+[[example]]
+id = "rf-where-used"
+sql = """
+WITH RECURSIVE tree AS (
+    SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+           CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+    FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+    WHERE m.material_type = 'TOOL'
+    UNION ALL
+    SELECT t.root, t.family_code, b.component_material_no,
+           CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+    FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+    WHERE t.level < 10
+)
+SELECT family_code,
+       CASE family_code WHEN 'ETC' THEN 'SC01' WHEN 'CMP' THEN 'SG01'
+                        ELSE 'AU01' END AS plant_code
+FROM tree
+WHERE material_no = 'M-001324'
+GROUP BY family_code
+ORDER BY family_code
+"""
+expected_rows = [
+  ["DEP", "AU01"],
+  ["ETC", "SC01"]
+]
+order_matters = true
+
+[[example]]
+id = "opening-stock"
+sql = """
+SELECT plant_code, qty_on_hand
+FROM inventory
+WHERE material_no = 'M-001324' AND storage_location = 'RM01'
+ORDER BY plant_code
+"""
+expected_rows = [
+  ["AU01", 1],
+  ["SC01", 2]
+]
+order_matters = true
+
+[[example]]
+id = "outstanding-line"
 sql = """
 SELECT i.po_no, i.line_no, i.order_qty - COALESCE(SUM(g.qty), 0) AS outstanding_qty
 FROM purchase_order_item i
 LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
-WHERE i.po_no = 'PO-0000003' AND i.line_no = 1
+WHERE i.po_no IN ('PO-0000003', 'PO-0007027') AND i.line_no = 1
 GROUP BY i.po_no, i.line_no, i.order_qty
+ORDER BY i.po_no
 """
 expected_rows = [
-  ["PO-0000003", 1, 0]
+  ["PO-0000003", 1, 0],
+  ["PO-0007027", 1, 139]
 ]
 order_matters = true
 
 [[example]]
-id = "worked-5"
+id = "greatest"
+sql = """
+SELECT GREATEST(DATE '2026-10-20', DATE '2026-11-01') AS overdue_line_lands_on,
+       GREATEST(DATE '2026-11-20', DATE '2026-11-01') AS on_time_line_stays_on
+"""
+expected_rows = [
+  ["2026-11-01", "2026-11-20"]
+]
+order_matters = true
+
+[[example]]
+id = "values-calendar"
+sql = """
+SELECT CAST(DATE '2026-11-01' + n * INTERVAL 7 DAY AS DATE) AS week_start
+FROM (VALUES (0), (1), (2)) AS offsets(n)
+ORDER BY week_start
+"""
+expected_rows = [
+  ["2026-11-01"],
+  ["2026-11-08"],
+  ["2026-11-15"]
+]
+order_matters = true
+
+[[example]]
+id = "cross-join"
+sql = """
+SELECT p.plant_code, COUNT(*) AS week_rows
+FROM plant p CROSS JOIN (VALUES (0), (1), (2)) AS offsets(n)
+GROUP BY p.plant_code
+ORDER BY p.plant_code
+"""
+expected_rows = [
+  ["AU01", 3],
+  ["SC01", 3],
+  ["SG01", 3]
+]
+order_matters = true
+
+[[example]]
+id = "receipts-by-week"
 sql = """
 WITH periods AS (
     SELECT CAST(DATE '2026-11-01' + n * INTERVAL 7 DAY AS DATE) AS week_start
     FROM (VALUES (0), (1), (2)) AS offsets(n)
-), stock AS (
-    SELECT COALESCE(SUM(qty_on_hand), 0) AS qty
-    FROM inventory WHERE material_no = 'M-001324' AND plant_code = 'SC01'
-      AND storage_location = 'RM01'
 )
-SELECT w.week_start, s.qty AS opening_qty,
-       SUM(0) OVER (ORDER BY w.week_start ROWS UNBOUNDED PRECEDING) + s.qty AS balance
-FROM periods w CROSS JOIN stock s ORDER BY w.week_start
+SELECT w.week_start, COALESCE(SUM(i.order_qty), 0) AS receipts
+FROM periods w
+LEFT JOIN purchase_order_item i
+  ON i.po_no = 'PO-0007027' AND i.line_no = 1
+ AND i.confirmed_delivery_date >= w.week_start
+ AND i.confirmed_delivery_date < w.week_start + INTERVAL 7 DAY
+GROUP BY w.week_start
+ORDER BY w.week_start
 """
 expected_rows = [
-  ["2026-11-01", 2, 2],
-  ["2026-11-08", 2, 2],
-  ["2026-11-15", 2, 2],
+  ["2026-11-01", 139],
+  ["2026-11-08", 0],
+  ["2026-11-15", 0]
 ]
 order_matters = true
 
 [[example]]
-id = "worked-6"
+id = "running-balance"
 sql = """
-SELECT material_no, description FROM material WHERE material_no = 'M-001324'
+SELECT week_start, receipts, demand_qty,
+       2 + SUM(receipts - demand_qty) OVER (ORDER BY week_start
+                                            ROWS UNBOUNDED PRECEDING) AS balance
+FROM (VALUES (DATE '2026-11-01', 5, 3), (DATE '2026-11-08', 0, 4),
+             (DATE '2026-11-15', 0, 2)) AS weeks(week_start, receipts, demand_qty)
+ORDER BY week_start
 """
 expected_rows = [
-  ["M-001324", "RF generator, 27.12 MHz, 3 kW"],
+  ["2026-11-01", 5, 3, 4],
+  ["2026-11-08", 0, 4, 0],
+  ["2026-11-15", 0, 2, -2]
 ]
 order_matters = true
 
 [[example]]
-id = "worked-7"
+id = "first-cover"
 sql = """
-WITH outstanding AS (
-    SELECT i.material_no, h.plant_code, i.confirmed_delivery_date,
-           i.order_qty - COALESCE(SUM(g.qty), 0) AS qty
-    FROM purchase_order_item i JOIN purchase_order h ON h.po_no = i.po_no
-    LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
-    WHERE h.order_date <= DATE '2026-11-01'
-    GROUP BY i.po_no, i.line_no, i.material_no, h.plant_code,
-             i.confirmed_delivery_date, i.order_qty
-    HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
+WITH need(need_date, cumulative_qty) AS (
+    VALUES (DATE '2027-01-08', 4), (DATE '2027-01-24', 9), (DATE '2027-02-10', 12)
+), supply(supply_date, cumulative_qty) AS (
+    VALUES (DATE '2026-11-01', 2), (DATE '2026-11-26', 11)
 )
-SELECT m.material_no,
-       COALESCE((SELECT SUM(o.qty) FROM outstanding o
-                 WHERE o.material_no = m.material_no AND o.plant_code = 'SC01'
-                   AND o.confirmed_delivery_date <= DATE '2026-12-01'), 0) AS due_qty
-FROM material m WHERE m.material_no = 'M-001324'
+SELECT n.need_date, n.cumulative_qty AS needed, MIN(s.supply_date) AS covered_on
+FROM need n
+LEFT JOIN supply s ON s.cumulative_qty >= n.cumulative_qty
+GROUP BY n.need_date, n.cumulative_qty
+ORDER BY n.need_date
 """
 expected_rows = [
-  ["M-001324", 139],
+  ["2027-01-08", 4, "2026-11-26"],
+  ["2027-01-24", 9, "2026-11-26"],
+  ["2027-02-10", 12, "NULL"]
 ]
 order_matters = true
 
 [[example]]
-id = "worked-8"
+id = "days-late"
 sql = """
-SELECT b.bay_id, b.weekly_slots,
-       COUNT(p.prod_order_no) AS december_starts
-FROM build_bay b LEFT JOIN production_order p ON p.bay_id = b.bay_id
- AND p.planned_start >= DATE '2026-12-01' AND p.planned_start < DATE '2027-01-01'
-GROUP BY b.bay_id, b.weekly_slots ORDER BY b.bay_id
+SELECT datediff('day', DATE '2027-02-23', DATE '2027-03-03') AS days_late,
+       datediff('day', DATE '2027-02-23', DATE '2027-02-10') AS days_early
 """
 expected_rows = [
-  ["AU01-B1", 2, 0],
-  ["AU01-B2", 4, 0],
-  ["AU01-B3", 4, 0],
-  ["AU01-B4", 2, 9],
-  ["AU01-B5", 5, 4],
-  ["SC01-B1", 6, 0],
-  ["SC01-B2", 4, 7],
-  ["SC01-B3", 6, 37],
-  ["SC01-B4", 3, 0],
-  ["SC01-B5", 5, 0],
-  ["SG01-B1", 5, 0],
-  ["SG01-B2", 4, 0],
-  ["SG01-B3", 5, 4],
-  ["SG01-B4", 6, 0],
-  ["SG01-B5", 2, 0],
+  [8, -13]
 ]
 order_matters = true
 
 [[example]]
-id = "complete-capacity-calendar"
+id = "calendar-weeks"
 sql = """
 WITH RECURSIVE weeks(level) AS (SELECT 0 UNION ALL SELECT level + 1 FROM weeks WHERE level < 12)
 SELECT CAST(DATE '2026-11-30' + level * INTERVAL 7 DAY AS DATE) AS week_start FROM weeks ORDER BY week_start
@@ -189,3 +344,61 @@ expected_rows = [
   ["2027-02-22"]
 ]
 order_matters = true
+
+[[example]]
+id = "december-starts"
+sql = """
+SELECT b.bay_id, b.weekly_slots,
+       COUNT(p.prod_order_no) AS december_starts
+FROM build_bay b LEFT JOIN production_order p ON p.bay_id = b.bay_id
+ AND p.planned_start >= DATE '2026-12-01' AND p.planned_start < DATE '2027-01-01'
+WHERE b.bay_id IN ('AU01-B1', 'SC01-B3')
+GROUP BY b.bay_id, b.weekly_slots ORDER BY b.bay_id
+"""
+expected_rows = [
+  ["AU01-B1", 2, 0],
+  ["SC01-B3", 6, 37]
+]
+order_matters = true
+
+[[example]]
+id = "union-all"
+sql = """
+SELECT 'stock' AS source, DATE '2026-11-01' AS supply_date, qty_on_hand AS qty
+FROM inventory
+WHERE material_no = 'M-001327' AND plant_code = 'AU01' AND storage_location = 'RM01'
+UNION ALL
+SELECT po_no, confirmed_delivery_date, order_qty
+FROM purchase_order_item
+WHERE po_no = 'PO-0006656' AND line_no = 1
+"""
+expected_rows = [
+  ["stock", "2026-11-01", 2],
+  ["PO-0006656", "2026-11-02", 1]
+]
+order_matters = false
+
+[[fact]]
+id = "released-orders-start-by-snapshot"
+sql = "SELECT COUNT(*) FROM production_order WHERE status = 'Released' AND planned_start > DATE '2026-11-01'"
+expected = 0
+
+[[fact]]
+id = "orders-after-snapshot-are-planned"
+sql = "SELECT COUNT(*) FROM production_order WHERE planned_start > DATE '2026-11-01' AND status <> 'Planned'"
+expected = 0
+
+[[fact]]
+id = "one-open-rf-spare-line"
+sql = "SELECT COUNT(*) FROM sales_order_item i JOIN material m ON m.material_no = i.material_no WHERE m.description LIKE 'RF generator,%' AND i.status = 'Open' AND i.promised_date > DATE '2026-11-01'"
+expected = 1
+
+[[fact]]
+id = "open-rf-spare-line-material"
+sql = "SELECT MIN(i.material_no) FROM sales_order_item i JOIN material m ON m.material_no = i.material_no WHERE m.description LIKE 'RF generator,%' AND i.status = 'Open' AND i.promised_date > DATE '2026-11-01'"
+expected = "M-001327"
+
+[[fact]]
+id = "snapshot-is-a-sunday"
+sql = "SELECT dayofweek(DATE '2026-11-01')"
+expected = 0

@@ -1,27 +1,62 @@
 +++
 title = "Planning analytics"
-summary = "Reconcile demand, material supply and start-slot capacity, then test a supplier-delay scenario."
+summary = "Reconcile demand, material supply and build capacity, then test what a supplier delay does to customer orders."
 +++
 
-Sales and operations planning (S&OP) reconciles a demand plan with a feasible supply plan.
-Integrated business planning (IBP) connects that operational plan to financial choices and business priorities.
-A demand review asks what customers have booked, what the forecast assumes, and what changed since the previous plan.
-A supply review asks whether materials, supplier dates and build capacity can support those commitments.
-Use the lab snapshot DATE '2026-11-01' throughout this capstone.
+Planning answers three questions.
+What do customers want, and when?
+Can supply deliver it?
+Is there room in the factory to build it?
+Sales and operations planning (S&OP) is the meeting that answers all three together.
 
-In Excel, this is a workbook with demand pivots, supplier lookups, a running stock balance and a capacity chart.
-In SQL, give each sheet a CTE and give each CTE one explicit grain.
-Aggregate two sources to the same grain before joining them.
-Bookings and forecasts are alternative views of demand; adding both can double-count the same customer need.
+In Excel you would keep one sheet for each answer: a demand pivot, a stock and purchase-order sheet with a running balance, and a capacity chart.
+In SQL each sheet becomes a CTE (lesson 7), and each CTE has one grain.
+The grain is what one row means, for example one family and one month, or one material and one plant and one day.
+Say the grain out loud before you join anything.
+Bring two sources to the same grain first, then join them, or the totals multiply.
+Bookings and forecasts are two views of the same demand, so never add them together.
+
+This lesson is the capstone.
+It reuses WITH RECURSIVE from lesson 8, window functions from lesson 7, dates from lesson 5 and NULL handling from lesson 6.
+The new pieces are FULL OUTER JOIN, NULLIF, VALUES, CROSS JOIN and GREATEST.
+Each one gets a short example before an exercise needs it.
+
+## Rules used in every exercise
+
+The lab "today" is the snapshot date, DATE '2026-11-01', a Sunday.
+Everything that happened before it is history.
+Everything after it is the plan.
+
+Production demand always follows one rule.
+Count a production order when its status is Planned or Released and its planned_start is after the snapshot.
+In this lab the orders that start after the snapshot are all Planned.
+Every Released order started on or before the snapshot, so it is already running.
+We assume its parts have already been issued and are no longer in the stock count.
+Counting them again would double-count, so they are left out on purpose.
+
+```sql
+SELECT status,
+       CASE WHEN planned_start > DATE '2026-11-01' THEN 'after snapshot'
+            ELSE 'on or before snapshot' END AS start_vs_snapshot,
+       COUNT(*) AS orders
+FROM production_order
+GROUP BY status, CASE WHEN planned_start > DATE '2026-11-01' THEN 'after snapshot'
+                      ELSE 'on or before snapshot' END
+ORDER BY status
+```
+
+Completed orders are 1875, all started on or before the snapshot.
+Planned orders are 250, all starting after it.
+Released orders are 93, all started on or before it.
+That is why the rule reads "Planned or Released, after the snapshot".
 
 ## Demand review
 
-Use promised dates to place open orders in delivery months, and order dates to measure bookings.
-Keep forecast_version in the analysis until you deliberately select or compare versions.
-A forecast waterfall shows how the plan changes between versions for the same family and month.
-Forecast coverage divides booked demand by forecast; NULLIF makes a zero forecast return NULL rather than a division error.
+A demand review asks what customers have booked, what the forecast says, and what changed since last month.
+Use promised_date to place an open order in a delivery month.
+Keep forecast_version in view until you choose which version to use.
 
-This worked example groups the current forecast at family grain before any order join.
+The first example totals the current forecast for November 2026, one row per family.
 
 ```sql
 SELECT m.family_code, SUM(f.qty) AS forecast_qty
@@ -34,174 +69,370 @@ GROUP BY m.family_code
 ORDER BY m.family_code
 ```
 
-The checked output is recorded with this lesson's worked examples.
-Use a FULL OUTER JOIN when either side may contain a family-month missing from the other side.
-COALESCE supplies zero for a missing quantity without removing the family-month.
+The rows are CMP 10, DEP 10, ETC 20 and INS 10.
+
+Coverage is booked quantity as a percent of the forecast.
+If the forecast is zero, a division fails.
+NULLIF(x, 0) turns a zero into NULL, and any division by NULL returns NULL instead of an error.
+
+```sql
+SELECT 100.0 * 12 / NULLIF(10, 0) AS coverage_pct,
+       100.0 * 12 / NULLIF(0, 0) AS coverage_when_forecast_is_zero
+```
+
+The first column is 120.0.
+The second is NULL, not an error.
+
+To compare bookings with the forecast, you need every family-month from either side.
+An ordinary join drops a month that has a forecast but no bookings.
+A FULL OUTER JOIN keeps unmatched rows from both sides, with NULL in the missing columns.
+COALESCE(x, 0) then turns that NULL into zero.
+This example uses family DEP from March to May 2027.
 
 ```sql
 WITH booked AS (
-    SELECT m.family_code, SUM(i.qty) AS qty
+    SELECT m.family_code, CAST(date_trunc('month', i.promised_date) AS DATE) AS month,
+           SUM(i.qty) AS qty
     FROM sales_order_item i JOIN material m ON m.material_no = i.material_no
-    WHERE i.status = 'Open' AND m.material_type = 'TOOL'
-      AND i.promised_date >= DATE '2026-11-01' AND i.promised_date < DATE '2026-12-01'
-    GROUP BY m.family_code
+    WHERE i.status = 'Open' AND m.family_code = 'DEP' AND m.material_type = 'TOOL'
+      AND i.promised_date >= DATE '2027-03-01' AND i.promised_date < DATE '2027-06-01'
+    GROUP BY m.family_code, CAST(date_trunc('month', i.promised_date) AS DATE)
 ), forecast AS (
-    SELECT m.family_code, SUM(f.qty) AS qty
+    SELECT m.family_code, f.forecast_month AS month, SUM(f.qty) AS qty
     FROM demand_forecast f JOIN material m ON m.material_no = f.material_no
-    WHERE f.forecast_version = '2026-10' AND f.forecast_month = DATE '2026-11-01'
-      AND m.material_type = 'TOOL'
-    GROUP BY m.family_code
+    WHERE f.forecast_version = '2026-10' AND m.family_code = 'DEP' AND m.material_type = 'TOOL'
+      AND f.forecast_month >= DATE '2027-03-01' AND f.forecast_month < DATE '2027-06-01'
+    GROUP BY m.family_code, f.forecast_month
 )
-SELECT COALESCE(b.family_code, f.family_code) AS family_code,
-       COALESCE(b.qty, 0) AS booked_qty, COALESCE(f.qty, 0) AS forecast_qty,
-       ROUND(100.0 * COALESCE(b.qty, 0) / NULLIF(f.qty, 0), 2) AS coverage_pct
-FROM booked b FULL OUTER JOIN forecast f ON f.family_code = b.family_code
-ORDER BY family_code
+SELECT COALESCE(b.month, f.month) AS month, COALESCE(b.qty, 0) AS booked_qty,
+       COALESCE(f.qty, 0) AS forecast_qty
+FROM booked b FULL OUTER JOIN forecast f ON f.family_code = b.family_code AND f.month = b.month
+ORDER BY month
 ```
 
-Check yourself: could joining raw forecast versions to raw sales lines multiply both totals?
-Name each CTE's grain before writing the join.
+March shows 6 booked against 10 forecast.
+April and May have no bookings at all, yet both rows are kept, with booked 0 and forecast 10.
 
-## Supply review and projected available balance
+Check yourself: can joining the raw forecast rows to the raw sales lines multiply both totals?
+Total each side by family and month first, then join.
 
-Projected available balance (PAB) is opening stock plus scheduled receipts minus planned requirements.
-Safety stock is a planning threshold; a balance below it is a warning even if the balance is positive.
-Include a material-plant pair already below safety stock even when it has no future production demand.
-An end-of-week balance can hide a midweek shortage, so use dated demand and supply to investigate customer risk.
-The projection exercises use 26 seven-day buckets starting on the snapshot Sunday.
-The capacity exercises use ISO Monday weeks instead; the prompts identify the convention.
+## Supply review for one RF generator
 
-Before exploding a BOM, preserve the root tool and multiply qty_per down every path.
-Use UNION ALL to retain repeated component paths, guard recursion with level < 10, and aggregate those paths before joining orders.
-This example isolates a tool and counts its BOM paths by level.
+Projected available balance (PAB) is opening stock, plus receipts, minus requirements.
+Safety stock is a threshold, so a balance below it is a warning even while it is still positive.
+
+Every tool needs RF generators somewhere deep in its bill of materials.
+Lesson 8 walked that bill with WITH RECURSIVE.
+Here the same walk starts from every tool at once, multiplies qty_per down each path, and keeps the root tool as a column.
+A component can sit under a tool by more than one path, so you add the quantities for each root and component.
+Etch tool M-000011 needs two RF generators of two kinds.
 
 ```sql
 WITH RECURSIVE tree AS (
-    SELECT b.component_material_no AS material_no,
+    SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
            CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
-    FROM bom_item b WHERE b.parent_material_no = 'M-000011'
+    FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+    WHERE m.material_type = 'TOOL'
     UNION ALL
-    SELECT b.component_material_no, CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+    SELECT t.root, t.family_code, b.component_material_no,
+           CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
     FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
     WHERE t.level < 10
 )
-SELECT level, COUNT(*) AS paths FROM tree GROUP BY level ORDER BY level
+SELECT t.material_no, m.description, SUM(t.qty) AS qty_per_tool
+FROM tree t JOIN material m ON m.material_no = t.material_no
+WHERE t.root = 'M-000011' AND m.description LIKE 'RF generator,%'
+GROUP BY t.material_no, m.description
+ORDER BY t.material_no
 ```
 
+The rows are M-001321, 13.56 MHz, 1.5 kW, two per tool, and M-001329, 2 MHz, 5 kW, two per tool.
+
+Production demand for a component is the order quantity times that per-tool quantity.
+Three production orders for M-000011 start from 2027-01-31 to 2027-02-08.
+The middle order builds two tools, so it needs four M-001321.
+
+```sql
+WITH RECURSIVE tree AS (
+    SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+           CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+    FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+    WHERE m.material_type = 'TOOL'
+    UNION ALL
+    SELECT t.root, t.family_code, b.component_material_no,
+           CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+    FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+    WHERE t.level < 10
+)
+SELECT p.prod_order_no, p.planned_start, p.qty AS tools, p.qty * t.qty AS rf_needed
+FROM production_order p JOIN tree t ON t.root = p.material_no
+WHERE p.material_no = 'M-000011' AND t.material_no = 'M-001321'
+  AND p.status IN ('Planned', 'Released')
+  AND p.planned_start >= DATE '2027-01-31' AND p.planned_start < DATE '2027-02-10'
+ORDER BY p.planned_start
+```
+
+The rows are 2 on 2027-01-31, 4 on 2027-02-03 and 2 on 2027-02-08.
+
+Spare parts are also demand.
+A spare RF generator is sold on a sales line, and that line has no plant.
+Supply is planned by plant, so the lab gives each spare to one plant by a fixed convention.
+Look at which tool families use the generator.
+Turn each family into its plant: Etch (ETC) to SC01, CMP to SG01, any other family to AU01.
+Then take the alphabetically first plant.
+Alphabetical order puts AU01 first, then SC01, then SG01.
+RF generator M-001324 is used by DEP and ETC tools.
+
+```sql
+WITH RECURSIVE tree AS (
+    SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+           CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+    FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+    WHERE m.material_type = 'TOOL'
+    UNION ALL
+    SELECT t.root, t.family_code, b.component_material_no,
+           CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+    FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+    WHERE t.level < 10
+)
+SELECT family_code,
+       CASE family_code WHEN 'ETC' THEN 'SC01' WHEN 'CMP' THEN 'SG01'
+                        ELSE 'AU01' END AS plant_code
+FROM tree
+WHERE material_no = 'M-001324'
+GROUP BY family_code
+ORDER BY family_code
+```
+
+DEP maps to AU01 and ETC maps to SC01, so the spare M-001324 is planned at AU01.
+
+## Supply side: stock, purchase orders and dates
+
 Use RM01 stock for component planning.
-Count only outstanding supply, ordered quantity minus the sum of all receipts at the full PO-line key.
-A missing confirmation is not scheduled supply.
-GREATEST(confirmed_delivery_date, DATE '2026-11-01') places overdue outstanding supply in the snapshot bucket as an optimistic assumption, not evidence of arrival.
-Escalate overdue and unconfirmed lines before acting on this projection.
+RF generator M-001324 has 1 on hand at AU01 and 2 on hand at SC01.
+
+```sql
+SELECT plant_code, qty_on_hand
+FROM inventory
+WHERE material_no = 'M-001324' AND storage_location = 'RM01'
+ORDER BY plant_code
+```
+
+Supply from a purchase order line is the outstanding quantity.
+That is the ordered quantity minus the sum of all receipts on the same PO line.
+A line is identified by po_no and line_no together.
+PO-0000003 line 1 was fully received, so 0 is outstanding.
+PO-0007027 line 1 has nothing received yet, so all 139 are outstanding.
 
 ```sql
 SELECT i.po_no, i.line_no, i.order_qty - COALESCE(SUM(g.qty), 0) AS outstanding_qty
 FROM purchase_order_item i
 LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
-WHERE i.po_no = 'PO-0000003' AND i.line_no = 1
+WHERE i.po_no IN ('PO-0000003', 'PO-0007027') AND i.line_no = 1
 GROUP BY i.po_no, i.line_no, i.order_qty
+ORDER BY i.po_no
 ```
 
-To retain quiet weeks, create a calendar and CROSS JOIN it to the planning keys.
-VALUES supplies a small inline table, and INTERVAL converts a bucket offset into a date.
-This shortened worked example shows three buckets and the RF generator's opening stock with no future events applied.
+A line without a confirmed date is not scheduled supply, so leave it out.
+Lines whose confirmed date has already passed and that are still outstanding are overdue.
+Planning needs them somewhere, so put an overdue line on the snapshot date.
+This is an optimistic assumption, not proof the goods will arrive, so overdue and unconfirmed lines still need a call to the supplier.
+GREATEST(a, b) returns the later of two dates, which does exactly that.
+
+```sql
+SELECT GREATEST(DATE '2026-10-20', DATE '2026-11-01') AS overdue_line_lands_on,
+       GREATEST(DATE '2026-11-20', DATE '2026-11-01') AS on_time_line_stays_on
+```
+
+The overdue date moves to 2026-11-01.
+The on-time date stays on 2026-11-20.
+
+## A weekly projection
+
+The projection uses 26 weekly buckets that start on the snapshot Sunday.
+The last bucket ends before 2027-05-02.
+You need a bucket even in a week with no movement, so build the calendar yourself.
+VALUES writes a small inline table, and n * INTERVAL 7 DAY turns each offset into a date.
+
+```sql
+SELECT CAST(DATE '2026-11-01' + n * INTERVAL 7 DAY AS DATE) AS week_start
+FROM (VALUES (0), (1), (2)) AS offsets(n)
+ORDER BY week_start
+```
+
+The rows are 2026-11-01, 2026-11-08 and 2026-11-15.
+
+CROSS JOIN pairs every row on the left with every row on the right.
+Use it when you want every key in every week, for example every plant in every bucket.
+
+```sql
+SELECT p.plant_code, COUNT(*) AS week_rows
+FROM plant p CROSS JOIN (VALUES (0), (1), (2)) AS offsets(n)
+GROUP BY p.plant_code
+ORDER BY p.plant_code
+```
+
+Each of the 3 plants appears 3 times, so the calendar gives every plant the same weeks.
+
+To sum a quantity into its week, LEFT JOIN the calendar to the events and put the date range in the ON condition.
+Group by the week.
+Weeks with no events stay in the result, and COALESCE turns their empty total into 0.
+This example puts PO-0007027 line 1 into three weeks.
 
 ```sql
 WITH periods AS (
     SELECT CAST(DATE '2026-11-01' + n * INTERVAL 7 DAY AS DATE) AS week_start
     FROM (VALUES (0), (1), (2)) AS offsets(n)
-), stock AS (
-    SELECT COALESCE(SUM(qty_on_hand), 0) AS qty
-    FROM inventory WHERE material_no = 'M-001324' AND plant_code = 'SC01'
-      AND storage_location = 'RM01'
 )
-SELECT w.week_start, s.qty AS opening_qty,
-       SUM(0) OVER (ORDER BY w.week_start ROWS UNBOUNDED PRECEDING) + s.qty AS balance
-FROM periods w CROSS JOIN stock s ORDER BY w.week_start
+SELECT w.week_start, COALESCE(SUM(i.order_qty), 0) AS receipts
+FROM periods w
+LEFT JOIN purchase_order_item i
+  ON i.po_no = 'PO-0007027' AND i.line_no = 1
+ AND i.confirmed_delivery_date >= w.week_start
+ AND i.confirmed_delivery_date < w.week_start + INTERVAL 7 DAY
+GROUP BY w.week_start
+ORDER BY w.week_start
 ```
 
-Replace zero with receipts minus demand for a running PAB.
-Partition the running SUM by material and plant so one plant cannot fund another plant's requirements.
-COALESCE an empty weekly total to zero.
-The exercise names M-001324 as its RF generator; confirm its master record before planning it.
+The 139 lands in the first week because its confirmed date is 2026-11-02.
+The next two weeks are 0.
+
+Finally a running balance is a running SUM.
+Add receipts minus demand over the weeks in order, starting from the opening stock.
+With 2 on hand, the example below ends at -2 because three weeks of demand outrun the receipts.
 
 ```sql
-SELECT material_no, description FROM material WHERE material_no = 'M-001324'
+SELECT week_start, receipts, demand_qty,
+       2 + SUM(receipts - demand_qty) OVER (ORDER BY week_start
+                                            ROWS UNBOUNDED PRECEDING) AS balance
+FROM (VALUES (DATE '2026-11-01', 5, 3), (DATE '2026-11-08', 0, 4),
+             (DATE '2026-11-15', 0, 2)) AS weeks(week_start, receipts, demand_qty)
+ORDER BY week_start
 ```
 
-Check yourself: did you subtract receipts already reflected in opening stock, preserve every BOM path, and include quiet weeks?
+The balances are 4, 0 and -2.
+In the exercise, keep the balance separate for each material and plant with PARTITION BY, so one plant cannot fund another.
+
+Check yourself: did you start from opening stock, count each PO line once, keep quiet weeks, and multiply quantities down every BOM path?
 
 ## From a shortage to an order at risk
 
-A PO arriving after a production start is a warning, but earlier stock can still cover that start.
-Accumulate requirements by material, plant and need date, including spare RF sales demand when investigating order risk.
-For this lab, spare demand uses the lowest where-used plant code after mapping ETC to SC01, CMP to SG01 and other families to AU01.
-This is a stated allocation convention because spare sales lines have no plant key.
-All demand on the same day shares a cumulative requirement total.
-The first date cumulative stock and confirmed receipts meet that total is the coverage date.
-Compare it with planned_start and take the largest positive delay at sales-line grain.
-Do not add a sales line's revenue once for each component path.
-If no confirmed date covers the requirement, flag it for a separate unconfirmed-supply review.
+A late purchase order is only a warning.
+Earlier stock can still cover a production start that comes before the delivery.
+The real question is when the supply total first reaches the need total.
 
-This real-table example uses a correlated subquery to ask how much confirmed outstanding supply covers one date.
+UNION ALL stacks one list under another when both lists have the same columns.
+This example stacks the opening stock and one purchase order line for RF generator M-001327 at AU01.
 
 ```sql
-WITH outstanding AS (
-    SELECT i.material_no, h.plant_code, i.confirmed_delivery_date,
-           i.order_qty - COALESCE(SUM(g.qty), 0) AS qty
-    FROM purchase_order_item i JOIN purchase_order h ON h.po_no = i.po_no
-    LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
-    WHERE h.order_date <= DATE '2026-11-01'
-    GROUP BY i.po_no, i.line_no, i.material_no, h.plant_code,
-             i.confirmed_delivery_date, i.order_qty
-    HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
-)
-SELECT m.material_no,
-       COALESCE((SELECT SUM(o.qty) FROM outstanding o
-                 WHERE o.material_no = m.material_no AND o.plant_code = 'SC01'
-                   AND o.confirmed_delivery_date <= DATE '2026-12-01'), 0) AS due_qty
-FROM material m WHERE m.material_no = 'M-001324'
+SELECT 'stock' AS source, DATE '2026-11-01' AS supply_date, qty_on_hand AS qty
+FROM inventory
+WHERE material_no = 'M-001327' AND plant_code = 'AU01' AND storage_location = 'RM01'
+UNION ALL
+SELECT po_no, confirmed_delivery_date, order_qty
+FROM purchase_order_item
+WHERE po_no = 'PO-0006656' AND line_no = 1
 ```
 
-Check yourself: a correlated subquery refers to a key from the outer row; does yours also restrict plant?
-The what-if exercise reruns this allocation with a changeable slip_days parameter and counts newly affected sales lines.
-It does not promise that customer shipment dates slip by the same number of days as the supplier.
+The two rows are the opening stock of 2 on 2026-11-01 and a PO line of 1 on 2026-11-02.
+
+Build two ledgers for each material and plant, both in date order.
+The need ledger adds up production demand and spare sales, and keeps a running total.
+The supply ledger adds the opening stock on the snapshot date and every confirmed outstanding line, and keeps a running total.
+Several events on the same day are added together first.
+
+A production start is covered on the first supply date whose running supply total is at least the running need total on the start day.
+Find that date with a LEFT JOIN on supply_total >= need_total, then GROUP BY and MIN.
+This is a join, not a subquery.
+A subquery that compares an outer column with a range condition is rejected by Databricks, and the join works everywhere.
+
+The example has three starts needing a total of 4, 9 and 12.
+Supply is 2 on the snapshot and 11 in total from 2026-11-26.
+
+```sql
+WITH need(need_date, cumulative_qty) AS (
+    VALUES (DATE '2027-01-08', 4), (DATE '2027-01-24', 9), (DATE '2027-02-10', 12)
+), supply(supply_date, cumulative_qty) AS (
+    VALUES (DATE '2026-11-01', 2), (DATE '2026-11-26', 11)
+)
+SELECT n.need_date, n.cumulative_qty AS needed, MIN(s.supply_date) AS covered_on
+FROM need n
+LEFT JOIN supply s ON s.cumulative_qty >= n.cumulative_qty
+GROUP BY n.need_date, n.cumulative_qty
+ORDER BY n.need_date
+```
+
+The first two starts are covered on 2026-11-26.
+The third need of 12 is never covered, so MIN returns NULL.
+A start that nothing ever covers is left out of the risk list and goes to a separate unconfirmed-supply review.
+
+The delay is the covering date minus planned_start.
+datediff('day', start, end) counts the days from start to end.
+A positive number is late and a negative number is early.
+
+```sql
+SELECT datediff('day', DATE '2027-02-23', DATE '2027-03-03') AS days_late,
+       datediff('day', DATE '2027-02-23', DATE '2027-02-10') AS days_early
+```
+
+The result is 8, which is 8 days late, and -13, which is 13 days early.
+Only positive delays count as at risk.
+
+Do not add a sales line's revenue once for each component path.
+Group the delays back to one row per sales line and take the largest delay.
+
+The at-risk exercise is built in steps.
+First give each RF generator its spare plant.
+Then build the need ledger and the supply ledger for one generator, M-001327.
+It is the only RF generator with an open spare sales line, so its need ledger shows the spare convention at work.
+Then run all generators together and find the late Etch orders.
+
+The what-if has the same shape.
+It compares the plan as it stands with the plan after a supplier slips every confirmed date by 28 days.
+It does not claim a customer shipment date moves by the same number of days.
+The steps build the exposure, then a line-by-line comparison, then the counts.
 
 ## Capacity review
 
-weekly_slots is capacity for production starts, not simultaneous occupied bays.
-Count one production order as one start slot in this lab.
-Create a complete bay-week grid before dividing starts by capacity, so quiet weeks stay visible.
-Build the calendar independently of production orders; otherwise a week with no starts anywhere vanishes.
-This example generates all 13 ISO Monday weeks intersecting December 2026 through February 2027, including the partial first week.
-The anchor starts at level 0, and the recursive term adds one until level 12.
+weekly_slots is the number of production starts a bay can take in a week.
+It is not the number of tools standing in the bay.
+Count one production order as one start slot.
+
+Build the calendar first, with no reference to production orders.
+Otherwise a week with no starts anywhere would disappear.
+This example makes the 13 Monday weeks that touch December 2026 through February 2027, including the partial first week.
+The anchor row has level 0, and each step adds one until level 12.
 
 ```sql
 WITH RECURSIVE weeks(level) AS (SELECT 0 UNION ALL SELECT level + 1 FROM weeks WHERE level < 12)
 SELECT CAST(DATE '2026-11-30' + level * INTERVAL 7 DAY AS DATE) AS week_start FROM weeks ORDER BY week_start
 ```
 
-CROSS JOIN this calendar with build_bay, then LEFT JOIN the production counts and COALESCE missing counts to zero.
-Check yourself: does the calendar still return every week when production_order has no rows?
-Boundary weeks retain full capacity, while only starts inside the prompt's date range count.
-This is an explicit convention, not a detailed finite-capacity schedule.
+The first Monday is 2026-11-30 and the last is 2027-02-22.
+
+CROSS JOIN this calendar to build_bay, then LEFT JOIN the starts, then COALESCE missing counts to 0.
+Put the date range for the starts in the ON condition, not WHERE, so a bay with no starts stays in the result.
 
 ```sql
 SELECT b.bay_id, b.weekly_slots,
        COUNT(p.prod_order_no) AS december_starts
 FROM build_bay b LEFT JOIN production_order p ON p.bay_id = b.bay_id
  AND p.planned_start >= DATE '2026-12-01' AND p.planned_start < DATE '2027-01-01'
+WHERE b.bay_id IN ('AU01-B1', 'SC01-B3')
 GROUP BY b.bay_id, b.weekly_slots ORDER BY b.bay_id
 ```
 
-Check yourself: can spare slots in one week cancel an overload in another?
-Keep a separate sum of positive weekly overload when recommending which starts to move.
+Bay AU01-B1 has 2 slots a week and 0 December starts.
+Bay SC01-B3 has 6 slots a week and 37 December starts.
 
-Databricks uses date_trunc('MONTH', d) and date_trunc('WEEK', d) with the same arguments.
-Day intervals such as d + INTERVAL 7 DAY are supported.
-For day differences, replace datediff('day', start_date, end_date) with datediff(end_date, start_date).
+Boundary weeks keep the full weekly_slots.
+Only starts inside the date range count.
+That is a simple rule for this lab, not a finite-capacity schedule.
+Check yourself: does the calendar still return every week when production_order has no rows?
+Keep a separate sum of the positive weekly overload when you recommend which starts to move.
+Spare slots in one week cannot cancel an overload in another.
 
-## Capstone exercises
+## Exercises
 
-Work through demand review, supply review, customer risk and capacity before proposing a response to the supplier slip.
-The prompts specify the grain, horizon and assumptions that a planner would otherwise have to agree with the business.
+Work in order.
+The prompts say what to count, the horizon, and the assumptions a planner would otherwise have to agree with the business.
