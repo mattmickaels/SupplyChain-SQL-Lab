@@ -18,9 +18,10 @@
 
 {% macro summary_box(exercise) %}
 <div class="summary-box" data-summary-box{% if not exercise.show_summary %} hidden{% endif %}>
-  <p>{{ exercise.summary_lead }}</p>
   {% if exercise.summary_prompt %}
   <p>{{ exercise.summary_prompt }}</p>
+  {% else %}
+  <p>{{ exercise.summary_lead }}</p>
   {% endif %}
   <form id="summary-form-{{ exercise.id }}">
     <label for="summary-{{ exercise.id }}">Your summary</label>
@@ -66,8 +67,12 @@
     <div class="actions">
       <button type="button" data-run hx-post="/api/run" hx-include="#form-{{ exercise.id }}" hx-target="#result-{{ exercise.id }}">Run</button>
       <button type="button" hx-post="/api/check/{{ exercise.id }}" hx-include="#form-{{ exercise.id }}" hx-target="#check-{{ exercise.id }}">Check</button>
+      <button type="button" hx-get="/api/hint/{{ exercise.id }}/1" hx-target="#hint-{{ exercise.id }}">Hint</button>
+      <button type="button" hx-get="/api/solution/{{ exercise.id }}" hx-target="#solution-{{ exercise.id }}">Show solution</button>
     </div>
   </form>
+  <div class="hint-panel" id="hint-{{ exercise.id }}"></div>
+  <div id="solution-{{ exercise.id }}"></div>
   <div id="result-{{ exercise.id }}"></div>
   <div id="check-{{ exercise.id }}"></div>
   <div id="summary-slot-{{ exercise.id }}">

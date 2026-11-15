@@ -183,7 +183,7 @@ def _parse_exercise(row: object, folder_name: str) -> Exercise:
         order_matters=_flag(row.get("order_matters", False), exercise_id, "order_matters"),
         names_matter=_flag(row.get("names_matter", False), exercise_id, "names_matter"),
         excel_tip=_optional_text(row.get("excel_tip"), exercise_id, "excel_tip"),
-        databricks_note=_optional_text(row.get("databricks_note"), exercise_id, "databricks_note"),
+        databricks_note=_databricks_note(row.get("databricks_note"), exercise_id),
         time_limit_s=_optional_int(row.get("time_limit_s"), exercise_id, "time_limit_s"),
         summary_prompt=_optional_text(row.get("summary_prompt"), exercise_id, "summary_prompt"),
         model_summary=_optional_text(row.get("model_summary"), exercise_id, "model_summary"),
@@ -217,6 +217,23 @@ def _flag(value: object, exercise_id: str, label: str) -> bool:
     if not isinstance(value, bool):
         raise ValueError(f"Exercise {exercise_id} needs {label} to be true or false.")
     return value
+
+
+_DATABRICKS_LABELS = ("On Databricks:", "On Databricks,", "Databricks:")
+
+
+def _databricks_note(value: object, exercise_id: str) -> str | None:
+    text = _optional_text(value, exercise_id, "databricks_note")
+    if text is None:
+        return None
+    body = text.lstrip()
+    for label in _DATABRICKS_LABELS:
+        if body.startswith(label):
+            rest = body[len(label) :].lstrip()
+            if not rest:
+                return None
+            return rest
+    return text
 
 
 def _optional_text(value: object, exercise_id: str, label: str) -> str | None:

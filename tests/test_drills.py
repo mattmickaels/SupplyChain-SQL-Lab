@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
 from sclab.engine.query import run_query as real_run_query
+from sclab.lessons.progress import ProgressStore
 from sclab.paths import progress_path
 from sclab.web.app import create_app
 
@@ -41,7 +42,16 @@ _TIME_UP = "Time is up - finish your answer, then write your summary"
 _LEAD = (
     "Write three lines for an executive: the finding, the number that matters, what you&#39;d do"
 )
+_SUMMARY_PROMPT = "Write three lines: the finding, the number that matters, and what you would do."
 _ANSWER = "SELECT count(*) AS plant_count FROM plant"
+_START_FIRST = "Start the drill first."
+_CHECK_FIRST = "Try a Check first, then the solution unlocks."
+_WRITE_FIRST = "Write your summary first."
+_DRILL_HINTS = (
+    "Use count.",
+    "Count every row.",
+    "Then write the three-line summary.",
+)
 _XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
@@ -111,7 +121,8 @@ def test_model_summary_only_after_submit(client, monkeypatch) -> None:
     assert _MODEL_LAST not in page.text
     started = client.post("/api/drill/sample-drill/start")
     assert _MODEL_FIRST not in started.text
-    assert _LEAD in started.text
+    assert _SUMMARY_PROMPT in started.text
+    assert _LEAD not in started.text
     missed = client.post("/api/check/sample-drill", data={"sql": "SELECT 1"})
     assert missed.status_code == 200
     assert missed.headers.get("HX-Trigger") is None
@@ -125,7 +136,8 @@ def test_model_summary_only_after_submit(client, monkeypatch) -> None:
     assert _MODEL_FIRST not in passed.text
     assert _MODEL_LAST not in passed.text
     shown = client.get("/lessons/00-sample")
-    assert _LEAD in shown.text
+    assert _SUMMARY_PROMPT in shown.text
+    assert _LEAD not in shown.text
     assert "data-summary-box hidden" not in shown.text
     assert _MODEL_FIRST not in shown.text
     submitted = client.post(
@@ -202,6 +214,80 @@ def test_summary_persists_across_reload(client, monkeypatch) -> None:
     assert _TIME_UP in reloaded.text
     assert _remaining(reloaded.text) == 0
     assert 'type="checkbox"' in reloaded.text
+
+
+def test_drill_hints_and_solution_wait_for_start(client, monkeypatch) -> None:
+    monkeypatch.setattr("sclab.web.app._now", lambda: datetime(2026, 11, 1, 9, 0, 0))
+    page = client.get("/lessons/00-sample")
+    assert 'hx-get="/api/hint/sample-drill/1"' not in page.text
+    assert 'hx-get="/api/solution/sample-drill"' not in page.text
+    for number, hint in enumerate(_DRILL_HINTS, start=1):
+        blocked = client.get(f"/api/hint/sample-drill/{number}")
+        assert blocked.status_code == 200
+        assert _START_FIRST in blocked.text
+        assert hint not in blocked.text
+        assert "Next hint" not in blocked.text
+    blocked_sql = client.get("/api/solution/sample-drill")
+    assert blocked_sql.status_code == 200
+    assert _START_FIRST in blocked_sql.text
+    assert _ANSWER not in blocked_sql.text
+    assert _CHECK_FIRST not in blocked_sql.text
+    ordinary = client.get("/api/hint/sample-count/3")
+    assert "The result is one number." in ordinary.text
+    started = client.post("/api/drill/sample-drill/start")
+    assert 'hx-get="/api/hint/sample-drill/1"' in started.text
+    assert ">Hint<" in started.text
+    assert 'hx-get="/api/solution/sample-drill"' in started.text
+    assert ">Show solution<" in started.text
+    for number, hint in enumerate(_DRILL_HINTS, start=1):
+        shown = client.get(f"/api/hint/sample-drill/{number}")
+        assert f"Hint {number} of 3." in shown.text
+        assert hint in shown.text
+        if number < 3:
+            assert f"/api/hint/sample-drill/{number + 1}" in shown.text
+        else:
+            assert "Next hint" not in shown.text
+    locked = client.get("/api/solution/sample-drill")
+    assert _CHECK_FIRST in locked.text
+    assert _START_FIRST not in locked.text
+    assert _ANSWER not in locked.text
+    attempted = client.post("/api/check/sample-drill", data={"sql": "SELECT 1"})
+    assert attempted.status_code == 200
+    opened = client.get("/api/solution/sample-drill")
+    assert _ANSWER in opened.text
+    assert _START_FIRST not in opened.text
+    assert _CHECK_FIRST not in opened.text
+
+
+def test_blank_summary_does_not_reveal_model(client, monkeypatch) -> None:
+    monkeypatch.setattr("sclab.web.app._now", lambda: datetime(2026, 11, 1, 9, 0, 0))
+    started = client.post("/api/drill/sample-drill/start")
+    assert started.status_code == 200
+    for blank in ("", "   ", " \n\t "):
+        rejected = client.post("/api/drill/sample-drill/summary", data={"text": blank})
+        assert rejected.status_code == 200
+        assert _WRITE_FIRST in rejected.text
+        assert _MODEL_FIRST not in rejected.text
+        assert _MODEL_LAST not in rejected.text
+        assert "Model summary" not in rejected.text
+        assert 'class="summary-review"' not in rejected.text
+    reloaded = client.get("/lessons/00-sample")
+    assert _MODEL_FIRST not in reloaded.text
+    assert 'class="summary-review"' not in reloaded.text
+    ProgressStore(progress_path()).save_drill_summary("sample-drill", "  \n")
+    stored = client.get("/lessons/00-sample")
+    assert _MODEL_FIRST not in stored.text
+    assert _MODEL_LAST not in stored.text
+    assert "Model summary" not in stored.text
+    assert 'class="summary-review"' not in stored.text
+
+
+def test_drill_shows_one_summary_instruction(client, monkeypatch) -> None:
+    monkeypatch.setattr("sclab.web.app._now", lambda: datetime(2026, 11, 1, 9, 0, 0))
+    started = client.post("/api/drill/sample-drill/start")
+    assert started.status_code == 200
+    assert started.text.count(_SUMMARY_PROMPT) == 1
+    assert _LEAD not in started.text
 
 
 def test_databricks_note_rendered(client, monkeypatch) -> None:

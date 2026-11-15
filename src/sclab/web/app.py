@@ -184,6 +184,8 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         exercise = _require_exercise(exercises, exercise_id)
         if n < 1 or n > 3:
             raise HTTPException(status_code=404, detail="Hints are numbered 1 to 3.")
+        if exercise.is_drill and store().drill_started_at(exercise.id) is None:
+            return _plain_message("Start the drill first.")
         text = html.escape(exercise.hints[n - 1])
         follow = ""
         if n < 3:
@@ -197,6 +199,8 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
     @app.get("/api/solution/{exercise_id}")
     def api_solution(exercise_id: str):
         exercise = _require_exercise(exercises, exercise_id)
+        if exercise.is_drill and store().drill_started_at(exercise.id) is None:
+            return _plain_message("Start the drill first.")
         if store().status(exercise_id) == "new":
             message = "Try a Check first, then the solution unlocks."
             return HTMLResponse(f'<p class="message">{message}</p>')
@@ -246,6 +250,8 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
             if not exercise.is_drill:
                 raise HTTPException(status_code=404, detail="That exercise is not a drill.")
             text = (await _form(request)).get("text", "")
+            if not text.strip():
+                return _plain_message("Write your summary first.")
             saved = store()
             saved.save_drill_summary(exercise_id, text)
             saved.save_drill_draft(exercise_id, text)

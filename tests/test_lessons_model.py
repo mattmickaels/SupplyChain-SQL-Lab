@@ -98,6 +98,53 @@ def test_exercise_requires_three_hints(tmp_path: Path) -> None:
         load_lessons(tmp_path)
 
 
+def _write_noted_exercise(folder: Path, exercise_id: str, note: str) -> None:
+    folder.mkdir(parents=True)
+    (folder / "lesson.md").write_text(
+        '+++\ntitle = "Notes"\nsummary = "Notes."\n+++\n\nBody.\n',
+        encoding="utf-8",
+    )
+    escaped = note.replace("\\", "\\\\").replace('"', '\\"')
+    (folder / "exercises.toml").write_text(
+        "[[exercise]]\n"
+        f'id = "{exercise_id}"\n'
+        'title = "A noted exercise"\n'
+        'prompt_md = "Write a query."\n'
+        'hints = ["One.", "Two.", "Three."]\n'
+        'reference_sql = ["SELECT 1"]\n'
+        "order_matters = false\n"
+        "names_matter = false\n"
+        f'databricks_note = "{escaped}"\n',
+        encoding="utf-8",
+    )
+
+
+def test_databricks_note_strips_leading_label(tmp_path: Path) -> None:
+    notes = {
+        "colon-note": "On Databricks: datediff(b, a) matches datediff('day', a, b).",
+        "comma-note": "On Databricks, date_trunc('MONTH', d) matches date_trunc('month', d).",
+        "short-note": "Databricks: date_add(d, 7) matches d + INTERVAL 7 DAY.",
+        "plain-note": "count(*) is spelled the same way on Databricks.",
+        "padded-note": "  On Databricks: keep the rest of the note.",
+    }
+    expected = {
+        "colon-note": "datediff(b, a) matches datediff('day', a, b).",
+        "comma-note": "date_trunc('MONTH', d) matches date_trunc('month', d).",
+        "short-note": "date_add(d, 7) matches d + INTERVAL 7 DAY.",
+        "plain-note": "count(*) is spelled the same way on Databricks.",
+        "padded-note": "keep the rest of the note.",
+    }
+    root = tmp_path / "notes"
+    for number, (exercise_id, note) in enumerate(notes.items(), start=1):
+        _write_noted_exercise(root / f"{number:02d}-note", exercise_id, note)
+    loaded = {
+        exercise.id: exercise.databricks_note
+        for lesson in load_lessons(root)
+        for exercise in lesson.exercises
+    }
+    assert loaded == expected
+
+
 def test_drill_fields_parsed() -> None:
     lessons = load_lessons(include_sample=True)
     lesson = next(item for item in lessons if item.id == "00-sample")

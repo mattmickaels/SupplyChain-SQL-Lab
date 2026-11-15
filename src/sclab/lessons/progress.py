@@ -208,7 +208,7 @@ class ProgressStore:
             if not isinstance(entry, dict):
                 return None
             text = entry.get("drill_summary")
-            if not isinstance(text, str):
+            if not isinstance(text, str) or not text.strip():
                 return None
             return text
 

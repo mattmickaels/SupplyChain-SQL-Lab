@@ -401,6 +401,10 @@ def test_ui_polish_sources() -> None:
         assert token in css
     assert ".prose pre" in css
     assert ".prose code" in css
+    number = re.search(r"\.lesson-number\s*\{([^}]*)\}", css)
+    assert number is not None
+    assert "width: 3ch" in number.group(1)
+    assert "text-align: right" in number.group(1)
 
 
 def test_error_panel_escapes_script_literal(client) -> None:
