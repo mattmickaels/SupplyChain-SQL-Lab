@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 
 from sclab.engine import checker
-from sclab.engine.checker import CheckOutcome, compare, normalize_value
+from sclab.engine.checker import CheckOutcome, canonical_number, compare, normalize_value
 from sclab.engine.types import QueryError, QueryResult
 
 
@@ -300,13 +300,47 @@ def test_midnight_timestamp_equals_date() -> None:
     assert compare(result(["d"], [(day,)]), result(["d"], [(midnight,)])).passed is True
 
 
-def test_half_way_rounding_boundary() -> None:
-    low = 1.0 + 4e-7
-    high = 1.0 + 6e-7
-    assert round(low, 6) != round(high, 6)
-    assert compare(result(["n"], [(low,)]), result(["n"], [(high,)])).passed is True
-    outcome = compare(result(["n"], [(low,), (low,)]), result(["n"], [(high,)]))
+def test_float_noise_near_a_half_step_matches() -> None:
+    noisy = 2.4999999999999996
+    assert canonical_number(noisy) == 2.5
+    assert str(canonical_number(-0.0)) == "0.0"
+    assert compare(result(["n"], [(noisy,)]), result(["n"], [(2.5,)])).passed is True
+
+
+def test_decimal_float_and_division_match() -> None:
+    values = [Decimal("2.50"), 2.5, 5 / 2]
+    for left in values:
+        for right in values:
+            assert compare(result(["n"], [(left,)]), result(["n"], [(right,)])).passed is True
+
+
+def test_binary_fraction_sum_matches_decimal_literal() -> None:
+    assert compare(result(["n"], [(0.1 + 0.2,)]), result(["n"], [(0.3,)])).passed is True
+
+
+def test_near_sixth_decimal_values_keep_different_keys_by_design() -> None:
+    low = 1.0000004
+    high = 1.0000006
+    assert canonical_number(low) != canonical_number(high)
+    assert compare(result(["n"], [(low,)]), result(["n"], [(high,)])).passed is False
+
+
+def test_duplicate_canonical_rows_still_counted() -> None:
+    expected = result(["n"], [(0.3,)])
+    actual = result(["n"], [(0.1 + 0.2,), (0.3,)])
+    outcome = compare(actual, expected)
     assert outcome.passed is False
-    assert outcome.extra_rows == [(low,)]
+    assert outcome.extra_rows == [(0.3,)]
     assert outcome.missing_rows == []
     assert outcome.summary == "1 extra row."
+
+
+def test_reordered_renamed_columns_align_float_noise() -> None:
+    expected = result(["qty", "name"], [(0.3, "A"), (2.5, "B")])
+    actual = result(
+        ["label", "amount"],
+        [("A", 0.1 + 0.2), ("B", 2.4999999999999996)],
+    )
+    outcome = compare(actual, expected)
+    assert outcome.passed is True
+    assert outcome.summary == "Result matches."
