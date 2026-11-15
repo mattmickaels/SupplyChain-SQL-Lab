@@ -11,7 +11,11 @@
       <dt>{{ column | header_label }}</dt>
       <dd>
         {% with value=run.result.rows[0][loop.index0], type_name=run.result.column_types[loop.index0], column=column, row=run.result.rows[0], columns=run.result.columns %}
+        {% if column == 'planned_lead_time_days' and value is not none %}
+        {{ value | cell(type_name) }} days
+        {% else %}
         {% include "screens/_drill.html" %}
+        {% endif %}
         {% endwith %}
       </dd>
     </div>

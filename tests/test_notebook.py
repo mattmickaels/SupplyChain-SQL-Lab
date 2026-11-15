@@ -644,6 +644,32 @@ def test_delete_notebook_is_htmx_guarded(client: TestClient) -> None:
     assert refused.status_code == 403
 
 
+def test_browser_get_of_a_missing_notebook_renders_the_lab(lab_home) -> None:
+    browser = TestClient(create_app(), base_url="http://127.0.0.1")
+    page = browser.get("/notebooks/missing-notebook")
+    assert page.status_code == 404
+    assert "That notebook is not in the lab." in page.text
+    assert 'href="/notebooks"' in page.text
+    assert "Lessons" in page.text
+    assert "application/json" not in page.headers["content-type"]
+    htmx = TestClient(create_app(), base_url="http://127.0.0.1")
+    htmx.headers.update({"HX-Request": "true"})
+    api = htmx.get("/notebooks/missing-notebook")
+    assert api.status_code == 404
+    assert api.json()["detail"] == "That notebook is not in the lab."
+
+
+def test_destructive_buttons_use_the_danger_outline() -> None:
+    css = _APP_JS.with_name("app.css").read_text(encoding="utf-8")
+    rule = css.split("button.danger", 1)[1].split("}", 1)[0]
+    assert "var(--warn)" in rule
+    assert "transparent" in rule
+    notebook = (_NOTEBOOK_TEMPLATES / "notebook.html").read_text(encoding="utf-8")
+    cell = (_NOTEBOOK_TEMPLATES / "_cell.html").read_text(encoding="utf-8")
+    assert 'class="danger"' in notebook
+    assert 'class="danger"' in cell
+
+
 def test_restore_sample_notebook_is_htmx_guarded(client: TestClient) -> None:
     opened = _open_sample(client)
     assert "Restore the sample notebook" not in client.get("/notebooks").text

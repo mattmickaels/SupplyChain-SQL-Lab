@@ -12,6 +12,8 @@
 {% set plant.code = row[columns.index('plant_code')] %}
 {% elif screen is defined and screen.code == 'CM01' %}
 {% set plant.code = data.key %}
+{% elif screen is defined and screen.code == 'VA03' and columns is defined and 'prod_order_no' in columns and not row[columns.index('prod_order_no')] and plants is defined and plants.spare.get(value) %}
+{% set plant.code = plants.spare.get(value) %}
 {% elif plants is defined and plants.get(value) %}
 {% set plant.code = plants.get(value) %}
 {% elif request.query_params.get('plant') %}

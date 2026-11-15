@@ -8,7 +8,7 @@
 <h1>{{ notebook.title }}</h1>
 <p>Run each cell. The last cell is yours to write.</p>
 <form>
-  <button type="button" hx-delete="/notebooks/{{ notebook.id }}" hx-confirm="{% if is_sample %}Delete this notebook? You can restore the sample notebook from the notebook list.{% else %}Delete this notebook?{% endif %}" hx-target="body">Delete notebook</button>
+  <button type="button" class="danger" hx-delete="/notebooks/{{ notebook.id }}" hx-confirm="{% if is_sample %}Delete this notebook? You can restore the sample notebook from the notebook list.{% else %}Delete this notebook?{% endif %}" hx-target="body">Delete notebook</button>
 </form>
 <form>
   <label for="notebook-target">Database</label>

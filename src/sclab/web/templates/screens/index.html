@@ -11,7 +11,11 @@
 {% if screens %}
 <ul class="schema-list screen-list">
   {% for item in screens %}
-  <li><a href="/screens/{{ item.code }}">{{ item.code }}</a> <span>{{ item.title }}</span></li>
+  <li>
+    <a href="/screens/{{ item.code }}">{{ item.code }}</a>
+    <span>{{ item.title }}</span>
+    <small>{{ item.summary }}</small>
+  </li>
   {% endfor %}
 </ul>
 {% else %}

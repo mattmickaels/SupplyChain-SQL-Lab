@@ -66,7 +66,12 @@ def register_notebook_routes(app: FastAPI, render) -> None:
     @app.get("/notebooks/{notebook_id}")
     async def notebook_page(request: Request, notebook_id: str):
         async def work():
-            notebook = await run_in_threadpool(lambda: _store().get(notebook_id))
+            try:
+                notebook = await run_in_threadpool(lambda: _store().get(notebook_id))
+            except KeyError:
+                if request.headers.get("hx-request") == "true":
+                    raise HTTPException(status_code=404, detail=_MISSING) from None
+                return render(request, "notebook/missing.html", {}, status_code=404)
             cells = await _views(notebook)
             return render(
                 request,

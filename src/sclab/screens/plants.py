@@ -131,8 +131,19 @@ LEFT JOIN any_plant ON any_plant.material_no = m.material_no
 """
 
 
-def link_plants(material_nos: Sequence[object]) -> dict[str, str]:
-    """Map each material to the plant its link opens, skipping materials with none."""
+class PlantLinks(dict[str, str]):
+    """Plant for a normal link, plus the MD04 spare plant when the material has one."""
+
+    def __init__(self, plants: dict[str, str], spare: dict[str, str]) -> None:
+        super().__init__(plants)
+        self.spare = spare
+
+
+def link_plants(material_nos: Sequence[object]) -> PlantLinks:
+    """Map each material to the plant its link opens, skipping materials with none.
+
+    ``spare`` is the MD04 spare plant. A VA03 line with no production order uses it.
+    """
     unique: list[str] = []
     seen: set[str] = set()
     for number in material_nos:
@@ -141,18 +152,21 @@ def link_plants(material_nos: Sequence[object]) -> dict[str, str]:
             seen.add(text)
             unique.append(text)
     if not unique:
-        return {}
+        return PlantLinks({}, {})
     placeholders = ", ".join(f"${index}" for index in range(1, len(unique) + 1))
     sql = (
-        "SELECT material_no, plant_code FROM (\n"
+        "SELECT material_no, plant_code, spare_plant FROM (\n"
         + LINK_PLANTS_SQL
-        + f"\n) AS link WHERE material_no IN ({placeholders}) AND plant_code IS NOT NULL"
+        + f"\n) AS link WHERE material_no IN ({placeholders})"
+        + " AND (plant_code IS NOT NULL OR spare_plant IS NOT NULL)"
     )
     try:
         result = run_query(sql, params=unique)
     except QueryError:
-        return {}
-    return {str(row[0]): str(row[1]) for row in result.rows if row[1]}
+        return PlantLinks({}, {})
+    plants = {str(row[0]): str(row[1]) for row in result.rows if row[1]}
+    spare = {str(row[0]): str(row[2]) for row in result.rows if row[2]}
+    return PlantLinks(plants, spare)
 
 
 def material_numbers(key: str, runs: dict) -> list[str]:
