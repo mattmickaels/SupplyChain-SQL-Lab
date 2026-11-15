@@ -3,6 +3,8 @@
 import numpy as np
 import pandas as pd
 
+from sclab.data.story import CORVANE_SUPPLIER_NO
+
 
 def apply_messiness(
     rng: np.random.Generator,
@@ -22,8 +24,20 @@ def apply_messiness(
         .tail(30)
         .copy()
     )
+    # Retired variants retain a qualified historical source from their active design.
+    # Prefer its primary source, excluding Corvane's active RF-only catalogue.
+    qualified = (
+        frames["material_supplier"]
+        .loc[frames["material_supplier"]["supplier_no"].ne(CORVANE_SUPPLIER_NO)]
+        .sort_values(["material_no", "is_primary", "supplier_no"], ascending=[True, False, True])
+        .drop_duplicates("material_no")
+        .set_index("material_no")
+    )
+    historical = qualified.loc[idle["material_no"]].reset_index()
     next_no = int(out["material"]["material_no"].str[2:].astype(int).max()) + 1
     idle["material_no"] = [f"M-{number:06d}" for number in range(next_no, next_no + len(idle))]
+    historical["material_no"] = idle["material_no"].to_numpy()
+    historical["is_primary"] = True
     idle["description"] = idle["description"] + ", retired configuration"
     out["material"] = pd.concat([out["material"], idle], ignore_index=True)
     balances = pd.DataFrame(
@@ -73,6 +87,8 @@ def apply_messiness(
     pool = sales.index[sales["status"].eq("Cancelled")]
     picked = rng.choice(pool, size=max(1, round(len(pool) * 0.1)), replace=False)
     sales.loc[picked, "promised_date"] = pd.NaT
+    # Append historical quotes after planting blanks to preserve the seeded draws.
+    out["material_supplier"] = pd.concat([out["material_supplier"], historical], ignore_index=True)
     return out
 
 

@@ -1,0 +1,423 @@
+[[example]]
+id = "worked-1"
+sql = """
+SELECT plant_code, COUNT(*) AS bays
+FROM build_bay GROUP BY plant_code ORDER BY plant_code
+"""
+expected_rows = [
+  ["AU01", 5],
+  ["SC01", 5],
+  ["SG01", 5]
+]
+order_matters = true
+
+[[example]]
+id = "worked-2"
+sql = """
+WITH counts AS (
+    SELECT plant_code, COUNT(*) AS bays FROM build_bay GROUP BY plant_code
+)
+SELECT plant_code, bays,
+       ROUND(100.0 * bays / SUM(bays) OVER (), 2) AS share_pct,
+       ROUND(100.0 * SUM(bays) OVER (ORDER BY plant_code ROWS UNBOUNDED PRECEDING)
+             / SUM(bays) OVER (), 2) AS cumulative_pct
+FROM counts ORDER BY plant_code
+"""
+expected_rows = [
+  ["AU01", 5, 33.33, 33.33],
+  ["SC01", 5, 33.33, 66.67],
+  ["SG01", 5, 33.33, 100.0]
+]
+order_matters = true
+
+[[example]]
+id = "worked-3"
+sql = """
+SELECT i.po_no, i.line_no
+FROM purchase_order_item i
+WHERE i.po_no = 'PO-0000003' AND i.line_no = 1
+  AND NOT EXISTS (
+      SELECT 1 FROM goods_receipt g
+      WHERE g.po_no = i.po_no AND g.line_no = i.line_no
+  )
+"""
+expected_rows = []
+order_matters = true
+
+[[example]]
+id = "worked-4"
+sql = """
+WITH late AS (
+    SELECT h.supplier_no, s.name AS supplier_name, COUNT(*) AS late_receipts
+    FROM goods_receipt g JOIN purchase_order_item i ON i.po_no = g.po_no AND i.line_no = g.line_no
+    JOIN purchase_order h ON h.po_no = i.po_no JOIN supplier s ON s.supplier_no = h.supplier_no
+    WHERE g.receipt_date >= DATE '2025-11-01' AND g.receipt_date < DATE '2026-11-01'
+      AND g.receipt_date > i.confirmed_delivery_date
+    GROUP BY h.supplier_no, s.name
+)
+SELECT supplier_no, supplier_name, late_receipts,
+       ROUND(100.0 * late_receipts / SUM(late_receipts) OVER (), 2) AS share_pct,
+       ROUND(100.0 * SUM(late_receipts) OVER (ORDER BY late_receipts DESC, supplier_no
+             ROWS UNBOUNDED PRECEDING) / SUM(late_receipts) OVER (), 2) AS cumulative_pct
+FROM late ORDER BY late_receipts DESC, supplier_no
+"""
+expected_rows = [
+  ["V-10027", "Cedar Wafer Robotics", 82, 1.92, 1.92],
+  ["V-10011", "Amber Electronics", 80, 1.87, 3.79],
+  ["V-10099", "Juniper Wafer Robotics", 77, 1.8, 5.59],
+  ["V-10036", "Cedar Flow Controls", 71, 1.66, 7.25],
+  ["V-10111", "Kindred Wafer Robotics", 71, 1.66, 8.91],
+  ["V-10012", "Amber Flow Controls", 68, 1.59, 10.5],
+  ["V-10105", "Juniper Precision Assemblies", 66, 1.54, 12.05],
+  ["V-10057", "Ember Precision Assemblies", 63, 1.47, 13.52],
+  ["V-10075", "Harbor Wafer Robotics", 62, 1.45, 14.97],
+  ["V-10039", "Drift Wafer Robotics", 60, 1.4, 16.37],
+  ["V-10147", "Opal Wafer Robotics", 59, 1.38, 17.75],
+  ["V-10003", "Amber Wafer Robotics", 58, 1.36, 19.11],
+  ["V-10093", "Ivory Precision Assemblies", 58, 1.36, 20.47],
+  ["V-10087", "Ivory Wafer Robotics", 57, 1.33, 21.8],
+  ["V-10108", "Juniper Flow Controls", 57, 1.33, 23.13],
+  ["V-10129", "Maple Precision Assemblies", 57, 1.33, 24.47],
+  ["V-10135", "North Wafer Robotics", 57, 1.33, 25.8],
+  ["V-10060", "Ember Flow Controls", 56, 1.31, 27.11],
+  ["V-10083", "Harbor Electronics", 55, 1.29, 28.4],
+  ["V-10048", "Drift Flow Controls", 54, 1.26, 29.66],
+  ["V-10063", "Fern Wafer Robotics", 54, 1.26, 30.92],
+  ["V-10149", "Opal Quartz Ceramics", 54, 1.26, 32.19],
+  ["V-10072", "Fern Flow Controls", 52, 1.22, 33.4],
+  ["V-10144", "North Flow Controls", 52, 1.22, 34.62],
+  ["V-10059", "Ember Electronics", 51, 1.19, 35.81],
+  ["V-10141", "North Precision Assemblies", 51, 1.19, 37.01],
+  ["V-10107", "Juniper Electronics", 50, 1.17, 38.18],
+  ["V-10015", "Bright Wafer Robotics", 49, 1.15, 39.32],
+  ["V-10081", "Harbor Precision Assemblies", 49, 1.15, 40.47],
+  ["V-10110", "Kindred Vacuum Systems", 47, 1.1, 41.57],
+  ["V-10119", "Kindred Electronics", 47, 1.1, 42.67],
+  ["V-10024", "Bright Flow Controls", 46, 1.08, 43.74],
+  ["V-10026", "Cedar Vacuum Systems", 46, 1.08, 44.82],
+  ["V-10120", "Kindred Flow Controls", 46, 1.08, 45.89],
+  ["V-10033", "Cedar Precision Assemblies", 45, 1.05, 46.95],
+  ["V-10077", "Harbor Quartz Ceramics", 45, 1.05, 48.0],
+  ["V-10009", "Amber Precision Assemblies", 44, 1.03, 49.03],
+  ["V-10084", "Harbor Flow Controls", 44, 1.03, 50.06],
+  ["V-10095", "Ivory Electronics", 44, 1.03, 51.09],
+  ["V-10047", "Drift Electronics", 43, 1.01, 52.09],
+  ["V-10021", "Bright Precision Assemblies", 42, 0.98, 53.08],
+  ["V-10045", "Drift Precision Assemblies", 42, 0.98, 54.06],
+  ["V-10125", "Maple Quartz Ceramics", 42, 0.98, 55.04],
+  ["V-10023", "Bright Electronics", 40, 0.94, 55.98],
+  ["V-10096", "Ivory Flow Controls", 40, 0.94, 56.91],
+  ["V-10014", "Bright Vacuum Systems", 39, 0.91, 57.82],
+  ["V-10089", "Ivory Quartz Ceramics", 39, 0.91, 58.74],
+  ["V-10005", "Amber Quartz Ceramics", 38, 0.89, 59.63],
+  ["V-10069", "Fern Precision Assemblies", 38, 0.89, 60.51],
+  ["V-10137", "North Quartz Ceramics", 38, 0.89, 61.4],
+  ["V-10008", "Amber Vacuum Pumps", 37, 0.87, 62.27],
+  ["V-10062", "Fern Vacuum Systems", 37, 0.87, 63.13],
+  ["V-10074", "Harbor Vacuum Systems", 37, 0.87, 64.0],
+  ["V-10044", "Drift Vacuum Pumps", 36, 0.84, 64.84],
+  ["V-10051", "Ember Wafer Robotics", 36, 0.84, 65.68],
+  ["V-10113", "Kindred Quartz Ceramics", 36, 0.84, 66.53],
+  ["V-10122", "Maple Vacuum Systems", 36, 0.84, 67.37],
+  ["V-10123", "Maple Wafer Robotics", 36, 0.84, 68.21],
+  ["V-10041", "Drift Quartz Ceramics", 35, 0.82, 69.03],
+  ["V-10098", "Juniper Vacuum Systems", 35, 0.82, 69.85],
+  ["V-10032", "Cedar Vacuum Pumps", 34, 0.8, 70.64],
+  ["V-10088", "Ivory Thermal Systems", 34, 0.8, 71.44],
+  ["V-10131", "Maple Electronics", 34, 0.8, 72.23],
+  ["V-10143", "North Electronics", 34, 0.8, 73.03],
+  ["V-10013", "Bright RF Systems", 33, 0.77, 73.8],
+  ["V-10071", "Fern Electronics", 33, 0.77, 74.57],
+  ["V-10132", "Maple Flow Controls", 33, 0.77, 75.35],
+  ["V-10002", "Amber Vacuum Systems", 32, 0.75, 76.09],
+  ["V-10035", "Cedar Electronics", 32, 0.75, 76.84],
+  ["V-10085", "Ivory RF Systems", 31, 0.73, 77.57],
+  ["V-10134", "North Vacuum Systems", 30, 0.7, 78.27],
+  ["V-10145", "Opal RF Systems", 29, 0.68, 78.95],
+  ["V-10029", "Cedar Quartz Ceramics", 28, 0.65, 79.6],
+  ["V-10101", "Juniper Quartz Ceramics", 28, 0.65, 80.26],
+  ["V-10117", "Kindred Precision Assemblies", 28, 0.65, 80.91],
+  ["V-10086", "Ivory Vacuum Systems", 27, 0.63, 81.54],
+  ["V-10065", "Fern Quartz Ceramics", 26, 0.61, 82.15],
+  ["V-10146", "Opal Vacuum Systems", 26, 0.61, 82.76],
+  ["V-10049", "Ember RF Systems", 25, 0.58, 83.35],
+  ["V-10042", "Drift Gas Delivery", 24, 0.56, 83.91],
+  ["V-10104", "Juniper Vacuum Pumps", 24, 0.56, 84.47],
+  ["V-10140", "North Vacuum Pumps", 24, 0.56, 85.03],
+  ["V-10050", "Ember Vacuum Systems", 23, 0.54, 85.57],
+  ["V-10112", "Kindred Thermal Systems", 23, 0.54, 86.11],
+  ["V-10116", "Kindred Vacuum Pumps", 23, 0.54, 86.64],
+  ["V-10030", "Cedar Gas Delivery", 21, 0.49, 87.13],
+  ["V-10056", "Ember Vacuum Pumps", 21, 0.49, 87.63],
+  ["V-10017", "Corvane RF Systems", 20, 0.47, 88.09],
+  ["V-10038", "Drift Vacuum Systems", 20, 0.47, 88.56],
+  ["V-10092", "Ivory Vacuum Pumps", 19, 0.44, 89.01],
+  ["V-10001", "Amber RF Systems", 18, 0.42, 89.43],
+  ["V-10053", "Ember Quartz Ceramics", 18, 0.42, 89.85],
+  ["V-10080", "Harbor Vacuum Pumps", 18, 0.42, 90.27],
+  ["V-10016", "Bright Thermal Systems", 17, 0.4, 90.67],
+  ["V-10124", "Maple Thermal Systems", 17, 0.4, 91.06],
+  ["V-10004", "Amber Thermal Systems", 16, 0.37, 91.44],
+  ["V-10028", "Cedar Thermal Systems", 16, 0.37, 91.81],
+  ["V-10061", "Fern RF Systems", 16, 0.37, 92.19],
+  ["V-10128", "Maple Vacuum Pumps", 16, 0.37, 92.56],
+  ["V-10025", "Cedar RF Systems", 15, 0.35, 92.91],
+  ["V-10068", "Fern Vacuum Pumps", 15, 0.35, 93.26],
+  ["V-10006", "Amber Gas Delivery", 14, 0.33, 93.59],
+  ["V-10133", "North RF Systems", 14, 0.33, 93.92],
+  ["V-10037", "Drift RF Systems", 13, 0.3, 94.22],
+  ["V-10073", "Harbor RF Systems", 13, 0.3, 94.53],
+  ["V-10102", "Juniper Gas Delivery", 13, 0.3, 94.83],
+  ["V-10138", "North Gas Delivery", 13, 0.3, 95.13],
+  ["V-10066", "Fern Gas Delivery", 12, 0.28, 95.42],
+  ["V-10018", "Bright Gas Delivery", 11, 0.26, 95.67],
+  ["V-10114", "Kindred Gas Delivery", 11, 0.26, 95.93],
+  ["V-10126", "Maple Gas Delivery", 11, 0.26, 96.19],
+  ["V-10127", "Maple Process Controls", 11, 0.26, 96.44],
+  ["V-10148", "Opal Thermal Systems", 11, 0.26, 96.7],
+  ["V-10150", "Opal Gas Delivery", 11, 0.26, 96.96],
+  ["V-10040", "Drift Thermal Systems", 10, 0.23, 97.19],
+  ["V-10052", "Ember Thermal Systems", 10, 0.23, 97.43],
+  ["V-10020", "Bright Vacuum Pumps", 9, 0.21, 97.64],
+  ["V-10054", "Ember Gas Delivery", 9, 0.21, 97.85],
+  ["V-10097", "Juniper RF Systems", 9, 0.21, 98.06],
+  ["V-10136", "North Thermal Systems", 9, 0.21, 98.27],
+  ["V-10090", "Ivory Gas Delivery", 8, 0.19, 98.46],
+  ["V-10100", "Juniper Thermal Systems", 8, 0.19, 98.64],
+  ["V-10121", "Maple RF Systems", 7, 0.16, 98.81],
+  ["V-10043", "Drift Process Controls", 6, 0.14, 98.95],
+  ["V-10055", "Ember Process Controls", 6, 0.14, 99.09],
+  ["V-10019", "Bright Process Controls", 4, 0.09, 99.18],
+  ["V-10076", "Harbor Thermal Systems", 4, 0.09, 99.27],
+  ["V-10078", "Harbor Gas Delivery", 4, 0.09, 99.37],
+  ["V-10091", "Ivory Process Controls", 4, 0.09, 99.46],
+  ["V-10103", "Juniper Process Controls", 4, 0.09, 99.56],
+  ["V-10109", "Kindred RF Systems", 4, 0.09, 99.65],
+  ["V-10007", "Amber Process Controls", 3, 0.07, 99.72],
+  ["V-10067", "Fern Process Controls", 3, 0.07, 99.79],
+  ["V-10115", "Kindred Process Controls", 3, 0.07, 99.86],
+  ["V-10031", "Cedar Process Controls", 2, 0.05, 99.91],
+  ["V-10079", "Harbor Process Controls", 2, 0.05, 99.95],
+  ["V-10064", "Fern Thermal Systems", 1, 0.02, 99.98],
+  ["V-10139", "North Process Controls", 1, 0.02, 100.0]
+]
+order_matters = true
+
+[[example]]
+id = "worked-5"
+sql = """
+WITH bookings AS (
+    SELECT SUM(CASE WHEN h.order_date >= DATE '2025-07-01' AND h.order_date < DATE '2025-11-01'
+                    THEN i.qty ELSE 0 END) AS booked_2025,
+           SUM(CASE WHEN h.order_date >= DATE '2026-07-01' AND h.order_date < DATE '2026-11-01'
+                    THEN i.qty ELSE 0 END) AS booked_2026
+    FROM sales_order_item i JOIN sales_order h ON h.so_no = i.so_no
+    JOIN material m ON m.material_no = i.material_no
+    WHERE h.customer_no = 'C-2003' AND m.material_type = 'TOOL' AND m.family_code = 'ETC'
+      AND i.status <> 'Cancelled'
+), forecast AS (
+    SELECT SUM(CASE WHEN f.forecast_version = '2026-09' THEN f.qty ELSE 0 END) AS forecast_09,
+           SUM(CASE WHEN f.forecast_version = '2026-10' THEN f.qty ELSE 0 END) AS forecast_10
+    FROM demand_forecast f JOIN material m ON m.material_no = f.material_no
+    WHERE m.material_type = 'TOOL' AND m.family_code = 'ETC'
+      AND f.forecast_month >= DATE '2026-11-01' AND f.forecast_month < DATE '2027-02-01'
+      AND f.forecast_version IN ('2026-09', '2026-10')
+)
+SELECT b.booked_2025, b.booked_2026,
+       ROUND(100.0 * (b.booked_2026 - b.booked_2025) / NULLIF(b.booked_2025, 0), 2) AS booking_growth_pct,
+       f.forecast_09, f.forecast_10,
+       ROUND(100.0 * (f.forecast_10 - f.forecast_09) / NULLIF(f.forecast_09, 0), 2) AS forecast_growth_pct
+FROM bookings b CROSS JOIN forecast f
+"""
+expected_rows = [
+  [19, 33, 73.68, 30, 60, 100.0]
+]
+order_matters = true
+
+[[example]]
+id = "worked-6"
+sql = """
+WITH RECURSIVE weeks(level) AS (
+    SELECT 0
+    UNION ALL
+    SELECT level + 1 FROM weeks WHERE level < 12
+), calendar AS (
+    SELECT CAST(DATE '2026-11-30' + level * INTERVAL 7 DAY AS DATE) AS week_start
+    FROM weeks
+), loads AS (
+    SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
+           COUNT(*) AS starts
+    FROM production_order
+    WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+    GROUP BY bay_id, CAST(date_trunc('week', planned_start) AS DATE)
+), grid AS (
+    SELECT b.bay_id, w.week_start, COALESCE(l.starts, 0) AS starts, b.weekly_slots
+    FROM build_bay b CROSS JOIN calendar w
+    LEFT JOIN loads l ON l.bay_id = b.bay_id AND l.week_start = w.week_start
+)
+SELECT bay_id, SUM(starts) AS total_starts, SUM(weekly_slots) AS total_slots,
+       SUM(CASE WHEN starts > weekly_slots THEN starts - weekly_slots ELSE 0 END) AS excess_starts,
+       ROUND(100.0 * SUM(starts) / SUM(weekly_slots), 2) AS load_pct
+FROM grid GROUP BY bay_id ORDER BY load_pct DESC, bay_id
+"""
+expected_rows = [
+  ["SC01-B3", 104, 78, 26, 133.33],
+  ["SG01-B3", 13, 26, 0, 50.0],
+  ["SC01-B2", 26, 78, 0, 33.33],
+  ["AU01-B1", 6, 26, 0, 23.08],
+  ["AU01-B4", 18, 78, 0, 23.08],
+  ["AU01-B5", 12, 65, 0, 18.46],
+  ["AU01-B2", 0, 39, 0, 0.0],
+  ["AU01-B3", 0, 39, 0, 0.0],
+  ["SC01-B1", 0, 78, 0, 0.0],
+  ["SC01-B4", 0, 65, 0, 0.0],
+  ["SC01-B5", 0, 39, 0, 0.0],
+  ["SG01-B1", 0, 26, 0, 0.0],
+  ["SG01-B2", 0, 39, 0, 0.0],
+  ["SG01-B4", 0, 78, 0, 0.0],
+  ["SG01-B5", 0, 39, 0, 0.0]
+]
+order_matters = true
+
+[[example]]
+id = "worked-7"
+sql = """
+SELECT c.segment, COUNT(*) AS shipped_lines,
+       SUM(CASE WHEN i.shipped_date <= i.promised_date THEN 1 ELSE 0 END) AS on_time_lines,
+       ROUND(100.0 * SUM(CASE WHEN i.shipped_date <= i.promised_date THEN 1 ELSE 0 END)
+             / COUNT(*), 2) AS on_time_pct
+FROM sales_order_item i JOIN sales_order h ON h.so_no = i.so_no
+JOIN customer c ON c.customer_no = h.customer_no JOIN material m ON m.material_no = i.material_no
+WHERE m.material_type = 'COMPONENT' AND i.status = 'Shipped' AND i.promised_date IS NOT NULL
+  AND i.shipped_date >= DATE '2025-11-01' AND i.shipped_date < DATE '2026-11-01'
+GROUP BY c.segment ORDER BY c.segment
+"""
+expected_rows = [
+  ["Foundry", 2181, 2010, 92.16],
+  ["Logic", 1652, 1357, 82.14],
+  ["Memory", 1418, 997, 70.31]
+]
+order_matters = true
+
+[[example]]
+id = "worked-8"
+sql = """
+WITH stock AS (
+    SELECT material_no, SUM(qty_on_hand) AS on_hand_qty FROM inventory
+    GROUP BY material_no HAVING SUM(qty_on_hand) > 0
+)
+SELECT m.material_no, m.description, s.on_hand_qty,
+       ROUND(s.on_hand_qty * q.unit_price, 2) AS on_hand_value
+FROM stock s JOIN material m ON m.material_no = s.material_no
+JOIN material_supplier q ON q.material_no = s.material_no AND q.is_primary = true
+WHERE NOT EXISTS (
+    SELECT 1 FROM stock_movement u WHERE u.material_no = s.material_no
+      AND u.movement_type IN ('261', '601')
+      AND u.posting_date >= DATE '2025-11-01' AND u.posting_date < DATE '2026-11-01'
+)
+ORDER BY on_hand_value DESC, m.material_no LIMIT 10
+"""
+expected_rows = [
+  ["M-005429", "Liner retaining clip, variant 122, retired configuration", 39, 59284.68],
+  ["M-005413", "Aligner spindle, variant 121, retired configuration", 23, 55105.47],
+  ["M-005424", "Gas inlet fitting, variant 122, retired configuration", 34, 52964.18],
+  ["M-005431", "Chuck electrode, variant 122, retired configuration", 41, 52094.60],
+  ["M-005416", "Robot servo motor, variant 121, retired configuration", 26, 49791.04],
+  ["M-005410", "Camera sensor, variant 121, retired configuration", 20, 46527.00],
+  ["M-005411", "Vacuum chuck plate, variant 121, retired configuration", 21, 45296.58],
+  ["M-005408", "Stage encoder, variant 121, retired configuration", 18, 43908.48],
+  ["M-005417", "Wafer end effector, variant 121, retired configuration", 27, 41645.34],
+  ["M-005414", "Vacuum manifold block, variant 121, retired configuration", 24, 41070.72]
+]
+order_matters = true
+
+[[example]]
+id = "worked-9"
+sql = """
+WITH RECURSIVE tree AS (
+    SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+           CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+    FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+    WHERE m.material_type = 'TOOL'
+    UNION ALL
+    SELECT t.root, t.family_code, b.component_material_no,
+           CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+    FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+    WHERE t.level < 10
+), leaves AS (
+    SELECT t.root, t.family_code, t.material_no, SUM(t.qty) AS qty
+    FROM tree t JOIN material m ON m.material_no = t.material_no
+    WHERE m.material_type = 'COMPONENT'
+    GROUP BY t.root, t.family_code, t.material_no
+), single_source AS (
+    SELECT material_no, MIN(supplier_no) AS supplier_no FROM material_supplier
+    GROUP BY material_no HAVING COUNT(*) = 1
+), dependencies AS (
+    SELECT l.material_no, i.so_no, i.line_no, i.qty * l.qty AS component_qty,
+           i.qty * i.unit_price AS revenue
+    FROM leaves l JOIN sales_order_item i ON i.material_no = l.root
+    JOIN sales_order h ON h.so_no = i.so_no
+    WHERE i.status = 'Open' AND h.order_date <= DATE '2026-11-01'
+)
+SELECT d.material_no, s.supplier_no, SUM(d.component_qty) AS open_component_qty,
+       COUNT(*) AS dependent_lines, ROUND(SUM(d.revenue), 2) AS exposed_revenue
+FROM dependencies d JOIN single_source s ON s.material_no = d.material_no
+JOIN material m ON m.material_no = d.material_no
+WHERE m.is_long_lead = true AND m.material_type = 'COMPONENT'
+GROUP BY d.material_no, s.supplier_no ORDER BY exposed_revenue DESC, d.material_no
+"""
+expected_rows = [
+  ["M-001324", "V-10017", 1200.0, 20, 21547113.0],
+  ["M-001327", "V-10017", 120.0, 20, 20739297.0],
+  ["M-001325", "V-10017", 1296.0, 18, 19434437.0],
+  ["M-001329", "V-10017", 380.0, 19, 19223540.0],
+  ["M-001323", "V-10017", 960.0, 20, 18285880.0],
+  ["M-001328", "V-10017", 304.0, 19, 18052091.0],
+  ["M-001321", "V-10017", 68.0, 17, 16826851.0],
+  ["M-001331", "V-10017", 34.0, 17, 16826851.0],
+  ["M-001322", "V-10017", 306.0, 17, 16793991.0],
+  ["M-001332", "V-10017", 102.0, 17, 16793991.0],
+  ["M-001326", "V-10017", 360.0, 15, 14718475.0],
+  ["M-001330", "V-10017", 384.0, 16, 14279733.0]
+]
+order_matters = true
+
+[[example]]
+id = "worked-10"
+sql = """
+SELECT COUNT(*) AS unpriced_idle_materials FROM (
+                SELECT i.material_no FROM inventory i GROUP BY i.material_no
+                HAVING SUM(i.qty_on_hand) > 0
+                  AND NOT EXISTS (SELECT 1 FROM stock_movement u WHERE u.material_no = i.material_no
+                      AND u.movement_type IN ('261', '601')
+                      AND u.posting_date >= DATE '2025-11-01' AND u.posting_date < DATE '2026-11-01')
+                  AND NOT EXISTS (SELECT 1 FROM material_supplier q WHERE q.material_no = i.material_no)
+            ) idle
+"""
+expected_rows = [
+  [0]
+]
+order_matters = true
+
+[[fact]]
+id = "excess-top-ten-value"
+sql = """
+WITH stock AS (
+    SELECT material_no, SUM(qty_on_hand) AS qty
+    FROM inventory GROUP BY material_no HAVING SUM(qty_on_hand) > 0
+), valued AS (
+    SELECT s.material_no, ROUND(s.qty * q.unit_price, 2) AS value
+    FROM stock s JOIN material_supplier q ON q.material_no = s.material_no AND q.is_primary
+    WHERE NOT EXISTS (
+        SELECT 1 FROM stock_movement u WHERE u.material_no = s.material_no
+          AND u.movement_type IN ('261', '601')
+          AND u.posting_date >= DATE '2025-11-01' AND u.posting_date < DATE '2026-11-01'
+    )
+), ranked AS (
+    SELECT material_no, value,
+           ROW_NUMBER() OVER (ORDER BY value DESC, material_no) AS position
+    FROM valued
+)
+SELECT SUM(value) FROM ranked WHERE position <= 10
+"""
+expected = 487688.09
