@@ -151,6 +151,9 @@ def test_bom_depth_and_where_used(lab_conn) -> None:
         FROM (
             SELECT up.component_no
             FROM up
+            JOIN material AS component
+              ON component.material_no = up.component_no
+             AND component.material_type = 'COMPONENT'
             JOIN material AS tool
               ON tool.material_no = up.ancestor
              AND tool.material_type = 'TOOL'
@@ -165,10 +168,11 @@ def test_bom_depth_and_where_used(lab_conn) -> None:
 
 
 def test_projected_balance_goes_negative(lab_conn) -> None:
-    """Running balance of stock, open PO receipts, and open production demand.
+    """Weekly balance of stock, open PO receipts, and open production demand.
 
     Receipts with a confirmation before the snapshot count on the snapshot day.
-    Same-day supply and demand are netted before the balance is read.
+    Events in the 182-day horizon are netted by ISO week before reading balances.
+    The first week includes snapshot stock, with no pre-snapshot demand or supply.
     """
     rows = lab_conn.execute(
         """
@@ -246,18 +250,18 @@ def test_projected_balance_goes_negative(lab_conn) -> None:
             SELECT material_no, day, qty FROM open_receipts
             UNION ALL
             SELECT material_no, day, -qty FROM demand
-        ), daily AS (
-            SELECT material_no, day, SUM(qty) AS qty
+        ), weekly AS (
+            SELECT material_no, date_trunc('week', day) AS week_start, SUM(qty) AS qty
             FROM events
-            GROUP BY material_no, day
+            GROUP BY material_no, date_trunc('week', day)
         ), balances AS (
-            SELECT material_no, day,
+            SELECT material_no, week_start,
                    SUM(qty) OVER (
                        PARTITION BY material_no
-                       ORDER BY day
+                       ORDER BY week_start
                        ROWS UNBOUNDED PRECEDING
                    ) AS qty
-            FROM daily
+            FROM weekly
         )
         SELECT material_no, MIN(qty) AS min_qty
         FROM balances
@@ -266,8 +270,8 @@ def test_projected_balance_goes_negative(lab_conn) -> None:
         """
     ).fetchall()
     negative = [(material_no, float(qty)) for material_no, qty in rows if qty < 0]
-    print(f"rf_sc01_min_balances={[(m, q) for m, q in rows]} negative={len(negative)}")
-    assert negative, f"rf_sc01_min_balances={rows}"
+    print(f"rf_sc01_min_weekly_balances={rows} negative={len(negative)}")
+    assert negative, f"rf_sc01_min_weekly_balances={rows}"
 
 
 def test_forecast_versions_differ(lab_conn) -> None:
