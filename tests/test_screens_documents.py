@@ -4,12 +4,12 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from test_story import RISK_ROWS_SQL
 
 from sclab.data.story import CORVANE_SUPPLIER_NO, HALCYON_CUSTOMER_NO
 from sclab.engine.query import run_query
 from sclab.screens.framework import get_screen, render_screen
 from sclab.web.app import create_app
-from tests.test_story import RISK_ROWS_SQL
 
 _CODES = ("MM03", "XK03", "ME23N", "VA03")
 
