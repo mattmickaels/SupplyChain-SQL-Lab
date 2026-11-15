@@ -18,7 +18,7 @@ import duckdb
 from sclab.engine.query import QueryError, run_query
 from sclab.engine.types import QueryResult
 
-_DIGITS = re.compile(r"\d+")
+_DIGITS = re.compile(rb"\d+")
 
 
 @dataclass(frozen=True)
@@ -91,15 +91,18 @@ def _literal(value: object) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def _placeholders(sql: str) -> list[tuple[int, int, int]]:
-    """Find `$n` parameter tokens as (start, end, n), skipping strings, comments and identifiers."""
-    tokens = duckdb.tokenize(sql)
+def _placeholders(data: bytes) -> list[tuple[int, int, int]]:
+    """Find `$n` tokens as byte spans (start, end, n), skipping strings, comments and identifiers.
+
+    DuckDB's tokenizer reports UTF-8 byte offsets, so all matching works on the encoded SQL.
+    """
+    tokens = duckdb.tokenize(data.decode("utf-8"))
     found: list[tuple[int, int, int]] = []
     for position, (offset, kind) in enumerate(tokens[:-1]):
-        if kind != duckdb.token_type.operator or sql[offset : offset + 1] != "$":
+        if kind != duckdb.token_type.operator or data[offset : offset + 1] != b"$":
             continue
         following, following_kind = tokens[position + 1]
-        digits = _DIGITS.match(sql, following)
+        digits = _DIGITS.match(data, following)
         if (
             following != offset + 1
             or following_kind != duckdb.token_type.numeric_const
@@ -112,20 +115,21 @@ def _placeholders(sql: str) -> list[tuple[int, int, int]]:
 
 def inline_params(sql: str, params: Sequence[object]) -> str:
     """Replace `$n` with SQL literals. For display only; never run the result with user text."""
-    pieces: list[str] = []
+    data = sql.encode("utf-8")
+    pieces: list[bytes] = []
     cursor = 0
-    for start, end, index in _placeholders(sql):
+    for start, end, index in _placeholders(data):
         if index < 1 or index > len(params):
             raise ValueError(f"No value for parameter ${index}")
-        pieces.append(sql[cursor:start])
-        pieces.append(_literal(params[index - 1]))
+        pieces.append(data[cursor:start])
+        pieces.append(_literal(params[index - 1]).encode("utf-8"))
         cursor = end
-    pieces.append(sql[cursor:])
-    return "".join(pieces)
+    pieces.append(data[cursor:])
+    return b"".join(pieces).decode("utf-8")
 
 
 def _params_for(sql: str, values: Sequence[object]) -> list[object]:
-    needed = max((index for _, _, index in _placeholders(sql)), default=0)
+    needed = max((index for _, _, index in _placeholders(sql.encode("utf-8"))), default=0)
     padded = list(values) + [None] * max(0, needed - len(values))
     return padded[:needed]
 

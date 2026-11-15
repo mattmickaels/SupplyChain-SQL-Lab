@@ -227,3 +227,36 @@ def test_default_template_renders_rows(client) -> None:
     text = client.get("/screens/ZT01", params={"key": plant}).text
     assert "<table" in text
     assert f"<td>{plant}</td>" in text
+
+
+def test_inline_params_handles_non_ascii_before_placeholder() -> None:
+    assert inline_params("SELECT 'é', $1", ["x"]) == "SELECT 'é', 'x'"
+    sql = "SELECT 1 -- café\nWHERE a = 'a–b' AND b = $2"
+    assert inline_params(sql, ["x", "y"]) == "SELECT 1 -- café\nWHERE a = 'a–b' AND b = 'y'"
+    assert inline_params("SELECT $1, 'é'", ["Zürich"]) == "SELECT 'Zürich', 'é'"
+
+
+def test_render_screen_with_non_ascii_literal_before_param(lab_home) -> None:
+    plant = _known_plant()
+    screen = Screen(
+        code="ZT05",
+        title="Unicode",
+        key_label="Plant",
+        queries=(
+            ScreenQuery(
+                "u",
+                "Unicode",
+                "SELECT 'café – Zürich' AS label, plant_code FROM plant WHERE plant_code = $1",
+            ),
+        ),
+        exists_sql="SELECT count(*) FROM plant WHERE plant_code = $1",
+        not_found="Plant {key} was not found.",
+    )
+    register(screen)
+    data = render_screen("ZT05", plant, {})
+    run = data.runs["u"]
+    assert run.error is None
+    assert run.result.rows == [("café – Zürich", plant)]
+    assert f"plant_code = '{plant}'" in run.display_sql
+    assert "café – Zürich" in run.display_sql
+    assert run_query(run.display_sql).rows == run.result.rows
