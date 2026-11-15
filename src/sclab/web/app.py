@@ -225,6 +225,20 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         except Exception:
             return _plain_message(_UNEXPECTED)
 
+    @app.post("/api/drill/{exercise_id}/draft")
+    async def api_drill_draft(request: Request, exercise_id: str):
+        try:
+            exercise = _require_exercise(exercises, exercise_id)
+            if not exercise.is_drill:
+                raise HTTPException(status_code=404, detail="That exercise is not a drill.")
+            text = (await _form(request)).get("text", "")
+            store().save_drill_draft(exercise_id, text)
+            return HTMLResponse("")
+        except HTTPException:
+            raise
+        except Exception:
+            return _plain_message(_UNEXPECTED)
+
     @app.post("/api/drill/{exercise_id}/summary")
     async def api_drill_summary(request: Request, exercise_id: str):
         try:
@@ -232,7 +246,9 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
             if not exercise.is_drill:
                 raise HTTPException(status_code=404, detail="That exercise is not a drill.")
             text = (await _form(request)).get("text", "")
-            store().save_drill_summary(exercise_id, text)
+            saved = store()
+            saved.save_drill_summary(exercise_id, text)
+            saved.save_drill_draft(exercise_id, text)
             now = _now()
             lesson_id = exercise_lesson[exercise_id]
             return render(
@@ -437,10 +453,15 @@ def _drill_context(
     limit = exercise.time_limit_s or 0
     remaining = _remaining_seconds(started_at, limit, now) if started_at is not None else 0
     summary = progress.drill_summary(exercise.id) if started else None
+    draft = progress.drill_draft(exercise.id) if started else None
     submitted = summary is not None
     passed = started and progress.status(exercise.id) == "passed"
     show_summary = started and (remaining <= 0 or passed or submitted)
     prompt = exercise.summary_prompt or ""
+    if draft is not None:
+        box_text = draft
+    else:
+        box_text = summary or ""
     return {
         "id": exercise.id,
         "title": exercise.title,
@@ -456,7 +477,8 @@ def _drill_context(
         "show_summary": show_summary,
         "summary_lead": _SUMMARY_LEAD,
         "summary_prompt": prompt if prompt and prompt != _SUMMARY_LEAD else "",
-        "summary_text": summary or "",
+        "summary_text": box_text,
+        "submitted_text": summary or "",
         "submitted": submitted,
         "model_summary": (exercise.model_summary or "") if submitted else "",
         "checklist": exercise.summary_checklist if submitted else (),

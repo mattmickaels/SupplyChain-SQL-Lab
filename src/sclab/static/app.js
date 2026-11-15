@@ -190,6 +190,27 @@
     downloadExport(button);
   });
 
+  function saveDrillDrafts() {
+    document.querySelectorAll("textarea[name='text'][hx-post]").forEach(function (area) {
+      var form = area.form;
+      var url = area.getAttribute("hx-post");
+      if (!form || !url) {
+        return;
+      }
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "HX-Request": "true",
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams(new FormData(form)),
+        keepalive: true,
+      });
+    });
+  }
+
+  window.addEventListener("pagehide", saveDrillDrafts);
+
   document.body.addEventListener("htmx:configRequest", saveEditors);
   document.body.addEventListener("htmx:responseError", function (event) {
     var target = event.detail && event.detail.target;

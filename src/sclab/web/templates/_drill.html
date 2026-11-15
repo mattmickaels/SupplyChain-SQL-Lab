@@ -2,7 +2,7 @@
 <div class="summary-review">
   <div>
     <h3>Your summary</h3>
-    <p class="summary-text">{{ exercise.summary_text }}</p>
+    <p class="summary-text">{{ exercise.submitted_text }}</p>
   </div>
   <div>
     <h3>Model summary</h3>
@@ -24,7 +24,7 @@
   {% endif %}
   <form id="summary-form-{{ exercise.id }}">
     <label for="summary-{{ exercise.id }}">Your summary</label>
-    <textarea id="summary-{{ exercise.id }}" name="text" rows="4">{{ exercise.summary_text }}</textarea>
+    <textarea id="summary-{{ exercise.id }}" name="text" rows="4" hx-post="/api/drill/{{ exercise.id }}/draft" hx-trigger="input changed delay:1s" hx-include="#summary-form-{{ exercise.id }}" hx-swap="none">{{ exercise.summary_text }}</textarea>
     <div class="actions">
       <button type="button" hx-post="/api/drill/{{ exercise.id }}/summary" hx-include="#summary-form-{{ exercise.id }}" hx-target="#summary-review-{{ exercise.id }}">Submit</button>
     </div>

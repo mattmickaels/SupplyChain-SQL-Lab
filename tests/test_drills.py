@@ -145,6 +145,34 @@ def test_model_summary_only_after_submit(client, monkeypatch) -> None:
     assert "Model summary" in submitted.text
 
 
+def test_draft_survives_expired_reload_without_model(client, monkeypatch) -> None:
+    first = datetime(2026, 11, 1, 9, 0, 0)
+    monkeypatch.setattr("sclab.web.app._now", lambda: first)
+    started = client.post("/api/drill/sample-drill/start")
+    assert started.status_code == 200
+    monkeypatch.setattr("sclab.web.app._now", lambda: first + timedelta(seconds=900))
+    draft = "Draft finding: three plants stay at 3."
+    saved = client.post("/api/drill/sample-drill/draft", data={"text": draft})
+    assert saved.status_code == 200
+    assert _MODEL_FIRST not in saved.text
+    reloaded = client.get("/lessons/00-sample")
+    assert draft in reloaded.text
+    assert _TIME_UP in reloaded.text
+    assert _MODEL_FIRST not in reloaded.text
+    assert _MODEL_LAST not in reloaded.text
+    assert 'hx-post="/api/drill/sample-drill/draft"' in reloaded.text
+    assert "delay:1s" in reloaded.text
+    script = _APP_JS.read_text(encoding="utf-8")
+    saver = script.split("function saveDrillDrafts", 1)[1]
+    assert "pagehide" in script
+    assert "keepalive" in saver
+    assert "HX-Request" in saver
+    submitted = client.post("/api/drill/sample-drill/summary", data={"text": draft})
+    assert _MODEL_FIRST in submitted.text
+    assert _MODEL_LAST in submitted.text
+    assert draft in submitted.text
+
+
 def test_summary_persists_across_reload(client, monkeypatch) -> None:
     first = datetime(2026, 11, 1, 9, 0, 0)
     monkeypatch.setattr("sclab.web.app._now", lambda: first)
@@ -190,7 +218,8 @@ def test_databricks_note_rendered(client, monkeypatch) -> None:
     assert joins.text.index(prompt) < joins.text.index(_JOINS_NOTE)
 
 
-def test_drill_download_uses_edited_sql(client, monkeypatch) -> None:
+def test_export_receives_posted_sql_and_script_saves_editors(client, monkeypatch) -> None:
+    """Export runs the posted SQL, and the page script saves editors before the form body."""
     monkeypatch.setattr("sclab.web.app._now", lambda: datetime(2026, 11, 1, 9, 0, 0))
     seen: list[tuple[str, bool]] = []
 
@@ -247,3 +276,32 @@ def test_drill_download_uses_edited_sql(client, monkeypatch) -> None:
     script = _APP_JS.read_text(encoding="utf-8")
     download = script.split("function downloadExport", 1)[1]
     assert download.index("saveEditors()") < download.index("new FormData")
+
+
+def test_drill_download_posts_editor_form(client, monkeypatch) -> None:
+    """The drill Download button posts /api/export using the drill editor form."""
+    monkeypatch.setattr("sclab.web.app._now", lambda: datetime(2026, 11, 1, 9, 0, 0))
+    started = client.post("/api/drill/sample-drill/start")
+    assert 'id="form-sample-drill"' in started.text
+    assert 'id="sql-sample-drill"' in started.text
+    assert 'name="sql"' in started.text
+    ran = client.post(
+        "/api/run",
+        data={
+            "sql": "SELECT 41 AS n",
+            "target": "lesson",
+            "form_id": "form-sample-drill",
+            "label": "sample-drill",
+            "exercise_id": "sample-drill",
+            "return_to": "/lessons/00-sample#exercise-sample-drill",
+        },
+    )
+    assert "Download Excel" in ran.text
+    assert 'data-export="form-sample-drill"' in ran.text
+    assert 'name="sql"' not in ran.text
+    script = _APP_JS.read_text(encoding="utf-8")
+    download = script.split("function downloadExport", 1)[1]
+    assert "/api/export" in download
+    assert 'getAttribute("data-export")' in download
+    assert "getElementById(formId)" in download
+    assert download.index("saveEditors()") < download.index("/api/export")

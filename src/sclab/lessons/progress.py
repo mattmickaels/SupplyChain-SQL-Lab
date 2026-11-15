@@ -36,7 +36,7 @@ def _valid_entry(entry: object) -> bool:
         return False
     has_attempt = "sql" in entry or "passed" in entry or "checked_at" in entry
     has_draft = "draft_sql" in entry or "draft_at" in entry
-    has_drill = "drill_started_at" in entry or "drill_summary" in entry
+    has_drill = "drill_started_at" in entry or "drill_summary" in entry or "drill_draft" in entry
     if not has_attempt and not has_draft and not has_drill:
         return False
     if has_attempt and (
@@ -52,6 +52,8 @@ def _valid_entry(entry: object) -> bool:
     if "drill_started_at" in entry and not _valid_timestamp(entry.get("drill_started_at")):
         return False
     if "drill_summary" in entry and not isinstance(entry.get("drill_summary"), str):
+        return False
+    if "drill_draft" in entry and not isinstance(entry.get("drill_draft"), str):
         return False
     return True
 
@@ -84,6 +86,9 @@ class ProgressStore:
             summary = current.get("drill_summary")
             if isinstance(summary, str):
                 updated["drill_summary"] = summary
+            drill_draft = current.get("drill_draft")
+            if isinstance(drill_draft, str):
+                updated["drill_draft"] = drill_draft
             self._data["exercises"][exercise_id] = updated
             self._save()
 
@@ -162,6 +167,28 @@ class ProgressStore:
             if not isinstance(raw, str):
                 return None
             return datetime.fromisoformat(raw)
+
+    def save_drill_draft(self, exercise_id: str, text: str) -> None:
+        with _lock_for(self.path):
+            self._data = self._load()
+            current = self._data["exercises"].get(exercise_id)
+            if not isinstance(current, dict):
+                current = {}
+            updated = dict(current)
+            updated["drill_draft"] = text
+            self._data["exercises"][exercise_id] = updated
+            self._save()
+
+    def drill_draft(self, exercise_id: str) -> str | None:
+        with _lock_for(self.path):
+            self._data = self._load()
+            entry = self._data["exercises"].get(exercise_id)
+            if not isinstance(entry, dict):
+                return None
+            text = entry.get("drill_draft")
+            if not isinstance(text, str):
+                return None
+            return text
 
     def save_drill_summary(self, exercise_id: str, text: str) -> None:
         with _lock_for(self.path):
