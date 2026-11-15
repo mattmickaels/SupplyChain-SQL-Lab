@@ -1,0 +1,29 @@
+{% if message %}
+<p class="message">{{ message }}</p>
+{% endif %}
+{% if rows %}
+<ul class="bom-level">
+  {% for row in rows %}
+  {% set node_id = (path ~ '-' ~ row[0]) | replace('/', '-') | replace(' ', '-') | replace("'", '') | replace('"', '') %}
+  <li>
+    <div class="bom-row">
+      {% if row[5] and not capped %}
+      {% set next_path = path ~ '/' ~ row[0] %}
+      <button type="button" class="bom-expand"
+        hx-get="/screens/CS03/level?parent={{ row[0] | urlencode }}&amp;path={{ next_path | urlencode }}"
+        hx-target="#bom-{{ node_id }}"
+        hx-swap="innerHTML">Expand</button>
+      {% endif %}
+      <span class="mono">{{ row[0] }}</span>
+      <span>{{ row[1] }}</span>
+      <span class="muted">{{ row[3] }}</span>
+      <span class="num">{{ row[2] | cell(types[2]) }}</span>
+      {% if row[4] %}<span class="badge">Long lead</span>{% endif %}
+    </div>
+    {% if row[5] and not capped %}
+    <div id="bom-{{ node_id }}" class="bom-children"></div>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}

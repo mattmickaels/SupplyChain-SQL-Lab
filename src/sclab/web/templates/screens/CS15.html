@@ -1,0 +1,45 @@
+{% extends "screens/_layout.html" %}
+{% block screen_body %}
+{% set header = data.runs['header'] %}
+{% if header.error %}
+<p class="message">{{ header.error }}</p>
+{% elif header.result and header.result.rows %}
+{% set item = header.result.rows[0] %}
+<div class="screen-header">
+  <p><span class="muted">Component</span> <span class="mono">{{ item[0] }}</span></p>
+  <p>{{ item[1] }}</p>
+  <p><span class="muted">Type</span> {{ item[2] }}</p>
+</div>
+{% endif %}
+{% set run = data.runs['used'] %}
+{% if run.error %}
+<p class="message">{{ run.error }}</p>
+{% elif run.result.rows %}
+<div class="grid-wrap">
+  <table class="grid">
+    <thead>
+      <tr>
+        <th class="num">Level</th>
+        <th>Material</th>
+        <th>Description</th>
+        <th>Type</th>
+        <th>Path</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in run.result.rows %}
+      <tr>
+        <td class="num">{{ row[0] }}</td>
+        <td class="mono">{{ row[1] }}</td>
+        <td>{{ row[2] }}</td>
+        <td>{{ row[3] }}</td>
+        <td class="mono">{{ row[4] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty">This material is not used on any parent.</p>
+{% endif %}
+{% endblock %}
