@@ -747,6 +747,34 @@ def test_worked_examples_match_text(lab_home) -> None:
             ]
 
 
+@pytest.mark.parametrize("last_order", [None, "2026-07-31", "2026-08-01"])
+def test_tool_recency_fact_includes_every_customer(last_order) -> None:
+    data = tomllib.loads((_CONTENT / "05-dates-and-time/examples.toml").read_text())
+    fact = next(
+        item for item in data["fact"] if item["id"] == "customers-without-august-tool-order"
+    )
+    with duckdb.connect(":memory:") as connection:
+        connection.execute("CREATE TABLE customer (customer_no VARCHAR)")
+        connection.execute(
+            "CREATE TABLE sales_order (so_no VARCHAR, customer_no VARCHAR, order_date DATE)"
+        )
+        connection.execute("CREATE TABLE sales_order_item (so_no VARCHAR, material_no VARCHAR)")
+        connection.execute("CREATE TABLE material (material_no VARCHAR, material_type VARCHAR)")
+        connection.execute("INSERT INTO customer VALUES ('recent'), ('other')")
+        connection.execute("INSERT INTO material VALUES ('tool', 'TOOL'), ('spare', 'SPARE')")
+        connection.execute(
+            "INSERT INTO sales_order VALUES ('one', 'recent', DATE '2026-08-01'), "
+            "('two', 'other', DATE '2026-10-31')"
+        )
+        connection.execute("INSERT INTO sales_order_item VALUES ('one', 'tool'), ('two', 'spare')")
+        if last_order is not None:
+            connection.execute("INSERT INTO sales_order VALUES ('three', 'other', ?)", [last_order])
+            connection.execute("INSERT INTO sales_order_item VALUES ('three', 'tool')")
+        actual = connection.execute(fact["sql"]).fetchone()[0]
+    matches = normalize_value(actual) == normalize_value(fact["expected"])
+    assert matches == (last_order == "2026-08-01")
+
+
 def test_hints_are_not_reference_queries() -> None:
     for exercise in _exercises():
         for hint in exercise.hints:
@@ -1163,6 +1191,16 @@ _WRONG_ANSWERS = (
         """
         SELECT ROUND(AVG(planned_lead_time_days), 1) AS avg_ignoring_null,
                ROUND(AVG(planned_lead_time_days), 1) AS avg_null_as_zero,
+               ROUND(AVG(CASE WHEN planned_lead_time_days > 0
+                              THEN planned_lead_time_days END), 1) AS avg_excluding_null_and_zero
+        FROM material_plant
+        """,
+    ),
+    (
+        "clean-lead-time-averages",
+        """
+        SELECT ROUND(AVG(planned_lead_time_days), 1) AS avg_ignoring_null,
+               ROUND(AVG(COALESCE(planned_lead_time_days, 0)), 1) AS avg_null_as_zero,
                ROUND(AVG(planned_lead_time_days), 1) AS avg_excluding_null_and_zero
         FROM material_plant
         """,

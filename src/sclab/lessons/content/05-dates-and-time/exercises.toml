@@ -264,7 +264,7 @@ The fourth quarter of 2026 only contains receipts through the end of October 202
 hints = [
   "On time includes a receipt that lands on the confirmed date.",
   "Filter supplier V-10017, group by year and quarter, and round 100.0 times the on-time share to 1 decimal.",
-  "SELECT EXTRACT(YEAR FROM g.receipt_date) AS ___, EXTRACT(QUARTER FROM g.receipt_date) AS ___, COUNT(*) AS receipt_count, ROUND(SUM(CASE WHEN ___ THEN 1 ELSE 0 END) / COUNT(*), 1) AS on_time_pct FROM goods_receipt AS g JOIN purchase_order_item AS i ON ___ JOIN purchase_order AS h ON ___ WHERE h.supplier_no = ___ AND g.receipt_date >= ___ AND g.receipt_date < ___ GROUP BY ___ ORDER BY receipt_year, receipt_quarter",
+  "SELECT EXTRACT(YEAR FROM g.receipt_date) AS ___, EXTRACT(QUARTER FROM g.receipt_date) AS ___, COUNT(*) AS receipt_count, ROUND(100.0 * SUM(CASE WHEN ___ THEN 1 ELSE 0 END) / COUNT(*), 1) AS on_time_pct FROM goods_receipt AS g JOIN purchase_order_item AS i ON ___ JOIN purchase_order AS h ON ___ WHERE h.supplier_no = ___ AND g.receipt_date >= ___ AND g.receipt_date < ___ GROUP BY ___ ORDER BY receipt_year, receipt_quarter",
 ]
 reference_sql = [
   """

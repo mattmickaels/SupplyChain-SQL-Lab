@@ -196,19 +196,22 @@ FROM (
 expected = 0
 
 [[fact]]
-id = "earliest-latest-tool-order"
+id = "customers-without-august-tool-order"
 sql = """
-SELECT MIN(last_tool_order_date)
-FROM (
-    SELECT MAX(h.order_date) AS last_tool_order_date
+SELECT COUNT(*)
+FROM customer AS c
+LEFT JOIN (
+    SELECT h.customer_no, MAX(h.order_date) AS last_tool_order_date
     FROM sales_order AS h
     JOIN sales_order_item AS i ON i.so_no = h.so_no
     JOIN material AS m ON m.material_no = i.material_no
     WHERE m.material_type = 'TOOL'
     GROUP BY h.customer_no
-)
+) AS latest ON latest.customer_no = c.customer_no
+WHERE latest.last_tool_order_date IS NULL
+   OR latest.last_tool_order_date < DATE '2026-08-01'
 """
-expected = "2026-08-01"
+expected = 0
 
 [[fact]]
 id = "tool-customers-quiet-365-days"
