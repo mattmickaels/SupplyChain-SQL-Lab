@@ -290,3 +290,23 @@ def test_wide_ambiguous_result_respects_cap(monkeypatch, rows_match: bool) -> No
     monkeypatch.setattr(checker, "_rows_equal", counted_rows_equal)
     assert compare(actual, expected).passed is rows_match
     assert comparisons == (1 if rows_match else 5040)
+
+
+def test_midnight_timestamp_equals_date() -> None:
+    day = date(2026, 11, 1)
+    midnight = datetime(2026, 11, 1, 0, 0, 0)
+    assert normalize_value(midnight) == "2026-11-01"
+    assert compare(result(["d"], [(midnight,)]), result(["d"], [(day,)])).passed is True
+    assert compare(result(["d"], [(day,)]), result(["d"], [(midnight,)])).passed is True
+
+
+def test_half_way_rounding_boundary() -> None:
+    low = 1.0 + 4e-7
+    high = 1.0 + 6e-7
+    assert round(low, 6) != round(high, 6)
+    assert compare(result(["n"], [(low,)]), result(["n"], [(high,)])).passed is True
+    outcome = compare(result(["n"], [(low,), (low,)]), result(["n"], [(high,)]))
+    assert outcome.passed is False
+    assert outcome.extra_rows == [(low,)]
+    assert outcome.missing_rows == []
+    assert outcome.summary == "1 extra row."

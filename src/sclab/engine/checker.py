@@ -1,7 +1,8 @@
 import itertools
+import math
 from collections import Counter, defaultdict
-from dataclasses import dataclass
-from datetime import date
+from dataclasses import dataclass, field
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from sclab.engine.types import QueryResult
@@ -18,6 +19,8 @@ class CheckOutcome:
     extra_rows: list[tuple]
     expected_count: int
     actual_count: int
+    columns: list[str] = field(default_factory=list)
+    column_types: list[str] = field(default_factory=list)
 
 
 def normalize_value(v: object) -> object:
@@ -25,6 +28,10 @@ def normalize_value(v: object) -> object:
         return v
     if isinstance(v, int | float | Decimal):
         return round(float(v), 6)
+    if isinstance(v, datetime):
+        if v.time() == time.min:
+            return v.date().isoformat()
+        return v.isoformat()
     if isinstance(v, date):
         return v.isoformat()
     return v
@@ -100,12 +107,99 @@ def _project(rows: list[tuple], mapping: list[int]) -> list[tuple]:
     return [tuple(row[index] for index in mapping) for row in rows]
 
 
+def _is_number(value: object) -> bool:
+    return not isinstance(value, bool) and isinstance(value, int | float | Decimal)
+
+
+def _values_match(left: object, right: object) -> bool:
+    if _is_number(left) and _is_number(right):
+        return math.isclose(float(left), float(right), abs_tol=1e-6)
+    return normalize_value(left) == normalize_value(right)
+
+
+def _rows_match(left: tuple, right: tuple) -> bool:
+    return len(left) == len(right) and all(
+        _values_match(left_value, right_value)
+        for left_value, right_value in zip(left, right, strict=True)
+    )
+
+
+def _sort_key(row: tuple) -> tuple:
+    parts: list[tuple] = []
+    for value in row:
+        if _is_number(value):
+            parts.append((0, float(value)))
+            continue
+        normalized = normalize_value(value)
+        parts.append((1, "" if normalized is None else str(normalized)))
+    return tuple(parts)
+
+
+def _cmp_row(left: tuple, right: tuple) -> int:
+    width = min(len(left), len(right))
+    for index in range(width):
+        if _values_match(left[index], right[index]):
+            continue
+        return -1 if _sort_key((left[index],)) < _sort_key((right[index],)) else 1
+    if len(left) == len(right):
+        return 0
+    return -1 if len(left) < len(right) else 1
+
+
+def _matched_flags(rows: list[tuple], other: list[tuple]) -> list[bool]:
+    buckets: dict[tuple, list[int]] = defaultdict(list)
+    for index, row in enumerate(other):
+        buckets[_row_key(row)].append(index)
+    pending: list[int] = []
+    flags = [False] * len(rows)
+    for index, row in enumerate(rows):
+        found = buckets.get(_row_key(row))
+        if found:
+            found.pop()
+            flags[index] = True
+        else:
+            pending.append(index)
+    if not pending:
+        return flags
+    remaining = [other[index] for indexes in buckets.values() for index in indexes]
+    if not remaining:
+        return flags
+    if len(pending) * len(remaining) > 20_000:
+        left = sorted(pending, key=lambda index: _sort_key(rows[index]))
+        right = sorted(range(len(remaining)), key=lambda index: _sort_key(remaining[index]))
+        left_index = 0
+        right_index = 0
+        while left_index < len(left) and right_index < len(right):
+            compared = _cmp_row(rows[left[left_index]], remaining[right[right_index]])
+            if compared == 0:
+                flags[left[left_index]] = True
+                left_index += 1
+                right_index += 1
+            elif compared < 0:
+                left_index += 1
+            else:
+                right_index += 1
+        return flags
+    used = [False] * len(remaining)
+    for index in pending:
+        for candidate_index, candidate in enumerate(remaining):
+            if used[candidate_index]:
+                continue
+            if _rows_match(rows[index], candidate):
+                used[candidate_index] = True
+                flags[index] = True
+                break
+    return flags
+
+
 def _rows_equal(actual: list[tuple], expected: list[tuple], order_matters: bool) -> bool:
-    actual_keys = [_row_key(row) for row in actual]
-    expected_keys = [_row_key(row) for row in expected]
+    if len(actual) != len(expected):
+        return False
     if order_matters:
-        return actual_keys == expected_keys
-    return Counter(actual_keys) == Counter(expected_keys)
+        return all(_rows_match(left, right) for left, right in zip(actual, expected, strict=True))
+    if Counter(_row_key(row) for row in actual) == Counter(_row_key(row) for row in expected):
+        return True
+    return all(_matched_flags(actual, expected))
 
 
 def _aligned_rows(
@@ -140,13 +234,11 @@ def _aligned_rows(
 
 
 def _unmatched(rows: list[tuple], other: list[tuple]) -> tuple[list[tuple], int]:
-    remaining: Counter[tuple] = Counter(_row_key(row) for row in other)
+    flags = _matched_flags(rows, other)
     examples: list[tuple] = []
     total = 0
-    for row in rows:
-        key = _row_key(row)
-        if remaining[key]:
-            remaining[key] -= 1
+    for row, matched in zip(rows, flags, strict=True):
+        if matched:
             continue
         total += 1
         if len(examples) < _EXAMPLE_LIMIT:
@@ -209,9 +301,13 @@ def compare(
     aligned_rows = _aligned_rows(actual, expected, order_matters, columns_in_order, names_matter)
     missing_rows, missing_total = _unmatched(expected.rows, aligned_rows)
     extra_rows, extra_total = _unmatched(aligned_rows, expected.rows)
-    order_wrong = order_matters and [_row_key(row) for row in aligned_rows] != [
-        _row_key(row) for row in expected.rows
-    ]
+    order_wrong = order_matters and (
+        len(aligned_rows) != len(expected.rows)
+        or any(
+            not _rows_match(actual_row, expected_row)
+            for actual_row, expected_row in zip(aligned_rows, expected.rows, strict=False)
+        )
+    )
     passed = missing_total == 0 and extra_total == 0 and not order_wrong
     if passed:
         summary = "Result matches."

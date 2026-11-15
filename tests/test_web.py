@@ -15,6 +15,13 @@ from sclab.lessons.progress import ProgressStore
 from sclab.paths import progress_path
 from sclab.web.app import create_app
 
+
+def _clear_progress() -> None:
+    path = progress_path()
+    if path.exists():
+        path.unlink()
+
+
 _URL = re.compile(r"https?://")
 _ROOT = Path(__file__).resolve().parents[1]
 _TEMPLATE_DIR = _ROOT / "src" / "sclab" / "web" / "templates"
@@ -25,7 +32,9 @@ _ESCAPED_SCRIPT = "&lt;script&gt;alert(1)&lt;/script&gt;"
 
 @pytest.fixture
 def client(lab_home):
-    return TestClient(create_app(include_sample=True))
+    test_client = TestClient(create_app(include_sample=True), base_url="http://127.0.0.1")
+    test_client.headers.update({"HX-Request": "true"})
+    return test_client
 
 
 def test_home_lists_lessons(client) -> None:
@@ -98,7 +107,14 @@ def test_solution_hidden_before_first_attempt(client) -> None:
 def test_schema_page_shows_sap_names(client) -> None:
     response = client.get("/schema/material")
     assert response.status_code == 200
-    assert "MARA" in response.text
+    assert "SAP table: MARA" in response.text
+    assert ">None<" not in response.text
+    family = client.get("/schema/product_family")
+    assert family.status_code == 200
+    assert "SAP table:" not in family.text
+    assert ">None<" not in family.text
+    assert ">-<" in family.text
+    assert 'class="prose"' in family.text
 
 
 def test_sandbox_reset(client) -> None:
@@ -159,7 +175,8 @@ def test_slow_query_does_not_block_other_requests(lab_home, monkeypatch) -> None
     sql = "SELECT sum(a.range) FROM range(1000000) a, range(3000) b"
     box: dict = {}
     # One portal, so both requests share an event loop. A fresh TestClient does not.
-    with TestClient(create_app(include_sample=True)) as client:
+    with TestClient(create_app(include_sample=True), base_url="http://127.0.0.1") as client:
+        client.headers.update({"HX-Request": "true"})
 
         def post() -> None:
             box["response"] = client.post("/api/run", data={"sql": sql, "target": "lesson"})
@@ -211,6 +228,161 @@ def test_result_grid_escapes_script_literal(client) -> None:
     assert response.status_code == 200
     assert _ESCAPED_SCRIPT in response.text
     assert "<script>" not in response.text
+
+
+def test_run_formats_cells_and_aligns_numbers(client) -> None:
+    response = client.post(
+        "/api/run",
+        data={
+            "sql": (
+                "SELECT DATE '2026-11-01' AS day, "
+                "1.50::DECIMAL(10,2) AS amount, "
+                "NULL::INTEGER AS empty, "
+                "TRUE AS flag"
+            ),
+            "target": "lesson",
+        },
+    )
+    assert response.status_code == 200
+    assert ">2026-11-01</td>" in response.text
+    assert "Decimal" not in response.text
+    assert ">1.50</td>" in response.text
+    assert '<span class="null">NULL</span>' in response.text
+    assert ">true</td>" in response.text
+    assert 'class="num"' in response.text
+    assert 'class="num">2026-11-01' not in response.text
+    assert 'class="num">true' not in response.text
+
+
+def test_check_feedback_renders_row_grids(client) -> None:
+    response = client.post(
+        "/api/check/sample-plants",
+        data={"sql": "SELECT 'NOPE' AS plant_code"},
+    )
+    assert response.status_code == 200
+    assert "<table" in response.text
+    assert "plant_code" in response.text
+    assert ">NOPE</td>" in response.text
+    assert "('NOPE'," not in response.text
+    counted = client.post(
+        "/api/check/sample-count",
+        data={"sql": "SELECT 1 AS plant_count"},
+    )
+    assert counted.status_code == 200
+    assert "plant_count" in counted.text
+    assert 'class="num"' in counted.text
+
+
+def test_check_empty_sql_does_not_record_or_unlock(client) -> None:
+    _clear_progress()
+    response = client.post("/api/check/sample-count", data={"sql": "   "})
+    assert response.status_code == 200
+    assert "Type a query first." in response.text
+    store = ProgressStore(progress_path())
+    assert store.status("sample-count") == "new"
+    assert store.last_sql("sample-count") is None
+    hidden = client.get("/api/solution/sample-count")
+    assert "Try a Check first, then the solution unlocks." in hidden.text
+    client.post("/api/check/sample-count", data={"sql": "SELECT 1"})
+    emptied = client.post("/api/check/sample-count", data={"sql": ""})
+    assert emptied.status_code == 200
+    assert "Type a query first." in emptied.text
+    saved = ProgressStore(progress_path())
+    assert saved.status("sample-count") == "attempted"
+    assert saved.last_sql("sample-count") == "SELECT 1"
+
+
+def test_check_query_error_does_not_record_or_overwrite(client) -> None:
+    _clear_progress()
+    client.post("/api/check/sample-plants", data={"sql": "SELECT 1"})
+    response = client.post("/api/check/sample-plants", data={"sql": "SELEC 1"})
+    assert response.status_code == 200
+    assert "syntax error" in response.text.lower()
+    store = ProgressStore(progress_path())
+    assert store.status("sample-plants") == "attempted"
+    assert store.last_sql("sample-plants") == "SELECT 1"
+    fresh = client.post("/api/check/sample-count", data={"sql": "SELEC 1"})
+    assert fresh.status_code == 200
+    assert ProgressStore(progress_path()).status("sample-count") == "new"
+    hidden = client.get("/api/solution/sample-count")
+    assert "Try a Check first, then the solution unlocks." in hidden.text
+
+
+def test_run_saves_draft_shown_ahead_of_older_sql(client) -> None:
+    _clear_progress()
+    client.post("/api/check/sample-plants", data={"sql": "SELECT 1"})
+    draft = "SELECT plant_code FROM plant"
+    saved = client.post(
+        "/api/run",
+        data={"sql": draft, "target": "lesson", "exercise_id": "sample-plants"},
+    )
+    assert saved.status_code == 200
+    page = client.get("/lessons/00-sample")
+    assert draft in page.text
+    assert "SELECT 1" not in page.text
+    client.post("/api/check/sample-plants", data={"sql": "SELECT 9"})
+    checked = client.get("/lessons/00-sample")
+    assert "SELECT 9" in checked.text
+    assert draft not in checked.text
+
+
+def test_post_without_htmx_header_is_forbidden(lab_home) -> None:
+    raw = TestClient(create_app(include_sample=True), base_url="http://127.0.0.1")
+    response = raw.post("/api/run", data={"sql": "SELECT 1", "target": "lesson"})
+    assert response.status_code == 403
+    assert 'class="message"' in response.text
+    assert "Use the lab page to run that action." in response.text
+
+
+def test_untrusted_host_is_rejected(lab_home) -> None:
+    raw = TestClient(create_app(include_sample=True), base_url="http://evil.example")
+    response = raw.get("/")
+    assert response.status_code == 400
+
+
+def test_unexpected_post_errors_render_plain_panel(client, monkeypatch) -> None:
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("secret boom")
+
+    monkeypatch.setattr("sclab.web.app.run_query", boom)
+    monkeypatch.setattr("sclab.web.app.check_answer", boom)
+    monkeypatch.setattr("sclab.web.app.reset_sandbox", boom)
+    for path, data in (
+        ("/api/run", {"sql": "SELECT 1", "target": "lesson"}),
+        ("/api/check/sample-plants", {"sql": "SELECT 1"}),
+        ("/api/sandbox/reset", {}),
+    ):
+        response = client.post(path, data=data)
+        assert response.status_code == 200
+        assert 'class="message"' in response.text
+        assert "Something went wrong. Try again." in response.text
+        assert "secret boom" not in response.text
+
+
+def test_ui_polish_sources() -> None:
+    css = (_ROOT / "src" / "sclab" / "static" / "app.css").read_text(encoding="utf-8")
+    script = _APP_JS.read_text(encoding="utf-8")
+    lesson = (_TEMPLATE_DIR / "lesson.html").read_text(encoding="utf-8")
+    playground = (_TEMPLATE_DIR / "playground.html").read_text(encoding="utf-8")
+    assert "viewportMargin: Infinity" in script
+    assert "htmx:responseError" in script
+    assert "Something went wrong. Try again." in script
+    assert 'aria-label="{{ exercise.title }}"' in lesson
+    assert 'aria-label="Playground"' in playground
+    assert ".CodeMirror-scroll" in css
+    assert "min-height: 8rem" in css.split(".CodeMirror-scroll", 1)[1][:200]
+    assert "white-space: pre-wrap" in css
+    for token in (
+        ".cm-keyword",
+        ".cm-string",
+        ".cm-number",
+        ".cm-comment",
+        ".cm-operator",
+        ".cm-variable-2",
+    ):
+        assert token in css
+    assert ".prose pre" in css
+    assert ".prose code" in css
 
 
 def test_error_panel_escapes_script_literal(client) -> None:

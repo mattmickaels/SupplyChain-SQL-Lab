@@ -62,11 +62,14 @@ def run_query(
     deadline = time.perf_counter() + timeout_s
     timer.start()
     try:
-        columns, rows, total_rows, truncated = _collect(connection, sql, max_rows, deadline)
+        columns, column_types, rows, total_rows, truncated = _collect(
+            connection, sql, max_rows, deadline
+        )
         if interrupted or time.perf_counter() >= deadline:
             raise QueryError(_TIMEOUT_MESSAGE)
         return QueryResult(
             columns=columns,
+            column_types=column_types,
             rows=rows,
             total_rows=total_rows,
             truncated=truncated,
@@ -114,9 +117,21 @@ def _connect(target: str):
     return duckdb.connect(str(sandbox_db_path()), read_only=False, config=_SAFETY)
 
 
+def _column_info(description) -> tuple[list[str], list[str]]:
+    if not description:
+        return [], []
+    columns: list[str] = []
+    column_types: list[str] = []
+    for column in description:
+        columns.append(str(column[0]))
+        type_name = column[1] if len(column) > 1 and column[1] is not None else ""
+        column_types.append(str(type_name))
+    return columns, column_types
+
+
 def _collect(connection, sql: str, max_rows: int, deadline: float):
     pending = connection.execute(sql)
-    columns = [column[0] for column in pending.description] if pending.description else []
+    columns, column_types = _column_info(pending.description)
     rows: list[tuple] = []
     remaining = max_rows
     while remaining > 0:
@@ -135,7 +150,7 @@ def _collect(connection, sql: str, max_rows: int, deadline: float):
         if not batch:
             break
         total_rows += len(batch)
-    return columns, rows, total_rows, total_rows > max_rows
+    return columns, column_types, rows, total_rows, total_rows > max_rows
 
 
 def _remove_wal(path: Path) -> None:

@@ -80,6 +80,16 @@ def test_lessons_sort_by_number_and_skip_sample(tmp_path: Path) -> None:
     assert [lesson.id for lesson in with_sample] == ["00-sample", "01-early", "02-later"]
 
 
+def test_duplicate_exercise_id_names_both_lessons(tmp_path: Path) -> None:
+    write_lesson(tmp_path / "01-early", "Early", "same-id", ["a", "b", "c"])
+    write_lesson(tmp_path / "02-later", "Later", "same-id", ["a", "b", "c"])
+    with pytest.raises(ValueError, match="same-id") as caught:
+        load_lessons(tmp_path)
+    message = str(caught.value)
+    assert "01-early" in message
+    assert "02-later" in message
+
+
 def test_exercise_requires_three_hints(tmp_path: Path) -> None:
     write_lesson(tmp_path / "01-bad", "Bad", "bad-hints", ["only one", "only two"])
     with pytest.raises(ValueError, match="bad-hints"):

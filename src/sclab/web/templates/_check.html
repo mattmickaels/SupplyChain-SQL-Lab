@@ -6,14 +6,14 @@
 <p class="summary">{{ outcome.summary }}</p>
 {% if outcome.missing_rows %}
 <h3>Missing rows</h3>
-<ul>
-  {% for row in outcome.missing_rows %}<li><code>{{ row }}</code></li>{% endfor %}
-</ul>
+{% with columns=outcome.columns, rows=outcome.missing_rows, types=outcome.column_types %}
+{% include "_grid.html" %}
+{% endwith %}
 {% endif %}
 {% if outcome.extra_rows %}
 <h3>Extra rows</h3>
-<ul>
-  {% for row in outcome.extra_rows %}<li><code>{{ row }}</code></li>{% endfor %}
-</ul>
+{% with columns=outcome.columns, rows=outcome.extra_rows, types=outcome.column_types %}
+{% include "_grid.html" %}
+{% endwith %}
 {% endif %}
 {% endif %}

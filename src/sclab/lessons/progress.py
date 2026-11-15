@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -23,7 +24,21 @@ def _lock_for(path: Path) -> threading.Lock:
 def _valid_entry(entry: object) -> bool:
     if not isinstance(entry, dict):
         return False
-    return isinstance(entry.get("sql"), str) and isinstance(entry.get("passed"), bool)
+    has_attempt = "sql" in entry or "passed" in entry or "checked_at" in entry
+    has_draft = "draft_sql" in entry or "draft_at" in entry
+    if not has_attempt and not has_draft:
+        return False
+    if has_attempt and (
+        not isinstance(entry.get("sql"), str) or not isinstance(entry.get("passed"), bool)
+    ):
+        return False
+    if "checked_at" in entry and not isinstance(entry.get("checked_at"), int):
+        return False
+    if has_draft and (
+        not isinstance(entry.get("draft_sql"), str) or not isinstance(entry.get("draft_at"), int)
+    ):
+        return False
+    return True
 
 
 class ProgressStore:
@@ -35,19 +50,39 @@ class ProgressStore:
     def record_attempt(self, exercise_id: str, sql: str, passed: bool) -> None:
         with _lock_for(self.path):
             self._data = self._load()
-            current = self._data["exercises"].get(exercise_id, {})
-            already_passed = isinstance(current, dict) and current.get("passed") is True
-            self._data["exercises"][exercise_id] = {
+            current = self._data["exercises"].get(exercise_id)
+            if not isinstance(current, dict):
+                current = {}
+            updated = {
                 "sql": sql,
-                "passed": already_passed or passed,
+                "passed": current.get("passed") is True or passed,
+                "checked_at": time.time_ns(),
             }
+            draft_sql = current.get("draft_sql")
+            draft_at = current.get("draft_at")
+            if isinstance(draft_sql, str) and isinstance(draft_at, int):
+                updated["draft_sql"] = current["draft_sql"]
+                updated["draft_at"] = current["draft_at"]
+            self._data["exercises"][exercise_id] = updated
+            self._save()
+
+    def save_draft(self, exercise_id: str, sql: str) -> None:
+        with _lock_for(self.path):
+            self._data = self._load()
+            current = self._data["exercises"].get(exercise_id)
+            if not isinstance(current, dict):
+                current = {}
+            updated = dict(current)
+            updated["draft_sql"] = sql
+            updated["draft_at"] = time.time_ns()
+            self._data["exercises"][exercise_id] = updated
             self._save()
 
     def status(self, exercise_id: str) -> Literal["new", "attempted", "passed"]:
         with _lock_for(self.path):
             self._data = self._load()
             entry = self._data["exercises"].get(exercise_id)
-            if entry is None:
+            if not isinstance(entry, dict) or not isinstance(entry.get("sql"), str):
                 return "new"
             if entry.get("passed") is True:
                 return "passed"
@@ -64,13 +99,35 @@ class ProgressStore:
                 return None
             return sql
 
+    def editor_sql(self, exercise_id: str) -> str | None:
+        with _lock_for(self.path):
+            self._data = self._load()
+            entry = self._data["exercises"].get(exercise_id)
+            if not isinstance(entry, dict):
+                return None
+            sql = entry.get("sql") if isinstance(entry.get("sql"), str) else None
+            draft = entry.get("draft_sql") if isinstance(entry.get("draft_sql"), str) else None
+            draft_at = entry.get("draft_at") if isinstance(entry.get("draft_at"), int) else None
+            checked_at = (
+                entry.get("checked_at") if isinstance(entry.get("checked_at"), int) else None
+            )
+            if draft is None:
+                return sql
+            if sql is None or draft_at is None:
+                return draft if sql is None else sql
+            if checked_at is None or draft_at > checked_at:
+                return draft
+            return sql
+
     def summary(self) -> dict[str, int]:
         with _lock_for(self.path):
             self._data = self._load()
             attempted = 0
             passed = 0
             for entry in self._data["exercises"].values():
-                if isinstance(entry, dict) and entry.get("passed") is True:
+                if not isinstance(entry, dict) or not isinstance(entry.get("sql"), str):
+                    continue
+                if entry.get("passed") is True:
                     passed += 1
                 else:
                     attempted += 1

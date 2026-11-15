@@ -1,0 +1,22 @@
+<div class="grid-wrap">
+  <table class="grid">
+    <thead>
+      <tr>
+        {% for name in columns %}
+        {% set type_name = types[loop.index0] if types and loop.index0 < (types|length) else '' %}
+        <th{% if type_name is numeric_type %} class="num"{% endif %}>{{ name }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        {% for value in row %}
+        {% set type_name = types[loop.index0] if types and loop.index0 < (types|length) else '' %}
+        <td{% if type_name is numeric_type %} class="num"{% endif %}>{{ value | cell }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
