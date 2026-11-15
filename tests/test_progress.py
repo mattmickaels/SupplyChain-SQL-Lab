@@ -186,6 +186,20 @@ def test_drill_draft_round_trip(tmp_path: Path) -> None:
     assert reloaded.last_sql("sample-drill") == "SELECT 1"
 
 
+def test_blank_drill_summary_is_not_submitted(tmp_path: Path) -> None:
+    path = tmp_path / "progress.json"
+    store = ProgressStore(path)
+    store.save_drill_summary("sample-drill", "")
+    assert store.drill_summary("sample-drill") is None
+    store.save_drill_summary("sample-drill", " \n\t ")
+    assert store.drill_summary("sample-drill") is None
+    reloaded = ProgressStore(path)
+    assert reloaded.drill_summary("sample-drill") is None
+    kept = "There are 3 plants."
+    store.save_drill_summary("sample-drill", kept)
+    assert store.drill_summary("sample-drill") == kept
+
+
 def test_drill_summary_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "progress.json"
     store = ProgressStore(path)
