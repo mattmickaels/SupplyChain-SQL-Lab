@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markdown_it import MarkdownIt
@@ -22,6 +22,7 @@ from sclab.engine.types import QueryResult
 from sclab.lessons.model import Exercise, check_answer, load_lessons
 from sclab.lessons.progress import ProgressStore
 from sclab.paths import progress_path
+from sclab.web import export as excel
 
 _WEB_DIR = Path(__file__).resolve().parent
 _STATIC_DIR = _WEB_DIR.parent / "static"
@@ -138,7 +139,12 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
                 await run_in_threadpool(store().save_draft, exercise_id, sql)
             try:
                 result = await run_in_threadpool(run_query, sql, target)
-                context = {"error": None, "result": result, "note": _result_note(result)}
+                context = {
+                    "error": None,
+                    "result": result,
+                    "note": _result_note(result),
+                    **_export_fields(fields),
+                }
             except QueryError as exc:
                 context = {"error": exc.message, "result": None, "note": ""}
             return render(request, "_result.html", context)
@@ -191,6 +197,34 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         sql = html.escape(exercise.reference_sql[0])
         return HTMLResponse(f'<pre class="solution"><code>{sql}</code></pre>')
 
+    @app.post("/api/export")
+    async def api_export(request: Request):
+        try:
+            fields = await _form(request)
+            sql = fields.get("sql", "")
+            target = fields.get("target", "lesson")
+            label = excel.safe_label(fields.get("label", ""))
+            cap = excel.EXPORT_MAX_ROWS
+            try:
+                result = await run_in_threadpool(run_query, sql, target, cap)
+            except QueryError as exc:
+                return _export_error_page(exc.message)
+            note = None
+            if result.truncated:
+                note = f"First {cap:,} of {result.total_rows:,} rows"
+            data = await run_in_threadpool(excel.write_xlsx, result, label, note)
+            stamp = datetime.now().strftime("%Y%m%d-%H%M")
+            filename = f"sclab-{label}-{stamp}.xlsx"
+            return Response(
+                content=data,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        except HTTPException:
+            raise
+        except Exception:
+            return _export_error_page(_UNEXPECTED)
+
     @app.post("/api/sandbox/reset")
     async def api_reset(request: Request):
         try:
@@ -215,6 +249,39 @@ async def _form(request: Request) -> dict[str, str]:
     raw = (await request.body()).decode("utf-8")
     parsed = parse_qs(raw, keep_blank_values=True)
     return {key: values[0] for key, values in parsed.items() if values}
+
+
+def _export_fields(fields: dict[str, str]) -> dict[str, str]:
+    target = fields.get("target", "lesson")
+    if target not in ("lesson", "sandbox"):
+        target = "lesson"
+    return {
+        "export_form": excel.safe_form_id(fields.get("form_id", "")),
+        "export_sql": fields.get("sql", ""),
+        "export_target": target,
+        "export_label": excel.safe_label(fields.get("label", "")),
+    }
+
+
+def _export_error_page(message: str) -> HTMLResponse:
+    body = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Could not export</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main>
+    <h1>Could not export</h1>
+    <p class="message">{html.escape(message)}</p>
+    <p><a href="/">Back to the lesson</a></p>
+  </main>
+</body>
+</html>
+"""
+    return HTMLResponse(body)
 
 
 def _plain_message(text: str, status_code: int = 200) -> HTMLResponse:

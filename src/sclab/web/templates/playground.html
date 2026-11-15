@@ -8,6 +8,8 @@
   <label for="playground-sql">SQL</label>
   <textarea id="playground-sql" name="sql" data-editor rows="8" aria-label="Playground"></textarea>
   <input type="hidden" name="target" value="sandbox">
+  <input type="hidden" name="form_id" value="playground-form">
+  <input type="hidden" name="label" value="playground">
   <div class="actions">
     <button type="button" data-run hx-post="/api/run" hx-include="#playground-form" hx-target="#playground-result">Run</button>
     <button type="button" hx-post="/api/sandbox/reset" hx-target="#reset-note">Reset practice database</button>

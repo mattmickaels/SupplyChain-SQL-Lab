@@ -15,6 +15,8 @@
     <label for="sql-{{ exercise.id }}">SQL</label>
     <textarea id="sql-{{ exercise.id }}" name="sql" data-editor rows="6" aria-label="{{ exercise.title }}">{{ exercise.sql }}</textarea>
     <input type="hidden" name="target" value="lesson">
+    <input type="hidden" name="form_id" value="form-{{ exercise.id }}">
+    <input type="hidden" name="label" value="{{ exercise.id }}">
     <input type="hidden" name="exercise_id" value="{{ exercise.id }}">
     <div class="actions">
       <button type="button" data-run hx-post="/api/run" hx-include="#form-{{ exercise.id }}" hx-target="#result-{{ exercise.id }}">Run</button>

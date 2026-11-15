@@ -1,4 +1,16 @@
 <div class="grid-wrap">
+  {% if export_form %}
+  <p class="actions">
+    <button type="button" data-export="{{ export_form }}">Download Excel</button>
+  </p>
+  {% elif export_sql is defined %}
+  <form method="post" action="/api/export" class="actions">
+    <input type="hidden" name="sql" value="{{ export_sql }}">
+    <input type="hidden" name="target" value="{{ export_target }}">
+    <input type="hidden" name="label" value="{{ export_label }}">
+    <button type="button" data-export>Download Excel</button>
+  </form>
+  {% endif %}
   <table class="grid">
     <thead>
       <tr>
