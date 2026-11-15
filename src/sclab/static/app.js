@@ -115,16 +115,56 @@
     var form = el.form;
     var url = el.getAttribute("data-autosave");
     if (!form || !url) {
-      return;
+      return Promise.resolve();
     }
     saveEditors();
-    fetch(url, {
+    return fetch(url, {
       method: "POST",
       headers: {
         "HX-Request": "true",
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams(new FormData(form)),
+    }).catch(function () {});
+  }
+
+  function flushAutosaves() {
+    saveEditors();
+    var forms = [];
+    document.querySelectorAll("[data-autosave]").forEach(function (el) {
+      clearTimeout(el._sclabAutosaveTimer);
+      var form = el.form;
+      if (!form || forms.indexOf(form) !== -1) {
+        return;
+      }
+      forms.push(form);
+    });
+    return Promise.all(
+      forms.map(function (form) {
+        var el = form.querySelector("[data-autosave]");
+        if (!el) {
+          return Promise.resolve();
+        }
+        return fireAutosave(el);
+      })
+    );
+  }
+
+  var keptResults = null;
+
+  function restoreResults() {
+    var kept = keptResults;
+    keptResults = null;
+    if (!kept) {
+      return;
+    }
+    Object.keys(kept).forEach(function (id) {
+      var node = document.getElementById(id);
+      var prior = kept[id];
+      if (!node || !prior || !prior.trim()) {
+        return;
+      }
+      node.innerHTML = prior;
     });
   }
 
@@ -198,10 +238,18 @@
   });
 
   document.body.addEventListener("htmx:afterSwap", function () {
+    restoreResults();
     mountEditors(document);
     armAutosave(document);
     armCountdowns(document);
     mountCharts(document);
+  });
+
+  document.body.addEventListener("htmx:responseError", function () {
+    keptResults = null;
+  });
+  document.body.addEventListener("htmx:sendError", function () {
+    keptResults = null;
   });
 
   document.body.addEventListener("drill-summary", function (event) {
@@ -273,6 +321,37 @@
       input.value = select.value;
     });
   });
+
+  document.addEventListener(
+    "click",
+    function (event) {
+      var target = event.target;
+      if (!target || !target.closest) {
+        return;
+      }
+      var button = target.closest("[data-move]");
+      if (!button || button._sclabMoveReady) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (button._sclabMovePending) {
+        return;
+      }
+      button._sclabMovePending = true;
+      flushAutosaves().then(function () {
+        button._sclabMovePending = false;
+        keptResults = {};
+        document.querySelectorAll(".cell [id^='result-']").forEach(function (node) {
+          keptResults[node.id] = node.innerHTML;
+        });
+        button._sclabMoveReady = true;
+        button.click();
+        button._sclabMoveReady = false;
+      });
+    },
+    true
+  );
 
   document.addEventListener("click", function (event) {
     var button = event.target.closest("[data-export]");

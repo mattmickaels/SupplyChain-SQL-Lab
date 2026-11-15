@@ -2,6 +2,7 @@
 
 import html
 import json
+import math
 import re
 import secrets
 from decimal import Decimal
@@ -70,15 +71,14 @@ def register_notebook_routes(app: FastAPI, render) -> None:
                 return _plain("Choose a SQL cell or a note.")
 
             def add() -> Notebook:
-                store = _store()
-                notebook = store.get(notebook_id)
-                used = {cell.id for cell in notebook.cells}
-                cell_id = secrets.token_hex(4)
-                while cell_id in used:
+                def change(notebook: Notebook) -> None:
+                    used = {cell.id for cell in notebook.cells}
                     cell_id = secrets.token_hex(4)
-                notebook.cells.append(Cell(id=cell_id, kind=kind, source="", chart=None))
-                store.save(notebook)
-                return notebook
+                    while cell_id in used:
+                        cell_id = secrets.token_hex(4)
+                    notebook.cells.append(Cell(id=cell_id, kind=kind, source="", chart=None))
+
+                return _store().update(notebook_id, change)
 
             notebook = await run_in_threadpool(add)
             cells = await _views(notebook)
@@ -96,10 +96,10 @@ def register_notebook_routes(app: FastAPI, render) -> None:
             fields = await _form(request)
 
             def edit() -> None:
-                store = _store()
-                notebook = store.get(notebook_id)
-                _apply(_find(notebook, cell_id), fields)
-                store.save(notebook)
+                def change(notebook: Notebook) -> None:
+                    _apply(_find(notebook, cell_id), fields)
+
+                _store().update(notebook_id, change)
 
             await run_in_threadpool(edit)
             return Response(status_code=204)
@@ -111,19 +111,28 @@ def register_notebook_routes(app: FastAPI, render) -> None:
         async def work():
             fields = await _form(request)
 
-            def prepare() -> tuple[Notebook, Cell]:
-                store = _store()
-                notebook = store.get(notebook_id)
-                cell = _find(notebook, cell_id)
-                _apply(cell, fields)
-                store.save(notebook)
-                return notebook, cell
+            found: dict[str, Notebook | Cell] = {}
 
-            notebook, cell = await run_in_threadpool(prepare)
+            def prepare() -> None:
+                def change(notebook: Notebook) -> None:
+                    cell = _find(notebook, cell_id)
+                    _apply(cell, fields)
+                    found["notebook"] = notebook
+                    found["cell"] = cell
+
+                _store().update(notebook_id, change)
+
+            await run_in_threadpool(prepare)
+            notebook = found["notebook"]
+            cell = found["cell"]
+            if not isinstance(notebook, Notebook) or not isinstance(cell, Cell):
+                return _plain(_UNEXPECTED)
             if cell.kind != "sql":
                 return _plain("Notes do not run.")
+            posted = fields.get("target", "")
+            target = posted if posted in ("lesson", "sandbox") else notebook.target
             try:
-                result = await run_in_threadpool(run_query, cell.source, notebook.target)
+                result = await run_in_threadpool(run_query, cell.source, target)
             except QueryError as exc:
                 return render(
                     request,
@@ -159,15 +168,14 @@ def register_notebook_routes(app: FastAPI, render) -> None:
                 return _plain("Move up or down.")
 
             def move() -> Notebook:
-                store = _store()
-                notebook = store.get(notebook_id)
-                index = _index(notebook, cell_id)
-                swap = index - 1 if direction == "up" else index + 1
-                if 0 <= swap < len(notebook.cells):
-                    cells = notebook.cells
-                    cells[index], cells[swap] = cells[swap], cells[index]
-                store.save(notebook)
-                return notebook
+                def change(notebook: Notebook) -> None:
+                    index = _index(notebook, cell_id)
+                    swap = index - 1 if direction == "up" else index + 1
+                    if 0 <= swap < len(notebook.cells):
+                        cells = notebook.cells
+                        cells[index], cells[swap] = cells[swap], cells[index]
+
+                return _store().update(notebook_id, change)
 
             notebook = await run_in_threadpool(move)
             cells = await _views(notebook)
@@ -183,11 +191,11 @@ def register_notebook_routes(app: FastAPI, render) -> None:
     async def notebook_delete_cell(notebook_id: str, cell_id: str):
         async def work():
             def remove() -> None:
-                store = _store()
-                notebook = store.get(notebook_id)
-                index = _index(notebook, cell_id)
-                del notebook.cells[index]
-                store.save(notebook)
+                def change(notebook: Notebook) -> None:
+                    index = _index(notebook, cell_id)
+                    del notebook.cells[index]
+
+                _store().update(notebook_id, change)
 
             await run_in_threadpool(remove)
             return HTMLResponse("")
@@ -202,15 +210,50 @@ def register_notebook_routes(app: FastAPI, render) -> None:
                 return _plain("Choose the lesson database or the practice database.")
 
             def update() -> None:
-                store = _store()
-                notebook = store.get(notebook_id)
-                notebook.target = target
-                store.save(notebook)
+                def change(notebook: Notebook) -> None:
+                    notebook.target = target
+
+                _store().update(notebook_id, change)
 
             await run_in_threadpool(update)
             return Response(status_code=204)
 
         return await _call(work)
+
+
+def _local_href(href: str) -> bool:
+    return href.startswith("/") and not href.startswith("//") and "\\" not in href
+
+
+def _link_open(renderer, tokens, idx, options, env) -> str:
+    href = tokens[idx].attrGet("href") or ""
+    allowed = _local_href(href)
+    env.setdefault("_local_link", []).append(allowed)
+    if allowed:
+        return renderer.renderToken(tokens, idx, options, env)
+    return ""
+
+
+def _link_close(renderer, tokens, idx, options, env) -> str:
+    stack = env.get("_local_link") or []
+    allowed = stack.pop() if stack else False
+    if allowed:
+        return renderer.renderToken(tokens, idx, options, env)
+    return ""
+
+
+def _image(renderer, tokens, idx, options, env) -> str:
+    del renderer, options, env
+    token = tokens[idx]
+    alt = token.content
+    if not alt and token.children:
+        alt = "".join(child.content for child in token.children)
+    return html.escape(alt or "")
+
+
+_MD.add_render_rule("link_open", _link_open)
+_MD.add_render_rule("link_close", _link_close)
+_MD.add_render_rule("image", _image)
 
 
 def _store() -> NotebookStore:
@@ -292,7 +335,7 @@ def _chart_html(cell: Cell, target: str) -> Markup:
     if not cell.chart:
         return Markup("")
     try:
-        result = run_query(cell.source, target=target)
+        result = run_query(cell.source, target=target, read_only=True)
     except QueryError as exc:
         return Markup(f'<p class="message">{html.escape(exc.message)}</p>')
     return _chart_canvas(cell.chart, result)
@@ -318,7 +361,10 @@ def _chart_canvas(chart: dict, result: QueryResult) -> Markup:
         "labels": labels,
         "values": values,
     }
-    encoded = html.escape(json.dumps(payload, separators=(",", ":")), quote=True)
+    encoded = html.escape(
+        json.dumps(payload, separators=(",", ":"), allow_nan=False),
+        quote=True,
+    )
     caption = html.escape(f"{chart['type']} chart of {y_name} by {x_name}", quote=True)
     return Markup(
         f'<div class="chart-wrap"><canvas data-chart="{encoded}" '
@@ -327,9 +373,15 @@ def _chart_canvas(chart: dict, result: QueryResult) -> Markup:
 
 
 def _json_value(value: object) -> object:
-    if isinstance(value, bool) or value is None or isinstance(value, str | int | float):
+    if isinstance(value, bool) or value is None or isinstance(value, str | int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return None
         return value
     if isinstance(value, Decimal):
+        if not value.is_finite():
+            return None
         if value == value.to_integral_value():
             return int(value)
         return float(value)

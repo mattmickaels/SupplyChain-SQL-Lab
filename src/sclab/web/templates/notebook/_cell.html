@@ -35,8 +35,8 @@
       {% if cell.kind == "sql" %}
       <button type="button" data-run hx-post="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}/run" hx-include="#form-{{ cell.id }}" hx-target="#result-{{ cell.id }}">Run</button>
       {% endif %}
-      <button type="button" hx-post="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}/move" hx-vals='{"direction":"up"}' hx-target="#cells" hx-swap="innerHTML">Move up</button>
-      <button type="button" hx-post="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}/move" hx-vals='{"direction":"down"}' hx-target="#cells" hx-swap="innerHTML">Move down</button>
+      <button type="button" data-move="up" hx-post="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}/move" hx-vals='{"direction":"up"}' hx-target="#cells" hx-swap="innerHTML">Move up</button>
+      <button type="button" data-move="down" hx-post="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}/move" hx-vals='{"direction":"down"}' hx-target="#cells" hx-swap="innerHTML">Move down</button>
       <button type="button" hx-delete="/notebooks/{{ notebook.id }}/cells/{{ cell.id }}" hx-target="closest .cell" hx-swap="outerHTML">Delete</button>
     </div>
   </form>

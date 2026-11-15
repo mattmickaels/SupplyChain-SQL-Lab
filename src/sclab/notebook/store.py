@@ -8,6 +8,7 @@ import re
 import secrets
 import tempfile
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,6 +17,7 @@ from typing import Literal
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 _SAMPLE_PATH = Path(__file__).resolve().parent / "samples" / "corvane-supply-review.json"
 _SAMPLE_ID = "corvane-supply-review"
+_MARKER = ".sample-copied"
 _LOCKS: dict[Path, threading.RLock] = {}
 _LOCKS_GUARD = threading.Lock()
 
@@ -143,25 +145,36 @@ class NotebookStore:
     def __init__(self, directory: Path) -> None:
         self.dir = directory
         self._lock = _lock_for(directory)
+        self._saw_read_error = False
 
     def list(self) -> list[Notebook]:
         with self._lock:
             self.dir.mkdir(parents=True, exist_ok=True)
+            self._saw_read_error = False
             found = self._read_all()
-            if not found:
+            if not self._marker().exists() and not found and not self._saw_read_error:
                 self._copy_sample()
+                self._saw_read_error = False
                 found = self._read_all()
+            if not self._saw_read_error:
+                self._remember()
             found.sort(key=lambda item: (item.title.casefold(), item.id))
             return found
 
     def get(self, notebook_id: str) -> Notebook:
         with self._lock:
+            self.dir.mkdir(parents=True, exist_ok=True)
+            if notebook_id == _SAMPLE_ID and not self._marker().exists():
+                if not self._path(notebook_id).is_file():
+                    self._copy_sample()
+                self._remember()
             path = self._path(notebook_id)
             if not path.is_file():
                 raise KeyError(notebook_id)
             loaded = self._load(path)
             if loaded is None:
                 raise KeyError(notebook_id)
+            self._remember()
             return loaded
 
     def save(self, notebook: Notebook) -> None:
@@ -170,9 +183,18 @@ class NotebookStore:
             notebook.updated_at = _timestamp()
             self._write(self._path(notebook.id), _dump(notebook))
 
+    def update(self, notebook_id: str, fn: Callable[[Notebook], None]) -> Notebook:
+        """Change one notebook and save it while holding the folder lock."""
+        with self._lock:
+            notebook = self.get(notebook_id)
+            fn(notebook)
+            self.save(notebook)
+            return notebook
+
     def create(self, title: str) -> Notebook:
         with self._lock:
             self.dir.mkdir(parents=True, exist_ok=True)
+            self._remember()
             cleaned = title.strip() or "Untitled"
             notebook = Notebook(
                 id=self._fresh_id(cleaned),
@@ -208,25 +230,44 @@ class NotebookStore:
         text = _SAMPLE_PATH.read_text(encoding="utf-8")
         self._write(destination, text)
 
+    def _marker(self) -> Path:
+        return self.dir / _MARKER
+
+    def _remember(self) -> None:
+        marker = self._marker()
+        if not marker.exists():
+            marker.write_text("1\n", encoding="utf-8")
+
     def _load(self, path: Path) -> Notebook | None:
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            self._saw_read_error = True
+            return None
+        except UnicodeError:
+            self._quarantine(path)
+            return None
+        try:
+            data = json.loads(text)
             return _parse(data, path.stem)
-        except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        except (json.JSONDecodeError, ValueError):
             self._quarantine(path)
             return None
 
     def _quarantine(self, path: Path) -> None:
-        if not path.is_file():
+        try:
+            if not path.is_file():
+                return
+            stem = path.stem if _ID.fullmatch(path.stem) else "notebook"
+            stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+            target = self.dir / f"{stem}.corrupt-{stamp}.json"
+            suffix = 1
+            while target.exists():
+                target = self.dir / f"{stem}.corrupt-{stamp}-{suffix}.json"
+                suffix += 1
+            os.replace(path, target)
+        except OSError:
             return
-        stem = path.stem if _ID.fullmatch(path.stem) else "notebook"
-        stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
-        target = self.dir / f"{stem}.corrupt-{stamp}.json"
-        suffix = 1
-        while target.exists():
-            target = self.dir / f"{stem}.corrupt-{stamp}-{suffix}.json"
-            suffix += 1
-        os.replace(path, target)
 
     def _fresh_id(self, title: str) -> str:
         base = re.sub(r"[^a-z0-9]+", "-", title.casefold()).strip("-")[:40].strip("-")
