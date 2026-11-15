@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from sclab.constants import SEED
-from sclab.data.master import generate_master
+from sclab.data.master import HOME_PLANT, generate_master
 from sclab.data.schema import table
 from sclab.data.story import CORVANE_SUPPLIER_NO, HALCYON_CUSTOMER_NO, OVERLOADED_BAY
 
@@ -151,8 +151,11 @@ def test_volumes_within_targets(frames: dict[str, pd.DataFrame]) -> None:
     assert halcyon["segment"] == "Memory"
 
     bays = frames["build_bay"]
+    # Each plant has bays only for the families whose home plant it is.
+    assert set(zip(bays["plant_code"], bays["family_code"], strict=True)) == {
+        (plant_code, family_code) for family_code, plant_code in HOME_PLANT.items()
+    }
     for plant_code, group in bays.groupby("plant_code"):
-        assert 4 <= len(group) <= 6
         assert group["bay_id"].str.match(rf"^{plant_code}-B\d+$").all()
         assert group["weekly_slots"].between(2, 6).all()
     overloaded = bays.loc[bays["bay_id"] == OVERLOADED_BAY].iloc[0]

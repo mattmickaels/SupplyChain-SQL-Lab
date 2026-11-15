@@ -426,15 +426,15 @@ Put the date range for the starts in the ON condition, not WHERE, so a bay with 
 
 ```sql
 SELECT b.bay_id, b.weekly_slots,
-       COUNT(p.prod_order_no) AS december_starts
+       COUNT(p.prod_order_no) AS february_starts
 FROM build_bay b LEFT JOIN production_order p ON p.bay_id = b.bay_id
- AND p.planned_start >= DATE '2026-12-01' AND p.planned_start < DATE '2027-01-01'
+ AND p.planned_start >= DATE '2027-02-01' AND p.planned_start < DATE '2027-03-01'
 WHERE b.bay_id IN ('AU01-B1', 'SC01-B3')
 GROUP BY b.bay_id, b.weekly_slots ORDER BY b.bay_id
 ```
 
-Bay AU01-B1 has 2 slots a week and 0 December starts.
-Bay SC01-B3 has 6 slots a week and 37 December starts.
+Bay AU01-B1 has 3 slots a week and 0 February starts, and it still appears.
+Bay SC01-B3 has 6 slots a week and 32 February starts.
 
 Boundary weeks keep the full weekly_slots.
 Only starts inside the date range count.

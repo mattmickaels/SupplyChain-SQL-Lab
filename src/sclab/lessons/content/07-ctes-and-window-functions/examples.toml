@@ -7,13 +7,8 @@ WHERE weekly_slots > (SELECT AVG(weekly_slots) FROM build_bay)
 ORDER BY bay_id
 """
 expected_rows = [
-  ["AU01-B5", 5],
-  ["SC01-B1", 6],
+  ["SC01-B2", 4],
   ["SC01-B3", 6],
-  ["SC01-B5", 5],
-  ["SG01-B1", 5],
-  ["SG01-B3", 5],
-  ["SG01-B4", 6],
 ]
 order_matters = true
 
@@ -30,13 +25,8 @@ WHERE weekly_slots > (SELECT AVG(weekly_slots) FROM bay_slots)
 ORDER BY bay_id
 """
 expected_rows = [
-  ["AU01-B5", 5],
-  ["SC01-B1", 6],
+  ["SC01-B2", 4],
   ["SC01-B3", 6],
-  ["SC01-B5", 5],
-  ["SG01-B1", 5],
-  ["SG01-B3", 5],
-  ["SG01-B4", 6],
 ]
 order_matters = true
 
