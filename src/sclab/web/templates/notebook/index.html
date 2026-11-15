@@ -10,6 +10,11 @@
     <button type="submit">Create notebook</button>
   </div>
 </form>
+{% if sample_missing %}
+<p class="actions">
+  <button type="button" hx-post="/notebooks/restore-sample" hx-target="body">Restore the sample notebook</button>
+</p>
+{% endif %}
 {% if notebooks %}
 <ul class="lesson-list">
   {% for notebook in notebooks %}
@@ -20,7 +25,7 @@
         <strong>{{ notebook.title }}</strong>
         <small>{% if notebook.target == "sandbox" %}Practice database{% else %}Lesson database{% endif %}</small>
       </span>
-      <span class="progress">{{ notebook.updated_at }}</span>
+      <span class="progress">{{ notebook.updated_at | notebook_time }}</span>
     </a>
   </li>
   {% endfor %}

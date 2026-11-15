@@ -44,7 +44,7 @@
         <td class="mono">{% with number=row[1] %}{% include "screens/_material.html" %}{% endwith %}</td>
         <td class="bom-indent" style="padding-left: {{ row[0] }}rem">{{ row[2] }}</td>
         <td>{{ row[3] }}</td>
-        <td class="num">{{ row[5] | cell(run.result.column_types[5]) }}</td>
+        <td class="num">{{ row[5] | qty(run.result.column_types[5]) }}</td>
         <td>{% if row[4] %}<span class="badge">Long lead</span>{% endif %}</td>
         <td class="mono">{{ row[6] }}</td>
       </tr>

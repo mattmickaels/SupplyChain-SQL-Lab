@@ -163,36 +163,32 @@ def _level_payload(
     }
 
 
-def _register() -> None:
-    register(
-        Screen(
-            code="CS03",
-            title="Display BOM",
-            summary="Bill of materials, one level at a time.",
-            key_label="Material",
-            queries=(
-                ScreenQuery("header", "Material", _HEADER),
-                ScreenQuery("children", "Direct components", _CHILDREN),
-                ScreenQuery("explode", "Explode all", _EXPLODE),
-            ),
-            exists_sql=_EXISTS,
-            not_found=_NOT_FOUND,
-        )
+register(
+    Screen(
+        code="CS03",
+        title="Display BOM",
+        summary="Bill of materials, one level at a time.",
+        key_label="Material",
+        queries=(
+            ScreenQuery("header", "Material", _HEADER),
+            ScreenQuery("children", "Direct components", _CHILDREN),
+            ScreenQuery("explode", "Explode all", _EXPLODE),
+        ),
+        exists_sql=_EXISTS,
+        not_found=_NOT_FOUND,
     )
-    register(
-        Screen(
-            code="CS15",
-            title="Where-Used",
-            summary="Every parent that uses a component.",
-            key_label="Component",
-            queries=(
-                ScreenQuery("header", "Component", _HEADER),
-                ScreenQuery("used", "Where used", _WHERE_USED),
-            ),
-            exists_sql=_EXISTS,
-            not_found=_NOT_FOUND,
-        )
+)
+register(
+    Screen(
+        code="CS15",
+        title="Where-Used",
+        summary="Every parent that uses a component.",
+        key_label="Component",
+        queries=(
+            ScreenQuery("header", "Component", _HEADER),
+            ScreenQuery("used", "Where used", _WHERE_USED),
+        ),
+        exists_sql=_EXISTS,
+        not_found=_NOT_FOUND,
     )
-
-
-_register()
+)

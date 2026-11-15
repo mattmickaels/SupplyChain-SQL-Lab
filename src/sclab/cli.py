@@ -1,3 +1,4 @@
+import argparse
 import socket
 import sys
 import threading
@@ -42,7 +43,17 @@ def _wait_until_listening(host: str, port: int, timeout_s: float = 15.0) -> None
             time.sleep(0.1)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        prog="sclab",
+        description="Open the Kestrel Process Equipment SQL lab.",
+    )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Start the lab without opening a browser.",
+    )
+    args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     console = Console(file=sys.stdout, force_terminal=True)
     with Progress(
         TextColumn("{task.description}"),
@@ -67,5 +78,6 @@ def main() -> None:
     )
     server.start()
     _wait_until_listening(_HOST, port)
-    webbrowser.open(url)
+    if not args.no_browser:
+        webbrowser.open(url)
     server.join()

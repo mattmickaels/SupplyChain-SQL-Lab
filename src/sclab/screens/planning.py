@@ -7,13 +7,13 @@ snapshot with an outstanding quantity, and every number comes from the tables.
 
 from datetime import timedelta
 
-from sclab.constants import AS_OF_DATE
+from sclab.constants import AS_OF_DATE, AS_OF_SQL
 from sclab.screens.framework import Screen, ScreenQuery, register
 
 MD04_WEEKS = 52
 CM01_WEEKS = 26
 
-_AS_OF = f"DATE '{AS_OF_DATE.isoformat()}'"
+_AS_OF = AS_OF_SQL
 _MD04_END = f"DATE '{(AS_OF_DATE + timedelta(weeks=MD04_WEEKS)).isoformat()}'"
 _CM01_LAST_LEVEL = CM01_WEEKS - 1
 # The first CM01 week is the Monday on or after AS_OF_DATE + 1 day (the first day after the
@@ -22,21 +22,63 @@ _CM01_LAST_LEVEL = CM01_WEEKS - 1
 MD04_HEADER_SQL = f"""
 SELECT m.material_no, m.description, p.plant_code, p.safety_stock, {MD04_WEEKS} AS horizon_weeks,
        p.planned_lead_time_days AS lead_time_days,
-       src.names || CASE WHEN src.suppliers = 1 THEN ' (sole)' ELSE '' END AS sources
+       src.names || CASE
+           WHEN src.suppliers IS NULL THEN ''
+           WHEN src.suppliers = 1 THEN ' (sole)'
+           ELSE ' (' || src.suppliers || ' suppliers)'
+       END AS sources
 FROM material m
 JOIN material_plant p ON p.material_no = m.material_no
 LEFT JOIN (
     SELECT q.material_no, COUNT(*) AS suppliers,
-           string_agg(s.name, ', ' ORDER BY q.is_primary DESC, s.name) AS names
+           COALESCE(MAX(CASE WHEN q.is_primary THEN s.name END), MIN(s.name)) AS names
     FROM material_supplier q JOIN supplier s ON s.supplier_no = q.supplier_no
     GROUP BY q.material_no
 ) src ON src.material_no = m.material_no
 WHERE m.material_no = $1 AND p.plant_code = $2
 """
 
+# Spare lines count only when the material itself is a component.
+# Both MD04 queries use this CTE so a tool or a module is not treated as a spare.
+_SPARE_PLANT_CTE = """
+spare_plant AS (
+    SELECT MIN(CASE tool.family_code WHEN 'ETC' THEN 'SC01' WHEN 'CMP' THEN 'SG01'
+                                     ELSE 'AU01' END) AS plant_code
+    FROM material AS origin
+    JOIN (
+        SELECT b0.parent_material_no AS tool_no
+        FROM bom_item AS b0
+        WHERE b0.component_material_no = $1
+        UNION
+        SELECT b1.parent_material_no
+        FROM bom_item AS b0
+        JOIN bom_item AS b1 ON b1.component_material_no = b0.parent_material_no
+        WHERE b0.component_material_no = $1
+        UNION
+        SELECT b2.parent_material_no
+        FROM bom_item AS b0
+        JOIN bom_item AS b1 ON b1.component_material_no = b0.parent_material_no
+        JOIN bom_item AS b2 ON b2.component_material_no = b1.parent_material_no
+        WHERE b0.component_material_no = $1
+        UNION
+        SELECT b3.parent_material_no
+        FROM bom_item AS b0
+        JOIN bom_item AS b1 ON b1.component_material_no = b0.parent_material_no
+        JOIN bom_item AS b2 ON b2.component_material_no = b1.parent_material_no
+        JOIN bom_item AS b3 ON b3.component_material_no = b2.parent_material_no
+        WHERE b0.component_material_no = $1
+    ) AS hit ON TRUE
+    JOIN material AS tool ON tool.material_no = hit.tool_no
+    WHERE origin.material_no = $1
+      AND origin.material_type = 'COMPONENT'
+      AND tool.material_type = 'TOOL'
+)
+"""
+
 # Where-used runs upward from the material, so only its own tools are walked.
 # qty_per_tool multiplies the quantity per level on every BOM path, then adds the paths together.
-MD04_LIST_SQL = f"""
+MD04_LIST_SQL = (
+    """
 WITH RECURSIVE where_used(parent_material_no, qty, level) AS (
     SELECT parent_material_no, qty_per, 1
     FROM bom_item
@@ -52,11 +94,11 @@ WITH RECURSIVE where_used(parent_material_no, qty, level) AS (
     JOIN material c ON c.material_no = $1
     WHERE t.material_type = 'TOOL' AND c.material_type = 'COMPONENT'
     GROUP BY t.material_no, t.family_code
-), spare_plant AS (
-    SELECT MIN(CASE family_code WHEN 'ETC' THEN 'SC01' WHEN 'CMP' THEN 'SG01'
-                                ELSE 'AU01' END) AS plant_code
-    FROM tool_qty
-), outstanding AS (
+),
+"""
+    + _SPARE_PLANT_CTE
+    + f""",
+outstanding AS (
     SELECT i.po_no, i.line_no, i.confirmed_delivery_date,
            i.order_qty - COALESCE(SUM(g.qty), 0) AS qty
     FROM purchase_order_item i
@@ -112,6 +154,7 @@ FROM running r
 JOIN material_plant p ON p.material_no = $1 AND p.plant_code = $2
 ORDER BY r.element_date, r.element_order, r.doc_no, r.doc_line
 """
+)
 
 CM01_HEADER_SQL = f"""
 SELECT p.plant_code, p.name, p.city, COUNT(*) AS bays, SUM(b.weekly_slots) AS weekly_slots,
@@ -172,6 +215,31 @@ ORDER BY g.bay_id, g.week_start, p.planned_start, p.prod_order_no
 """
 )
 
+MD04_OMITTED_SQL = f"""
+WITH
+{_SPARE_PLANT_CTE},
+open_unconfirmed AS (
+    SELECT i.po_no, i.line_no
+    FROM purchase_order_item i
+    JOIN purchase_order h ON h.po_no = i.po_no
+    LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
+    WHERE i.material_no = $1 AND h.plant_code = $2
+      AND h.order_date <= {_AS_OF}
+      AND i.confirmed_delivery_date IS NULL
+    GROUP BY i.po_no, i.line_no, i.order_qty
+    HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
+),
+past_spare AS (
+    SELECT s.so_no, s.line_no
+    FROM sales_order_item s
+    JOIN spare_plant sp ON sp.plant_code = $2
+    WHERE s.material_no = $1 AND s.status = 'Open' AND s.promised_date <= {_AS_OF}
+)
+SELECT u.unconfirmed_po_lines, s.past_spare_lines
+FROM (SELECT COUNT(*) AS unconfirmed_po_lines FROM open_unconfirmed) u
+CROSS JOIN (SELECT COUNT(*) AS past_spare_lines FROM past_spare) s
+"""
+
 MD04 = Screen(
     code="MD04",
     title="Stock / Requirements List",
@@ -180,10 +248,11 @@ MD04 = Screen(
     queries=(
         ScreenQuery("header", "Material and plant", MD04_HEADER_SQL),
         ScreenQuery("list", "Stock and requirements", MD04_LIST_SQL),
+        ScreenQuery("omitted", "Lines left out of the list", MD04_OMITTED_SQL),
     ),
     exists_sql="SELECT count(*) FROM material_plant WHERE material_no = $1 AND plant_code = $2",
     not_found="Material {key} was not found in this plant.",
-    params=("plant_code",),
+    params=("plant",),
 )
 
 CM01 = Screen(
@@ -202,3 +271,25 @@ CM01 = Screen(
 
 register(MD04)
 register(CM01)
+
+
+def capacity_grid(run) -> dict | None:
+    """One row per bay and one column per week, for the CM01 page."""
+    if run is None or run.error or run.result is None or not run.result.rows:
+        return None
+    columns = {name: index for index, name in enumerate(run.result.columns)}
+    weeks: list = []
+    bays: list = []
+    cells: dict = {}
+    for row in run.result.rows:
+        bay = row[columns["bay_id"]]
+        week = row[columns["week_start"]]
+        if bay not in bays:
+            bays.append(bay)
+        if week not in weeks:
+            weeks.append(week)
+        cells[f"{bay}|{week.isoformat() if hasattr(week, 'isoformat') else week}"] = {
+            "text": f"{row[columns['starts']]}/{row[columns['weekly_slots']]}",
+            "over": bool(row[columns["overloaded"]]),
+        }
+    return {"bays": bays, "weeks": weeks, "cells": cells}

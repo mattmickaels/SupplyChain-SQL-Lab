@@ -4,7 +4,7 @@ import html
 import re
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
@@ -19,13 +19,23 @@ from sclab.constants import AS_OF_DATE, COMPANY_NAME
 from sclab.data.sap_views import SAP_VIEWS, sap_view, view_for_table
 from sclab.data.schema import TABLES
 from sclab.engine.query import QueryError, reset_sandbox, run_query
-from sclab.engine.types import QueryResult
 from sclab.lessons.model import Exercise, check_answer, load_lessons
 from sclab.lessons.progress import ProgressStore
+from sclab.notebook.store import format_updated
 from sclab.paths import progress_path
 from sclab.screens.framework import all_screens
+from sclab.screens.planning import CM01_WEEKS, MD04_WEEKS
 from sclab.web import export as excel
-from sclab.web.cells import display_text, is_numeric_type
+from sclab.web.cells import display_text, is_numeric_type, quantity_text
+from sclab.web.common import (
+    NOTEBOOK_RETURN,
+    SCHEMA_RETURN,
+    UNEXPECTED,
+    form_fields,
+    plain_message,
+    result_note,
+)
+from sclab.web.labels import header_label
 from sclab.web.notebook_routes import register_notebook_routes
 from sclab.web.screens_routes import create_router
 
@@ -33,9 +43,7 @@ _WEB_DIR = Path(__file__).resolve().parent
 _STATIC_DIR = _WEB_DIR.parent / "static"
 _MD = MarkdownIt("commonmark", {"html": False, "linkify": False})
 _TABLES = {item.name: item for item in TABLES}
-_UNEXPECTED = "Something went wrong. Try again."
 _HTMX_REQUIRED = "Use the lab page to run that action."
-_SCHEMA_RETURN = re.compile(r"/schema/[a-z_][a-z0-9_]*")
 
 
 def create_app(content_dir: Path | None = None, include_sample: bool = False) -> FastAPI:
@@ -45,6 +53,11 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
     exercise_lesson = {item.id: lesson.id for lesson in lessons for item in lesson.exercises}
     templates = Jinja2Templates(directory=_WEB_DIR / "templates")
     templates.env.filters["cell"] = format_cell
+    templates.env.filters["qty"] = format_quantity
+    templates.env.filters["header_label"] = header_label
+    templates.env.filters["notebook_time"] = format_updated
+    templates.env.globals["md04_weeks"] = MD04_WEEKS
+    templates.env.globals["cm01_weeks"] = CM01_WEEKS
     templates.env.tests["numeric_type"] = is_numeric_type
     app = FastAPI(title=COMPANY_NAME, docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
@@ -166,7 +179,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
     @app.post("/api/run")
     async def api_run(request: Request):
         try:
-            fields = await _form(request)
+            fields = await form_fields(request)
             sql = fields.get("sql", "")
             target = fields.get("target", "lesson")
             exercise_id = fields.get("exercise_id", "")
@@ -177,7 +190,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
                 context = {
                     "error": None,
                     "result": result,
-                    "note": _result_note(result),
+                    "note": result_note(result),
                     **_export_fields(fields, exercise_id),
                 }
             except QueryError as exc:
@@ -189,13 +202,13 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
             return render(
                 request,
                 "_result.html",
-                {"error": _UNEXPECTED, "result": None, "note": ""},
+                {"error": UNEXPECTED, "result": None, "note": ""},
             )
 
     @app.post("/api/check/{exercise_id}")
     async def api_check(request: Request, exercise_id: str):
         try:
-            sql = (await _form(request)).get("sql", "")
+            sql = (await form_fields(request)).get("sql", "")
             exercise = _require_exercise(exercises, exercise_id)
             try:
                 outcome = await run_in_threadpool(check_answer, exercise, sql)
@@ -217,7 +230,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         except HTTPException:
             raise
         except Exception:
-            return render(request, "_check.html", {"error": _UNEXPECTED, "outcome": None})
+            return render(request, "_check.html", {"error": UNEXPECTED, "outcome": None})
 
     @app.get("/api/hint/{exercise_id}/{n}")
     def api_hint(exercise_id: str, n: int):
@@ -225,7 +238,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         if n < 1 or n > 3:
             raise HTTPException(status_code=404, detail="Hints are numbered 1 to 3.")
         if exercise.is_drill and store().drill_started_at(exercise.id) is None:
-            return _plain_message("Start the drill first.")
+            return plain_message("Start the drill first.")
         text = html.escape(exercise.hints[n - 1])
         follow = ""
         if n < 3:
@@ -240,7 +253,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
     def api_solution(exercise_id: str):
         exercise = _require_exercise(exercises, exercise_id)
         if exercise.is_drill and store().drill_started_at(exercise.id) is None:
-            return _plain_message("Start the drill first.")
+            return plain_message("Start the drill first.")
         if store().status(exercise_id) == "new":
             message = "Try a Check first, then the solution unlocks."
             return HTMLResponse(f'<p class="message">{message}</p>')
@@ -267,7 +280,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         except HTTPException:
             raise
         except Exception:
-            return _plain_message(_UNEXPECTED)
+            return plain_message(UNEXPECTED)
 
     @app.post("/api/drill/{exercise_id}/draft")
     async def api_drill_draft(request: Request, exercise_id: str):
@@ -276,14 +289,14 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
             if not exercise.is_drill:
                 raise HTTPException(status_code=404, detail="That exercise is not a drill.")
             if store().drill_started_at(exercise_id) is None:
-                return _plain_message("Start the drill first.")
-            text = (await _form(request)).get("text", "")
+                return plain_message("Start the drill first.")
+            text = (await form_fields(request)).get("text", "")
             store().save_drill_draft(exercise_id, text)
             return HTMLResponse("")
         except HTTPException:
             raise
         except Exception:
-            return _plain_message(_UNEXPECTED)
+            return plain_message(UNEXPECTED)
 
     @app.post("/api/drill/{exercise_id}/summary")
     async def api_drill_summary(request: Request, exercise_id: str):
@@ -292,12 +305,12 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
             if not exercise.is_drill:
                 raise HTTPException(status_code=404, detail="That exercise is not a drill.")
             if store().drill_started_at(exercise_id) is None:
-                return _plain_message("Start the drill first.")
+                return plain_message("Start the drill first.")
             if store().status(exercise_id) == "new":
-                return _plain_message("Check your query first.")
-            text = (await _form(request)).get("text", "")
+                return plain_message("Check your query first.")
+            text = (await form_fields(request)).get("text", "")
             if not text.strip():
-                return _plain_message("Write your summary first.")
+                return plain_message("Write your summary first.")
             saved = store()
             saved.save_drill_summary(exercise_id, text)
             saved.save_drill_draft(exercise_id, text)
@@ -315,12 +328,12 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         except HTTPException:
             raise
         except Exception:
-            return _plain_message(_UNEXPECTED)
+            return plain_message(UNEXPECTED)
 
     @app.post("/api/export")
     async def api_export(request: Request):
         try:
-            fields = await _form(request)
+            fields = await form_fields(request)
             sql = fields["sql"] if "sql" in fields else fields.get("source", "")
             target = fields.get("target", "lesson")
             label = excel.safe_label(fields.get("label", ""))
@@ -350,7 +363,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         except HTTPException:
             raise
         except Exception:
-            return _export_error_page(_UNEXPECTED, "/")
+            return _export_error_page(UNEXPECTED, "/")
 
     @app.post("/api/sandbox/reset")
     async def api_reset(request: Request):
@@ -359,7 +372,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
         except HTTPException:
             raise
         except Exception:
-            return _plain_message(_UNEXPECTED)
+            return plain_message(UNEXPECTED)
         return HTMLResponse('<p class="banner">Practice database reset.</p>')
 
     register_notebook_routes(app, render)
@@ -367,17 +380,11 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
     @app.middleware("http")
     async def require_htmx_post(request: Request, call_next):
         if request.method not in ("GET", "HEAD") and request.headers.get("hx-request") != "true":
-            return _plain_message(_HTMX_REQUIRED, status_code=403)
+            return plain_message(_HTMX_REQUIRED, status_code=403)
         return await call_next(request)
 
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
     return app
-
-
-async def _form(request: Request) -> dict[str, str]:
-    raw = (await request.body()).decode("utf-8")
-    parsed = parse_qs(raw, keep_blank_values=True)
-    return {key: values[0] for key, values in parsed.items() if values}
 
 
 def _export_fields(fields: dict[str, str], exercise_id: str = "") -> dict[str, str]:
@@ -387,16 +394,26 @@ def _export_fields(fields: dict[str, str], exercise_id: str = "") -> dict[str, s
     return {"export_form": excel.safe_form_id(posted)}
 
 
+def _back_label(href: str) -> str:
+    if href.startswith("/notebooks/"):
+        return "Back to the notebook"
+    if href.startswith("/schema"):
+        return "Back to the schema"
+    if href.startswith("/playground"):
+        return "Back to the playground"
+    return "Back to the lesson"
+
+
 def _back_href(fields: dict[str, str], exercise_lesson: dict[str, str]) -> str:
     exercise_id = fields.get("exercise_id", "")
     if exercise_id in exercise_lesson:
         lesson_id = exercise_lesson[exercise_id]
         return f"/lessons/{lesson_id}#exercise-{exercise_id}"
+    return_to = fields.get("return_to", "")
+    if SCHEMA_RETURN.fullmatch(return_to) or NOTEBOOK_RETURN.fullmatch(return_to):
+        return return_to
     if fields.get("target") == "sandbox":
         return "/playground?" + urlencode({"sql": fields.get("sql", "")})
-    return_to = fields.get("return_to", "")
-    if _SCHEMA_RETURN.fullmatch(return_to):
-        return return_to
     return "/"
 
 
@@ -413,13 +430,14 @@ def _export_error_page(message: str, href: str) -> HTMLResponse:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Could not export</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
   <main>
     <h1>Could not export</h1>
     <p class="message">{html.escape(message)}</p>
-    <p><a href="{html.escape(href, quote=True)}">Back to the lesson</a></p>
+    <p><a href="{html.escape(href, quote=True)}">{html.escape(_back_label(href))}</a></p>
   </main>
 </body>
 </html>
@@ -427,14 +445,17 @@ def _export_error_page(message: str, href: str) -> HTMLResponse:
     return HTMLResponse(body)
 
 
-def _plain_message(text: str, status_code: int = 200) -> HTMLResponse:
-    return HTMLResponse(f'<p class="message">{html.escape(text)}</p>', status_code=status_code)
-
-
 def format_cell(value: object, type_name: object = "") -> Markup:
     text = display_text(type_name, value)
     if text is None:
         return Markup('<span class="null">NULL</span>')
+    return Markup(escape(text))
+
+
+def format_quantity(value: object, type_name: object = "") -> Markup:
+    text = quantity_text(value)
+    if text is None:
+        return format_cell(value, type_name)
     return Markup(escape(text))
 
 
@@ -564,10 +585,3 @@ def _require_exercise(exercises: dict[str, Exercise], exercise_id: str) -> Exerc
     if exercise is None:
         raise HTTPException(status_code=404, detail="That exercise is not in the lab.")
     return exercise
-
-
-def _result_note(result: QueryResult) -> str:
-    if result.truncated:
-        return f"Showing {len(result.rows):,} of {result.total_rows:,} rows."
-    noun = "row" if result.total_rows == 1 else "rows"
-    return f"{result.total_rows:,} {noun}."

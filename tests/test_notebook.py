@@ -585,3 +585,107 @@ def test_notebook_pages_stay_local(client: TestClient) -> None:
     assert "/static/vendor/chart.umd.min.js" in page
     assert _URL.search(page) is None
     assert "Corvane" in page
+    assert "1 Nov 2026 00:00" in index.text
+    assert (
+        'hx-confirm="Delete this notebook? You can restore the sample notebook '
+        'from the notebook list."'
+    ) in page
+    assert 'getPropertyValue("--accent")' in script
+    assert 'getPropertyValue("--ink")' in script
+    assert 'getPropertyValue("--line")' in script
+
+
+def test_move_keeps_the_sql_textarea_hidden(client: TestClient) -> None:
+    created = client.post("/notebooks", data={"title": "Move"})
+    notebook_id = created.headers["HX-Redirect"].rsplit("/", 1)[-1]
+    client.post(f"/notebooks/{notebook_id}/cells", data={"kind": "markdown"})
+    page = client.get(f"/notebooks/{notebook_id}")
+    moved = client.post(
+        re.search(r'hx-post="([^"]+/move)"', page.text).group(1),
+        data={"direction": "down"},
+    )
+    assert moved.status_code == 200
+    for tag in re.findall(r"<textarea\b[^>]*>", moved.text):
+        hidden_attr = re.search(r"\shidden(?:\s|>)", tag)
+        if "data-editor" in tag:
+            assert hidden_attr
+        else:
+            assert not hidden_attr
+
+
+def test_notebook_export_error_returns_to_the_notebook(client: TestClient) -> None:
+    created = client.post("/notebooks", data={"title": "Back"})
+    notebook_id = created.headers["HX-Redirect"].rsplit("/", 1)[-1]
+    posted = _cell_form(client.get(f"/notebooks/{notebook_id}").text)
+    assert posted["return_to"] == f"/notebooks/{notebook_id}"
+    for target in ("lesson", "sandbox"):
+        response = client.post(
+            "/api/export",
+            data={
+                "sql": "SELEC 1",
+                "target": target,
+                "return_to": posted["return_to"],
+                "label": "bad",
+            },
+        )
+        assert f'href="/notebooks/{notebook_id}"' in response.text
+        assert "Back to the notebook" in response.text
+
+
+def test_delete_notebook_is_htmx_guarded(client: TestClient) -> None:
+    created = client.post("/notebooks", data={"title": "Gone"})
+    notebook_id = created.headers["HX-Redirect"].rsplit("/", 1)[-1]
+    removed = client.delete(f"/notebooks/{notebook_id}")
+    assert removed.status_code == 200
+    assert removed.headers["HX-Redirect"] == "/notebooks"
+    assert client.get(f"/notebooks/{notebook_id}").status_code == 404
+    raw = TestClient(create_app(), base_url="http://127.0.0.1")
+    refused = raw.delete(f"/notebooks/{notebook_id}")
+    assert refused.status_code == 403
+
+
+def test_browser_get_of_a_missing_notebook_renders_the_lab(lab_home) -> None:
+    browser = TestClient(create_app(), base_url="http://127.0.0.1")
+    page = browser.get("/notebooks/missing-notebook")
+    assert page.status_code == 404
+    assert "That notebook is not in the lab." in page.text
+    assert 'href="/notebooks"' in page.text
+    assert "Lessons" in page.text
+    assert "application/json" not in page.headers["content-type"]
+    htmx = TestClient(create_app(), base_url="http://127.0.0.1")
+    htmx.headers.update({"HX-Request": "true"})
+    api = htmx.get("/notebooks/missing-notebook")
+    assert api.status_code == 404
+    assert api.json()["detail"] == "That notebook is not in the lab."
+
+
+def test_destructive_buttons_use_the_danger_outline() -> None:
+    css = _APP_JS.with_name("app.css").read_text(encoding="utf-8")
+    rule = css.split("button.danger", 1)[1].split("}", 1)[0]
+    assert "var(--warn)" in rule
+    assert "transparent" in rule
+    notebook = (_NOTEBOOK_TEMPLATES / "notebook.html").read_text(encoding="utf-8")
+    cell = (_NOTEBOOK_TEMPLATES / "_cell.html").read_text(encoding="utf-8")
+    assert 'class="danger"' in notebook
+    assert 'class="danger"' in cell
+
+
+def test_restore_sample_notebook_is_htmx_guarded(client: TestClient) -> None:
+    opened = _open_sample(client)
+    assert "Restore the sample notebook" not in client.get("/notebooks").text
+    assert "restore the sample notebook from the notebook list" in opened
+    removed = client.delete("/notebooks/corvane-supply-review")
+    assert removed.status_code == 200
+    index = client.get("/notebooks")
+    assert "Restore the sample notebook" in index.text
+    assert "corvane-supply-review" not in index.text
+    raw = TestClient(create_app(), base_url="http://127.0.0.1")
+    refused = raw.post("/notebooks/restore-sample")
+    assert refused.status_code == 403
+    restored = client.post("/notebooks/restore-sample")
+    assert restored.status_code == 200
+    assert restored.headers["HX-Redirect"] == "/notebooks"
+    page = client.get("/notebooks/corvane-supply-review")
+    assert page.status_code == 200
+    assert "Corvane" in page.text
+    assert "Restore the sample notebook" not in client.get("/notebooks").text

@@ -1,12 +1,13 @@
 """Document screens: material, supplier, purchase order and sales order."""
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
 from sclab.data.story import CORVANE_SUPPLIER_NO, HALCYON_CUSTOMER_NO
 from sclab.engine.query import run_query
-from sclab.screens.documents import SCREENS
-from sclab.screens.framework import render_screen
+from sclab.screens.framework import get_screen, render_screen
 from sclab.web.app import create_app
 from tests.test_story import RISK_ROWS_SQL
 
@@ -14,13 +15,14 @@ _CODES = ("MM03", "XK03", "ME23N", "VA03")
 
 
 def test_four_screens_are_registered() -> None:
-    assert tuple(SCREENS) == _CODES
-    assert [screen.code for screen in SCREENS.values()] == list(_CODES)
-    assert SCREENS["MM03"].title == "Display Material"
-    assert SCREENS["XK03"].title == "Display Supplier"
-    assert SCREENS["ME23N"].title == "Display Purchase Order"
-    assert SCREENS["VA03"].title == "Display Sales Order"
-    assert SCREENS["MM03"].params == ("plant",)
+    import sclab.screens  # noqa: F401
+
+    assert get_screen("MM03").title == "Display Material"
+    assert get_screen("XK03").title == "Display Supplier"
+    assert get_screen("ME23N").title == "Display Purchase Order"
+    assert get_screen("VA03").title == "Display Sales Order"
+    assert get_screen("MM03").params == ("plant",)
+    assert get_screen("MD04").params == ("plant",)
 
 
 @pytest.fixture
@@ -264,3 +266,131 @@ def test_screens_index_lists_document_screens(client) -> None:
     for code in _CODES:
         assert code in text
     assert "MM03" not in client.get("/screens", params={"q": "VA03"}).text
+    assert "Weekly load of each build bay." in text
+    home = client.get("/").text
+    assert 'class="schema-list screen-list"' in home
+    assert 'class="schema-list screen-list"' in text
+    css = (Path(__file__).resolve().parents[1] / "src" / "sclab" / "static" / "app.css").read_text(
+        encoding="utf-8"
+    )
+    assert "grid-template-columns: 6.5ch 28ch minmax(0, 1fr)" in css
+
+
+def test_document_sql_stays_on_the_data() -> None:
+    import sclab.screens  # noqa: F401
+
+    for code in ("XK03", "VA03", "MM03", "ME23N"):
+        for query in get_screen(code).queries:
+            assert "tool_of" not in query.sql
+            assert "bay_choice" not in query.sql
+    items = next(query for query in get_screen("VA03").queries if query.name == "items")
+    assert "p.plant_code" in items.sql
+    assert "spare_plant" not in items.sql
+
+
+def test_supplier_with_no_recent_receipts_says_so(client) -> None:
+    page = client.get("/screens/XK03", params={"key": "V-10022"})
+    assert page.status_code == 200
+    assert "No receipts in the last 90 days." in page.text
+
+
+def test_header_uses_plain_labels(client) -> None:
+    po_no = run_query("SELECT po_no FROM purchase_order ORDER BY po_no LIMIT 1").rows[0][0]
+    page = client.get("/screens/ME23N", params={"key": po_no})
+    assert "PO number" in page.text
+    assert "Po Number" not in page.text
+    material, plant = run_query(
+        """
+        SELECT material_no, plant_code
+        FROM material_plant
+        ORDER BY material_no, plant_code
+        LIMIT 1
+        """
+    ).rows[0]
+    material_page = client.get("/screens/MM03", params={"key": material, "plant": plant})
+    assert "Base unit" in material_page.text
+    assert "Long lead" in material_page.text
+    assert "Enter a material." in client.get("/screens/MM03").text
+    assert 'class="screen-prompt"' in client.get("/screens/MM03").text
+    assert 'class="message"' not in client.get("/screens/MM03").text
+
+
+def test_mm03_planned_lead_time_shows_days(client) -> None:
+    material, plant, days = run_query(
+        """
+        SELECT material_no, plant_code, planned_lead_time_days
+        FROM material_plant
+        WHERE planned_lead_time_days IS NOT NULL
+        ORDER BY material_no, plant_code
+        LIMIT 1
+        """
+    ).rows[0]
+    page = client.get("/screens/MM03", params={"key": material, "plant": plant})
+    assert f"{int(days)} days" in page.text
+
+
+def test_every_open_spare_line_uses_the_md04_plant(client) -> None:
+    from sclab.screens.plants import link_plants
+
+    rows = run_query(
+        """
+        SELECT h.so_no, i.material_no,
+               (
+                   SELECT MIN(CASE tool.family_code
+                                  WHEN 'ETC' THEN 'SC01'
+                                  WHEN 'CMP' THEN 'SG01'
+                                  ELSE 'AU01' END)
+                   FROM (
+                       SELECT b0.parent_material_no AS tool_no
+                       FROM bom_item AS b0
+                       WHERE b0.component_material_no = i.material_no
+                       UNION
+                       SELECT b1.parent_material_no
+                       FROM bom_item AS b0
+                       JOIN bom_item AS b1
+                         ON b1.component_material_no = b0.parent_material_no
+                       WHERE b0.component_material_no = i.material_no
+                       UNION
+                       SELECT b2.parent_material_no
+                       FROM bom_item AS b0
+                       JOIN bom_item AS b1
+                         ON b1.component_material_no = b0.parent_material_no
+                       JOIN bom_item AS b2
+                         ON b2.component_material_no = b1.parent_material_no
+                       WHERE b0.component_material_no = i.material_no
+                       UNION
+                       SELECT b3.parent_material_no
+                       FROM bom_item AS b0
+                       JOIN bom_item AS b1
+                         ON b1.component_material_no = b0.parent_material_no
+                       JOIN bom_item AS b2
+                         ON b2.component_material_no = b1.parent_material_no
+                       JOIN bom_item AS b3
+                         ON b3.component_material_no = b2.parent_material_no
+                       WHERE b0.component_material_no = i.material_no
+                   ) AS hit
+                   JOIN material AS tool
+                     ON tool.material_no = hit.tool_no AND tool.material_type = 'TOOL'
+               ) AS spare_plant
+        FROM sales_order_item AS i
+        JOIN sales_order AS h ON h.so_no = i.so_no
+        JOIN material AS m ON m.material_no = i.material_no
+        LEFT JOIN production_order AS p
+          ON p.so_no = i.so_no AND p.so_line_no = i.line_no
+        WHERE m.material_type = 'COMPONENT'
+          AND i.status = 'Open'
+          AND i.promised_date > DATE '2026-11-01'
+          AND p.prod_order_no IS NULL
+        ORDER BY h.so_no, i.line_no
+        """
+    ).rows
+    assert rows
+    assert ("SO-0012761", "M-001540", "AU01") in rows
+    spare = link_plants([material for _so, material, _plant in rows]).spare
+    pages: dict[str, str] = {}
+    for so_no, material, plant in rows:
+        assert plant
+        assert spare[material] == plant
+        if so_no not in pages:
+            pages[so_no] = client.get("/screens/VA03", params={"key": so_no}).text
+        assert f"/screens/MM03?key={material}&amp;plant={plant}" in pages[so_no]

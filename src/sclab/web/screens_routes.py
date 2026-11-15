@@ -8,7 +8,8 @@ from fastapi.responses import RedirectResponse
 import sclab.screens  # noqa: F401  # registers every screen
 from sclab.screens.bom import render_level
 from sclab.screens.framework import all_screens, get_screen, render_screen
-from sclab.screens.plants import first_plants, material_numbers
+from sclab.screens.planning import capacity_grid
+from sclab.screens.plants import link_plants, material_numbers
 
 
 def create_router(templates, render) -> APIRouter:
@@ -44,7 +45,7 @@ def create_router(templates, render) -> APIRouter:
             raise HTTPException(status_code=404, detail="That screen is not in the lab.")
         payload = render_level(parent, path)
         numbers = [parent, *[str(row[0]) for row in payload["rows"]]]
-        payload["plants"] = first_plants(numbers)
+        payload["plants"] = link_plants(numbers)
         return render(request, "screens/_bom_level.html", payload)
 
     @router.get("/screens/{code}")
@@ -61,8 +62,9 @@ def create_router(templates, render) -> APIRouter:
             [f"screens/{data.screen.code.upper()}.html", "screens/_default.html"]
         ).name
         plants = {}
-        if data.found and data.screen.code in {"CS03", "CS15"}:
-            plants = first_plants(material_numbers(data.key, data.runs))
+        if data.found:
+            plants = link_plants(material_numbers(data.key, data.runs))
+        grid = capacity_grid(data.runs.get("load")) if data.found else None
         return render(
             request,
             name,
@@ -72,6 +74,7 @@ def create_router(templates, render) -> APIRouter:
                 "key": data.key,
                 "view": view,
                 "plants": plants,
+                "grid": grid,
             },
         )
 

@@ -234,8 +234,45 @@ def test_browser_opens_after_server_ready(lab_home, monkeypatch) -> None:
 
     monkeypatch.setattr("sclab.cli.uvicorn.run", fake_run)
     monkeypatch.setattr("sclab.cli.webbrowser.open", fake_open)
-    main()
+    main([])
     assert calls == ["server", "browser"]
+
+
+def test_help_exits_before_building_the_database(monkeypatch, capsys) -> None:
+    def boom(*_args, **_kwargs):
+        raise AssertionError("database")
+
+    monkeypatch.setattr("sclab.cli.ensure_database", boom)
+    with pytest.raises(SystemExit) as caught:
+        main(["--help"])
+    assert caught.value.code == 0
+    output = capsys.readouterr().out
+    assert "usage" in output.lower()
+    assert "--no-browser" in output
+
+
+def test_no_browser_skips_the_browser(lab_home, monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_run(*_args, **kwargs):
+        calls.append("server")
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind((kwargs["host"], kwargs["port"]))
+        sock.listen(1)
+        sock.settimeout(5)
+        try:
+            conn, _addr = sock.accept()
+            conn.close()
+        finally:
+            sock.close()
+
+    def fake_open(_url):
+        calls.append("browser")
+
+    monkeypatch.setattr("sclab.cli.uvicorn.run", fake_run)
+    monkeypatch.setattr("sclab.cli.webbrowser.open", fake_open)
+    main(["--no-browser"])
+    assert calls == ["server"]
 
 
 def test_result_grid_escapes_script_literal(client) -> None:

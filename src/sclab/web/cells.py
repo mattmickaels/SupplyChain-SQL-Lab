@@ -82,6 +82,20 @@ def cell_kind(type_name: object, value: object) -> str:
     return "text"
 
 
+def quantity_text(value: object) -> str | None:
+    """Show a whole quantity without a decimal tail. Other numbers keep their digits."""
+    if isinstance(value, Decimal):
+        if value == value.to_integral_value():
+            return str(int(value.to_integral_value()))
+        text = format(value, "f").rstrip("0").rstrip(".")
+        return text
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return None
+
+
 def display_text(type_name: object, value: object) -> str | None:
     """Grid text for one cell. None means show an empty NULL marker."""
     kind = cell_kind(type_name, value)

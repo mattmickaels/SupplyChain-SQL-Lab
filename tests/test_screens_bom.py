@@ -360,3 +360,12 @@ def test_long_lead_badge_on_expanded_component(lab_home) -> None:
     assert _GENERATOR in page.text
     assert "Long lead" in page.text
     assert "Expand" not in page.text
+
+
+def test_quantities_drop_a_decimal_tail() -> None:
+    from decimal import Decimal
+
+    from sclab.web.app import format_quantity
+
+    assert str(format_quantity(Decimal("6.000"))) == "6"
+    assert str(format_quantity(Decimal("1.50"))) == "1.5"

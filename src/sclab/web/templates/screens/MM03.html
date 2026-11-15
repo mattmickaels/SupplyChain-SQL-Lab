@@ -1,5 +1,10 @@
 {% extends "screens/_layout.html" %}
 {% block screen_body %}
+<p class="actions">
+  <a href="/screens/CS03?key={{ data.key | urlencode }}">Display BOM</a>
+  <a href="/screens/CS15?key={{ data.key | urlencode }}">Where used</a>
+  <a href="/screens/MD04?key={{ data.key | urlencode }}&amp;plant={{ request.query_params.get('plant', '') | urlencode }}">Stock/requirements</a>
+</p>
 {% with run=data.runs.general, header=true %}
 {% include "screens/_section.html" %}
 {% endwith %}

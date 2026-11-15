@@ -46,7 +46,7 @@ def _dicts(run) -> list[dict]:
 
 
 def _md04(material: str, plant: str = "SC01"):
-    data = render_screen("MD04", material, {"plant_code": plant})
+    data = render_screen("MD04", material, {"plant": plant})
     assert data.found, data.message
     run = data.runs["list"]
     assert run.error is None
@@ -190,21 +190,21 @@ def test_md04_empty_material(client) -> None:
     _, rows = _md04(material, plant)
     assert len(rows) == 1
     assert rows[0]["element"] == "Stock"
-    response = client.get("/screens/MD04", params={"key": material, "plant_code": plant})
+    response = client.get("/screens/MD04", params={"key": material, "plant": plant})
     assert response.status_code == 200
     assert EMPTY_TEXT in response.text
-    busy = client.get("/screens/MD04", params={"key": _rf_material(), "plant_code": "SC01"})
+    busy = client.get("/screens/MD04", params={"key": _rf_material(), "plant": "SC01"})
     assert EMPTY_TEXT not in busy.text
 
 
 def test_md04_not_found_and_prompts(client) -> None:
     for key in ("M-999999", "M-1' OR '1'='1"):
-        response = client.get("/screens/MD04", params={"key": key, "plant_code": "SC01"})
+        response = client.get("/screens/MD04", params={"key": key, "plant": "SC01"})
         assert response.status_code == 200
         assert "was not found" in response.text
     missing = client.get("/screens/MD04", params={"key": _rf_material()})
-    assert "Enter a plant code." in missing.text
-    elsewhere = render_screen("MD04", _rf_material(), {"plant_code": "ZZ99"})
+    assert "Enter a plant." in missing.text
+    elsewhere = render_screen("MD04", _rf_material(), {"plant": "ZZ99"})
     assert elsewhere.found is False
 
 
@@ -419,7 +419,7 @@ def test_cm01_not_found_and_page(client) -> None:
     page = client.get("/screens/CM01", params={"key": "SC01"})
     assert page.status_code == 200
     assert "SC01-B3" in page.text
-    assert "OVER" in page.text
+    assert "over 100 percent" in page.text
     assert page.text.count("Show the SQL") == 3
 
 
@@ -429,3 +429,63 @@ def test_planning_screens_are_read_only() -> None:
             statements = duckdb.extract_statements(sql)
             assert len(statements) == 1
             assert statements[0].type == duckdb.StatementType.SELECT
+
+
+def test_md04_states_the_lines_left_out(client) -> None:
+    unconfirmed = run_query(
+        """
+        SELECT i.material_no, h.plant_code
+        FROM purchase_order_item AS i
+        JOIN purchase_order AS h ON h.po_no = i.po_no
+        LEFT JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
+        WHERE h.order_date <= DATE '2026-11-01'
+          AND i.confirmed_delivery_date IS NULL
+        GROUP BY i.material_no, h.plant_code, i.po_no, i.line_no, i.order_qty
+        HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
+        LIMIT 1
+        """
+    ).rows
+    assert unconfirmed
+    material, plant = unconfirmed[0]
+    po_lines, spare_lines = run_query(planning.MD04_OMITTED_SQL, params=[material, plant]).rows[0]
+    assert po_lines > 0
+    page = client.get("/screens/MD04", params={"key": material, "plant": plant})
+    assert f"without a confirmed date ({po_lines})" in page.text
+    assert f"promised date ({spare_lines})" in page.text
+    spare_hit = None
+    candidates = run_query(
+        """
+        SELECT DISTINCT material_no
+        FROM sales_order_item
+        WHERE status = 'Open' AND promised_date <= DATE '2026-11-01'
+        ORDER BY material_no
+        LIMIT 40
+        """
+    ).rows
+    for (spare_material,) in candidates:
+        for (spare_plant,) in run_query("SELECT plant_code FROM plant").rows:
+            past = run_query(planning.MD04_OMITTED_SQL, params=[spare_material, spare_plant]).rows[
+                0
+            ][1]
+            if past > 0:
+                spare_hit = (spare_material, spare_plant, past)
+                break
+        if spare_hit:
+            break
+    assert spare_hit is not None
+    spare_material, spare_plant, past = spare_hit
+    spare_page = client.get("/screens/MD04", params={"key": spare_material, "plant": spare_plant})
+    assert f"promised date ({past})" in spare_page.text
+
+
+def test_spare_plant_cte_is_shared() -> None:
+    assert planning._SPARE_PLANT_CTE in planning.MD04_LIST_SQL
+    assert planning._SPARE_PLANT_CTE in planning.MD04_OMITTED_SQL
+    assert "origin.material_type = 'COMPONENT'" in planning._SPARE_PLANT_CTE
+
+
+def test_displayed_sql_is_dedented() -> None:
+    data = render_screen("CM01", "SC01", {})
+    for run in data.runs.values():
+        assert run.display_sql
+        assert not any(line.startswith(" " * 12) for line in run.display_sql.splitlines())

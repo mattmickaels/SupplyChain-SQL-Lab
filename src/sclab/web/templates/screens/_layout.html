@@ -5,12 +5,11 @@
   <div class="screen-bar">
     <h1><span class="screen-brand">Kestrel ERP</span> &middot; {{ screen.title }}</h1>
     <form class="tcode-box" action="/screens/go" method="get">
-      <label for="tcode">Transaction code</label>
-      <input id="tcode" name="tcode" value="{{ screen.code }}" size="6" autocomplete="off">
+      <input type="hidden" name="tcode" value="{{ screen.code }}">
       <label for="tcode-key">{{ screen.key_label }}</label>
       <input id="tcode-key" name="key" value="{{ key }}" size="14" autocomplete="off">
       {% for name in screen.params %}
-      <label for="param-{{ name }}">{{ name.replace('_', ' ') | title }}</label>
+      <label for="param-{{ name }}">{{ name | header_label }}</label>
       <input id="param-{{ name }}" name="{{ name }}" value="{{ request.query_params.get(name, '') }}" size="8" autocomplete="off">
       {% endfor %}
       <button type="submit">Go</button>

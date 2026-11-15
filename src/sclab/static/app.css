@@ -166,6 +166,12 @@ button {
   cursor: pointer;
 }
 
+button.danger {
+  background: transparent;
+  color: var(--warn);
+  border: 1px solid var(--warn);
+}
+
 button:focus-visible, a:focus-visible, textarea:focus-visible,
 input:focus-visible, select:focus-visible {
   outline: 2px solid var(--accent);
@@ -338,8 +344,17 @@ input[type="text"], select {
 
 .screen-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.8rem; }
 .screen-brand { color: var(--accent); }
-.tcode-box { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
-.tcode-box input { font-family: var(--mono); padding: 0.25rem 0.4rem; border: 1px solid var(--line); border-radius: 0.3rem; }
+.tcode-box { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; }
+.tcode-box label { margin: 0; }
+.tcode-box input, .tcode-box button {
+  height: 1.9rem;
+  box-sizing: border-box;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1.9rem;
+}
+.tcode-box input { font-family: var(--mono); padding-left: 0.4rem; padding-right: 0.4rem; border: 1px solid var(--line); border-radius: 0.3rem; }
+.tcode-box button { padding-left: 0.7rem; padding-right: 0.7rem; }
 .sql-panel { margin-top: 0.8rem; }
 .sql-panel summary { cursor: pointer; }
 .doc-block { margin: 1.1rem 0 1.4rem; }
@@ -355,7 +370,7 @@ input[type="text"], select {
   border-radius: 0.5rem;
 }
 .doc-header div { min-width: 0; }
-.doc-header dt { margin: 0; color: var(--muted); font-size: 0.78rem; text-transform: capitalize; }
+.doc-header dt { margin: 0; color: var(--muted); font-size: 0.78rem; }
 .doc-header dd { margin: 0.1rem 0 0; font-weight: 650; overflow-wrap: anywhere; }
 a.drill { font-weight: 650; text-decoration: none; }
 a.drill::after { content: " \25B8"; font-weight: 400; }
@@ -374,4 +389,31 @@ a.drill::after { content: " \25B8"; font-weight: 400; }
 .bom-level > li { padding: 0.35rem 0; border-top: 1px solid var(--line); }
 .bom-row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: baseline; }
 .bom-children { margin: 0.15rem 0 0.15rem 1.25rem; }
-.bom-expand { padding: 0.15rem 0.5rem; }
+.bom-expand {
+  padding: 0.05rem 0.45rem;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.screen-list li { grid-template-columns: 6.5ch 28ch minmax(0, 1fr); }
+.screen-list li > :nth-child(2) { white-space: nowrap; }
+.screen-prompt { margin: 0.6rem 0; font-family: inherit; }
+.screen-head {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.4rem 1.2rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+.screen-head dt { color: var(--muted); font-size: 0.85rem; }
+.screen-head dd { margin: 0; font-weight: 600; }
+.md04 td.num, .md04 th.num, .cm01 td.num, .cm01 th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.md04 tr.flag-shortage td { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
+.md04 tr.flag-safety td { background: var(--null-bg); }
+.md04 tr.row-stock td { font-weight: 600; }
+.cm01 td.over { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
+textarea[data-editor][hidden] { display: none; }

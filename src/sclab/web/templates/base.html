@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}SQL lab{% endblock %} - {{ company }}</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/vendor/codemirror.min.css">
   <link rel="stylesheet" href="/static/app.css">
 </head>
@@ -20,6 +21,12 @@
     <form class="tcode-box" action="/screens/go" method="get">
       <label for="header-tcode">Transaction code</label>
       <input id="header-tcode" name="tcode" size="6" maxlength="8" autocomplete="off" spellcheck="false">
+      {% if screen is defined %}
+      <input type="hidden" name="key" value="{{ key }}">
+      {% for name in screen.params %}
+      <input type="hidden" name="{{ name }}" value="{{ request.query_params.get(name, '') }}">
+      {% endfor %}
+      {% endif %}
       <button type="submit">Go</button>
     </form>
   </header>
