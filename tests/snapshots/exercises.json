@@ -235,6 +235,14 @@
     "md5": "3dbb27f01d19d970241c9df4cd7bbf5c",
     "row_count": 195
   },
+  "plan-corvane-exposure": {
+    "md5": "895ff0ff0aaf3688f60579db4b520e1e",
+    "row_count": 2
+  },
+  "plan-corvane-line-compare": {
+    "md5": "c7e92963fa13422e16bca862f5cab379",
+    "row_count": 18
+  },
   "plan-corvane-what-if": {
     "md5": "928ce2058961bfba3dbb825a01f33836",
     "row_count": 1
@@ -250,6 +258,18 @@
   "plan-open-demand": {
     "md5": "7c8b449c876d05bcc862474b8aea0930",
     "row_count": 23
+  },
+  "plan-rf-need-ledger": {
+    "md5": "6247dc3ad3ac1261e4a9eb2b4f365c35",
+    "row_count": 20
+  },
+  "plan-rf-spare-plant": {
+    "md5": "a869f96d46c42627c4ca195b86599993",
+    "row_count": 12
+  },
+  "plan-rf-supply-ledger": {
+    "md5": "ad79b3fac716cbd6a69c2dca8e47eaf8",
+    "row_count": 6
   },
   "plan-shortages": {
     "md5": "2e7849480b66f7efba6e65d98abdf6f3",
