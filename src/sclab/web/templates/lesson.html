@@ -18,6 +18,7 @@
     <input type="hidden" name="form_id" value="form-{{ exercise.id }}">
     <input type="hidden" name="label" value="{{ exercise.id }}">
     <input type="hidden" name="exercise_id" value="{{ exercise.id }}">
+    <input type="hidden" name="return_to" value="/lessons/{{ lesson_id }}#exercise-{{ exercise.id }}">
     <div class="actions">
       <button type="button" data-run hx-post="/api/run" hx-include="#form-{{ exercise.id }}" hx-target="#result-{{ exercise.id }}">Run</button>
       <button type="button" hx-post="/api/check/{{ exercise.id }}" hx-include="#form-{{ exercise.id }}" hx-target="#check-{{ exercise.id }}">Check</button>

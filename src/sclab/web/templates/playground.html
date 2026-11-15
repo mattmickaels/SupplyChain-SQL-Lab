@@ -6,7 +6,7 @@
 <p>This editor writes to the practice database. The lesson database stays read-only.</p>
 <form id="playground-form">
   <label for="playground-sql">SQL</label>
-  <textarea id="playground-sql" name="sql" data-editor rows="8" aria-label="Playground"></textarea>
+  <textarea id="playground-sql" name="sql" data-editor rows="8" aria-label="Playground">{{ playground_sql }}</textarea>
   <input type="hidden" name="target" value="sandbox">
   <input type="hidden" name="form_id" value="playground-form">
   <input type="hidden" name="label" value="playground">

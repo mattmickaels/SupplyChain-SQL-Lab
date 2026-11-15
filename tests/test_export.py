@@ -9,7 +9,10 @@ import pytest
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
-from sclab.web.app import create_app
+from sclab.engine.query import run_query as real_run_query
+from sclab.engine.types import QueryResult
+from sclab.web.app import create_app, format_cell
+from sclab.web.export import write_xlsx
 
 _ROOT = Path(__file__).resolve().parents[1]
 _TEMPLATE_DIR = _ROOT / "src" / "sclab" / "web" / "templates"
@@ -145,3 +148,198 @@ def test_result_grid_offers_download(client) -> None:
     assert "data-export" in script
     assert "HX-Request" in script
     assert "/api/export" in script
+    download = script.split("function downloadExport", 1)[1]
+    assert download.index("saveEditors()") < download.index("new FormData")
+
+
+def test_text_cells_are_not_formulas(client) -> None:
+    sql = "SELECT '=2+3' AS \"=2+3\", '+1' AS \"+1\", '@x' AS \"@x\", '#N/A' AS \"#N/A\""
+    response = client.post(
+        "/api/export",
+        data={"sql": sql, "target": "lesson", "label": "text"},
+    )
+    sheet = _sheet(response)
+    for column, text in enumerate(("=2+3", "+1", "@x", "#N/A"), start=1):
+        header = sheet.cell(1, column)
+        value = sheet.cell(2, column)
+        assert header.value == text
+        assert header.data_type == "s"
+        assert value.value == text
+        assert value.data_type == "s"
+
+
+def test_insert_returning_does_not_change_rows(client) -> None:
+    reset = client.post("/api/sandbox/reset")
+    assert reset.status_code == 200
+    count_sql = "SELECT count(*) AS n FROM plant WHERE plant_code = 'ZZ99'"
+    before = client.post("/api/run", data={"sql": count_sql, "target": "sandbox"})
+    assert ">0<" in before.text
+    insert = (
+        "INSERT INTO plant (plant_code, name, city, country) "
+        "VALUES ('ZZ99', 'Export Test', 'Nowhere', 'US') "
+        "RETURNING plant_code"
+    )
+    response = client.post(
+        "/api/export",
+        data={"sql": insert, "target": "sandbox", "label": "insert"},
+    )
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "Download works for SELECT queries." in response.text
+    assert "Run your change first, then download a SELECT of the rows." in response.text
+    assert "Back to the lesson" in response.text
+    assert not response.content.startswith(b"PK")
+    after = client.post("/api/run", data={"sql": count_sql, "target": "sandbox"})
+    assert ">0<" in after.text
+    assert ">1<" not in after.text
+
+
+def test_every_grid_downloads_current_sql(client) -> None:
+    ran = client.post(
+        "/api/run",
+        data={
+            "sql": "SELECT 1 AS n",
+            "target": "lesson",
+            "form_id": "form-sample-plants",
+            "exercise_id": "sample-plants",
+            "label": "sample-plants",
+        },
+    )
+    assert 'data-export="form-sample-plants"' in ran.text
+    assert 'name="sql"' not in ran.text
+    checked = client.post(
+        "/api/check/sample-plants",
+        data={"sql": "SELECT 'NOPE' AS plant_code"},
+    )
+    assert "Missing rows" in checked.text
+    assert "Extra rows" in checked.text
+    assert checked.text.count("Download Excel") == 2
+    assert checked.text.count('data-export="form-sample-plants"') == 2
+    assert 'name="sql"' not in checked.text
+    schema = client.get("/schema/plant")
+    assert 'data-export="schema-plant"' in schema.text
+    assert "SELECT * FROM plant LIMIT 20" in schema.text
+    playground = client.post(
+        "/api/run",
+        data={
+            "sql": "SELECT 1 AS n",
+            "target": "sandbox",
+            "form_id": "playground-form",
+            "label": "playground",
+        },
+    )
+    assert 'data-export="playground-form"' in playground.text
+    assert 'name="sql"' not in playground.text
+    drill = client.post(
+        "/api/run",
+        data={
+            "sql": "SELECT 'stale' AS label",
+            "target": "lesson",
+            "form_id": "form-drill-sample",
+            "label": "drill-sample",
+        },
+    )
+    assert 'data-export="form-drill-sample"' in drill.text
+    assert 'name="sql"' not in drill.text
+    current = client.post(
+        "/api/export",
+        data={
+            "sql": "SELECT 'current editor' AS label",
+            "target": "lesson",
+            "label": "drill-sample",
+        },
+    )
+    sheet = _sheet(current)
+    assert sheet["A2"].value == "current editor"
+    assert sheet["A2"].data_type == "s"
+
+
+def test_export_timeout_returns_page(client, monkeypatch) -> None:
+    def limited(sql: str, target: str = "lesson", max_rows: int = 1000, timeout_s: float = 15.0):
+        return real_run_query(sql, target=target, max_rows=max_rows, timeout_s=0.05)
+
+    monkeypatch.setattr("sclab.web.app.run_query", limited)
+    response = client.post(
+        "/api/export",
+        data={
+            "sql": "SELECT sum(a.range) FROM range(1000000) a, range(3000) b",
+            "target": "lesson",
+            "label": "slow",
+            "exercise_id": "sample-plants",
+        },
+    )
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "spreadsheet" not in response.headers["content-type"]
+    assert "Back to the lesson" in response.text
+    assert 'href="/lessons/00-sample#exercise-sample-plants"' in response.text
+    assert "15 seconds" in response.text
+    assert not response.content.startswith(b"PK")
+
+
+def test_grid_and_workbook_share_column_types(client) -> None:
+    sql = (
+        "SELECT DATE '2026-11-01' AS day, "
+        "12.50::DECIMAL(10, 2) AS amount, "
+        "NULL::INTEGER AS empty, "
+        "'  pad  ' AS label, "
+        "TRUE AS flag, "
+        "'2026-11-01' AS text_day"
+    )
+    grid = client.post(
+        "/api/run", data={"sql": sql, "target": "lesson", "form_id": "form-sample-plants"}
+    )
+    assert ">2026-11-01<" in grid.text
+    assert ">12.50<" in grid.text
+    assert '<span class="null">NULL</span>' in grid.text
+    assert ">  pad  <" in grid.text
+    assert ">true<" in grid.text
+    sheet = _sheet(
+        client.post("/api/export", data={"sql": sql, "target": "lesson", "label": "types"})
+    )
+    assert sheet["A2"].value == datetime(2026, 11, 1)
+    assert isinstance(sheet["B2"].value, int | float)
+    assert sheet["B2"].value == 12.5
+    assert sheet["C2"].value is None
+    assert sheet["D2"].value == "  pad  "
+    assert sheet["E2"].value is True
+    assert sheet["F2"].value == "2026-11-01"
+    assert sheet["F2"].data_type == "s"
+    moment = datetime(2026, 11, 1, 0, 0)
+    typed = QueryResult(
+        columns=["as_text", "as_date"],
+        column_types=["VARCHAR", "DATE"],
+        rows=[(moment, moment)],
+        total_rows=1,
+        truncated=False,
+        elapsed_ms=1,
+    )
+    direct = load_workbook(BytesIO(write_xlsx(typed, "types", None))).active
+    assert direct is not None
+    assert direct["A2"].data_type == "s"
+    assert direct["A2"].value == format_cell(moment, "VARCHAR")
+    assert isinstance(direct["B2"].value, datetime)
+    assert "2026-11-01" in format_cell(moment, "DATE")
+
+
+def test_error_link_returns_to_the_editor(client) -> None:
+    sql = "SELEC plant_code FROM plant"
+    lesson = client.post(
+        "/api/export",
+        data={
+            "sql": sql,
+            "target": "lesson",
+            "label": "sample-plants",
+            "exercise_id": "sample-plants",
+        },
+    )
+    assert 'href="/lessons/00-sample#exercise-sample-plants"' in lesson.text
+    page = client.get("/lessons/00-sample")
+    assert sql in page.text
+    playground = client.post(
+        "/api/export",
+        data={"sql": "SELEC 1", "target": "sandbox", "label": "playground"},
+    )
+    assert 'href="/playground?sql=SELEC+1"' in playground.text
+    returned = client.get("/playground", params={"sql": "SELEC 1"})
+    assert "SELEC 1" in returned.text

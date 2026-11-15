@@ -32,6 +32,13 @@
 {% if error %}
 <p class="message">{{ error }}</p>
 {% elif preview %}
+<form id="schema-{{ spec.name }}">
+  <input type="hidden" name="sql" value="SELECT * FROM {{ spec.name }} LIMIT 20">
+  <input type="hidden" name="target" value="lesson">
+  <input type="hidden" name="label" value="schema-{{ spec.name }}">
+  <input type="hidden" name="return_to" value="/schema/{{ spec.name }}">
+</form>
+{% set export_form = "schema-" ~ spec.name %}
 {% with columns=preview.columns, rows=preview.rows, types=preview.column_types %}
 {% include "_grid.html" %}
 {% endwith %}
