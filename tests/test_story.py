@@ -124,6 +124,89 @@ def test_bay_overload(lab_conn) -> None:
         assert sum(counts_for_bay) / len(counts_for_bay) <= slots[bay_id]
 
 
+# CM01 shows 26 Monday weeks from the day after the Sunday snapshot.
+CAPACITY_START = AS_OF_DATE + timedelta(days=1)
+CAPACITY_WEEKS = [CAPACITY_START + timedelta(weeks=n) for n in range(26)]
+# Deposition has the thinnest open backlog: the planted overload took recent bookings,
+# and one Deposition tool must stay idle for the supplier-warning scenario.
+# Its smallest possible bay (2 slots) therefore sits a little under the usual floor.
+FORWARD_LOAD_FLOOR = {"AU01-B1": 30}
+
+
+def test_every_bay_has_history_and_forward_starts(lab_conn) -> None:
+    rows = lab_conn.execute(
+        """
+        SELECT b.bay_id,
+               COUNT(p.prod_order_no) FILTER (
+                   WHERE p.planned_start > ? - INTERVAL 12 MONTH AND p.planned_start <= ?
+               ) AS last_year,
+               COUNT(p.prod_order_no) FILTER (
+                   WHERE p.status IN ('Planned', 'Released') AND p.planned_start > ?
+                     AND p.planned_start < ? + INTERVAL 182 DAY
+               ) AS next_26_weeks
+        FROM build_bay b LEFT JOIN production_order p ON p.bay_id = b.bay_id
+        GROUP BY b.bay_id ORDER BY b.bay_id
+        """,
+        [AS_OF_DATE, AS_OF_DATE, AS_OF_DATE, CAPACITY_START],
+    ).fetchall()
+    assert rows
+    for bay_id, last_year, next_26_weeks in rows:
+        assert last_year > 0, bay_id
+        assert next_26_weeks > 0, bay_id
+
+
+def test_bays_only_for_families_a_plant_builds(lab_conn) -> None:
+    built = set(
+        lab_conn.execute(
+            """
+            SELECT DISTINCT p.plant_code, m.family_code
+            FROM production_order p JOIN material m ON m.material_no = p.material_no
+            """
+        ).fetchall()
+    )
+    bays = set(lab_conn.execute("SELECT plant_code, family_code FROM build_bay").fetchall())
+    assert bays == built
+    misplaced = lab_conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM production_order p JOIN material m ON m.material_no = p.material_no
+        JOIN build_bay b ON b.bay_id = p.bay_id
+        WHERE b.plant_code <> p.plant_code OR b.family_code <> m.family_code
+        """
+    ).fetchone()[0]
+    assert misplaced == 0
+
+
+def test_forward_bay_load_is_realistic(lab_conn) -> None:
+    start, end = OVERLOAD_WINDOW
+    slots = dict(lab_conn.execute("SELECT bay_id, weekly_slots FROM build_bay").fetchall())
+    starts = lab_conn.execute(
+        """
+        SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
+               COUNT(*) AS starts
+        FROM production_order
+        WHERE status IN ('Planned', 'Released') AND planned_start > ?
+        GROUP BY ALL
+        """,
+        [AS_OF_DATE],
+    ).fetchall()
+    load = {(bay_id, week): count for bay_id, week, count in starts}
+    for bay_id, weekly_slots in slots.items():
+        weekly = [load.get((bay_id, week), 0) / weekly_slots for week in CAPACITY_WEEKS]
+        average = 100 * sum(weekly) / len(weekly)
+        assert average >= FORWARD_LOAD_FLOOR.get(bay_id, 40), (bay_id, average)
+        if bay_id == OVERLOADED_BAY:
+            # The planted overload lifts this bay's average; its other weeks stay in range.
+            quiet = [
+                share
+                for week, share in zip(CAPACITY_WEEKS, weekly, strict=True)
+                if week + timedelta(days=6) < start or week > end
+            ]
+            assert 100 * sum(quiet) / len(quiet) <= 100, bay_id
+        else:
+            assert average <= 100, (bay_id, average)
+
+
 PROJECTION_CTES = """
     WITH RECURSIVE tree AS (
         SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,

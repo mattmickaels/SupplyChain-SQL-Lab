@@ -254,7 +254,17 @@ N_LONG_LEAD = 240
 N_RF = 12
 N_SUPPLIERS = 150
 N_CUSTOMERS = 25
-N_BAYS = 5
+# Build bays as (bay_id, plant, family, weekly start slots); each family has one home plant.
+# The overloaded Etch bay keeps 6 slots, and its Etch twin keeps 4 for the rebalancing drill.
+# Bays keep their earlier ids; bays for families a plant never builds were retired.
+BAYS = (
+    ("AU01-B1", "AU01", "DEP", 2),
+    ("AU01-B4", "AU01", "INS", 2),
+    ("SC01-B2", "SC01", "ETC", 4),
+    (OVERLOADED_BAY, "SC01", "ETC", 6),
+    ("SG01-B3", "SG01", "CMP", 2),
+)
+RETIRED_LAYOUT_BAYS = 5
 _ADJECTIVES = (
     "Amber",
     "Bright",
@@ -843,27 +853,15 @@ def _bom_rows(rng, edges: list[tuple[str, str]], rf_subs: set[str]) -> list[dict
 
 
 def _bays(rng) -> list[dict]:
-    rows = []
-    for code, _name, _city, _country in PLANTS:
-        for number in range(1, N_BAYS + 1):
-            bay_id = f"{code}-B{number}"
-            if bay_id == OVERLOADED_BAY:
-                family_code = "ETC"
-            else:
-                family_code = FAMILIES[(number - 1) % len(FAMILIES)][0]
-            slots = int(rng.integers(2, 7))
-            if code == "SC01" and family_code == "ETC" and bay_id != OVERLOADED_BAY:
-                # The other Etch bay carries all normal Etch work, so it needs real capacity.
-                slots = max(slots, 4)
-            rows.append(
-                {
-                    "bay_id": bay_id,
-                    "plant_code": code,
-                    "family_code": family_code,
-                    "weekly_slots": slots,
-                }
-            )
-    return rows
+    """Bays only for the families each plant builds, sized to that family's starts."""
+    # The original layout drew one slot count for each of five bays per plant.
+    # Keep drawing them so every later random value stays where it was.
+    for _bay in range(len(PLANTS) * RETIRED_LAYOUT_BAYS):
+        rng.integers(2, 7)
+    return [
+        {"bay_id": bay_id, "plant_code": plant, "family_code": family, "weekly_slots": slots}
+        for bay_id, plant, family, slots in BAYS
+    ]
 
 
 def _frame(name: str, rows: list[dict]) -> pd.DataFrame:

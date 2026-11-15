@@ -22,10 +22,10 @@ SELECT plant_code, COUNT(*) AS bays
 FROM build_bay GROUP BY plant_code ORDER BY plant_code
 ```
 
-The result has AU01, SC01 and SG01, with 5 bays each.
+The result has AU01 and SC01 with 2 bays each, and SG01 with 1.
 A three-line explanation could read:
 
-> Each of the three plants has 5 build bays in the master data.
+> The master data has 5 build bays: 2 each at AU01 and SC01, and 1 at SG01.
 > Bay counts alone cannot establish a capacity bottleneck because weekly slots and scheduled starts also matter.
 > Compare weekly starts with each bay's slots before moving work.
 

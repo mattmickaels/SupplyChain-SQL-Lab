@@ -120,7 +120,7 @@ ORDER BY plant_code
 ```
 
 Three rows come back.
-AU01, SC01, and SG01 each have 5 bays.
+AU01 and SC01 have 2 bays each, and SG01 has 1.
 
 A join can multiply rows.
 Line 1 of PO-0000003 orders 25 and has three goods receipts of 9, 8, and 8.

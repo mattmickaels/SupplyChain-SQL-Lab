@@ -349,18 +349,18 @@ expected_rows = [
 order_matters = true
 
 [[example]]
-id = "december-starts"
+id = "february-starts"
 sql = """
 SELECT b.bay_id, b.weekly_slots,
-       COUNT(p.prod_order_no) AS december_starts
+       COUNT(p.prod_order_no) AS february_starts
 FROM build_bay b LEFT JOIN production_order p ON p.bay_id = b.bay_id
- AND p.planned_start >= DATE '2026-12-01' AND p.planned_start < DATE '2027-01-01'
+ AND p.planned_start >= DATE '2027-02-01' AND p.planned_start < DATE '2027-03-01'
 WHERE b.bay_id IN ('AU01-B1', 'SC01-B3')
 GROUP BY b.bay_id, b.weekly_slots ORDER BY b.bay_id
 """
 expected_rows = [
   ["AU01-B1", 2, 0],
-  ["SC01-B3", 6, 37]
+  ["SC01-B3", 6, 32]
 ]
 order_matters = true
 
