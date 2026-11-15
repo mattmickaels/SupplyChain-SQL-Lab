@@ -37,14 +37,16 @@ def run_query(
     target: Literal["lesson", "sandbox"] = "lesson",
     max_rows: int = MAX_ROWS,
     timeout_s: float = TIMEOUT_S,
+    *,
+    read_only: bool = False,
 ) -> QueryResult:
-    """Run one statement and return at most max_rows rows."""
+    """Run one statement, optionally forcing the sandbox to be read-only too."""
     _statements(sql)
     if target not in ("lesson", "sandbox"):
         raise QueryError("Choose the lesson database or the practice database.")
     started = time.perf_counter()
     try:
-        connection = _connect(target)
+        connection = _connect(target, read_only=read_only)
     except duckdb.Error as exc:
         raise QueryError(str(exc)) from exc
     interrupted = False
@@ -111,10 +113,10 @@ def _statements(sql: str) -> list:
     return statements
 
 
-def _connect(target: str):
+def _connect(target: str, *, read_only: bool = False):
     if target == "lesson":
         return duckdb.connect(str(lab_db_path()), read_only=True, config=_SAFETY)
-    return duckdb.connect(str(sandbox_db_path()), read_only=False, config=_SAFETY)
+    return duckdb.connect(str(sandbox_db_path()), read_only=read_only, config=_SAFETY)
 
 
 def _column_info(description) -> tuple[list[str], list[str]]:

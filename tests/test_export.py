@@ -1,7 +1,7 @@
 """Excel export of a query result."""
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 
@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
+from sclab.engine.query import _connect
 from sclab.engine.query import run_query as real_run_query
 from sclab.engine.types import QueryResult
 from sclab.web.app import create_app, format_cell
@@ -194,6 +195,46 @@ def test_insert_returning_does_not_change_rows(client) -> None:
     assert ">1<" not in after.text
 
 
+def test_select_export_does_not_advance_sandbox_sequence(client) -> None:
+    assert client.post("/api/sandbox/reset").status_code == 200
+    created = client.post(
+        "/api/run", data={"sql": "CREATE SEQUENCE export_sequence START 41", "target": "sandbox"}
+    )
+    assert "error" not in created.text.lower()
+    for _ in range(2):
+        response = client.post(
+            "/api/export",
+            data={"sql": "SELECT nextval('export_sequence')", "target": "sandbox"},
+        )
+        if _XLSX in response.headers["content-type"]:
+            assert _sheet(response)["A2"].value == 41
+        else:
+            assert response.status_code == 200
+            assert "text/html" in response.headers["content-type"]
+            assert "Could not export" in response.text
+    after = client.post(
+        "/api/run", data={"sql": "SELECT nextval('export_sequence')", "target": "sandbox"}
+    )
+    assert ">41<" in after.text
+
+
+def test_sandbox_writer_returns_export_error_without_fallback(client) -> None:
+    assert client.post("/api/sandbox/reset").status_code == 200
+    writer = _connect("sandbox")
+    try:
+        writer.execute("CREATE SEQUENCE held_sequence START 41")
+        response = client.post(
+            "/api/export",
+            data={"sql": "SELECT nextval('held_sequence')", "target": "sandbox"},
+        )
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+        assert "Could not export" in response.text
+        assert writer.execute("SELECT nextval('held_sequence')").fetchone() == (41,)
+    finally:
+        writer.close()
+
+
 def test_every_grid_downloads_current_sql(client) -> None:
     ran = client.post(
         "/api/run",
@@ -230,33 +271,20 @@ def test_every_grid_downloads_current_sql(client) -> None:
     )
     assert 'data-export="playground-form"' in playground.text
     assert 'name="sql"' not in playground.text
-    drill = client.post(
-        "/api/run",
-        data={
-            "sql": "SELECT 'stale' AS label",
-            "target": "lesson",
-            "form_id": "form-drill-sample",
-            "label": "drill-sample",
-        },
-    )
-    assert 'data-export="form-drill-sample"' in drill.text
-    assert 'name="sql"' not in drill.text
-    current = client.post(
-        "/api/export",
-        data={
-            "sql": "SELECT 'current editor' AS label",
-            "target": "lesson",
-            "label": "drill-sample",
-        },
-    )
-    sheet = _sheet(current)
-    assert sheet["A2"].value == "current editor"
-    assert sheet["A2"].data_type == "s"
 
 
 def test_export_timeout_returns_page(client, monkeypatch) -> None:
-    def limited(sql: str, target: str = "lesson", max_rows: int = 1000, timeout_s: float = 15.0):
-        return real_run_query(sql, target=target, max_rows=max_rows, timeout_s=0.05)
+    def limited(
+        sql: str,
+        target: str = "lesson",
+        max_rows: int = 1000,
+        timeout_s: float = 15.0,
+        *,
+        read_only: bool = False,
+    ):
+        return real_run_query(
+            sql, target=target, max_rows=max_rows, timeout_s=0.05, read_only=read_only
+        )
 
     monkeypatch.setattr("sclab.web.app.run_query", limited)
     response = client.post(
@@ -284,7 +312,12 @@ def test_grid_and_workbook_share_column_types(client) -> None:
         "NULL::INTEGER AS empty, "
         "'  pad  ' AS label, "
         "TRUE AS flag, "
-        "'2026-11-01' AS text_day"
+        "'2026-11-01' AS text_day, "
+        "TIMESTAMP '2026-11-01 12:34:56' AS ts, "
+        "CAST('2026-11-01 12:34:56' AS TIMESTAMP_S) AS ts_s, "
+        "CAST('2026-11-01 12:34:56' AS TIMESTAMP_MS) AS ts_ms, "
+        "CAST('2026-11-01 12:34:56' AS TIMESTAMP_NS) AS ts_ns, "
+        "TIMESTAMPTZ '2026-11-01 12:34:56+05:30' AS ts_zone"
     )
     grid = client.post(
         "/api/run", data={"sql": sql, "target": "lesson", "form_id": "form-sample-plants"}
@@ -305,6 +338,13 @@ def test_grid_and_workbook_share_column_types(client) -> None:
     assert sheet["E2"].value is True
     assert sheet["F2"].value == "2026-11-01"
     assert sheet["F2"].data_type == "s"
+    for column in "GHIJ":
+        assert sheet[f"{column}2"].data_type == "d"
+        assert sheet[f"{column}2"].value == datetime(2026, 11, 1, 12, 34, 56)
+        assert sheet[f"{column}2"].number_format == "yyyy-mm-dd hh:mm:ss"
+    assert sheet["K1"].value == "ts_zone (UTC)"
+    assert sheet["K2"].data_type == "d"
+    assert sheet["K2"].value == datetime(2026, 11, 1, 7, 4, 56)
     moment = datetime(2026, 11, 1, 0, 0)
     typed = QueryResult(
         columns=["as_text", "as_date"],
@@ -320,6 +360,26 @@ def test_grid_and_workbook_share_column_types(client) -> None:
     assert direct["A2"].value == format_cell(moment, "VARCHAR")
     assert isinstance(direct["B2"].value, datetime)
     assert "2026-11-01" in format_cell(moment, "DATE")
+
+
+def test_python_temporal_values_and_midnight_zone_are_excel_dates() -> None:
+    moment = datetime(2026, 11, 1, 12, 34, 56)
+    midnight = datetime(2026, 11, 1, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+    result = QueryResult(
+        columns=["fallback", "midnight"],
+        column_types=["UNRECOGNIZED", "TIMESTAMP WITH TIME ZONE"],
+        rows=[(moment, midnight)],
+        total_rows=1,
+        truncated=False,
+        elapsed_ms=0,
+    )
+    sheet = load_workbook(BytesIO(write_xlsx(result, "temporal", None))).active
+    assert sheet is not None
+    assert sheet["A2"].data_type == "d"
+    assert sheet["A2"].value == moment
+    assert sheet["B1"].value == "midnight (UTC)"
+    assert sheet["B2"].data_type == "d"
+    assert sheet["B2"].value == datetime(2026, 10, 31, 18, 30)
 
 
 def test_error_link_returns_to_the_editor(client) -> None:

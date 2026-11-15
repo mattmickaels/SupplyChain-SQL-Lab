@@ -1,7 +1,7 @@
 """Write a query result to an .xlsx workbook."""
 
 import re
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from io import BytesIO
 
@@ -69,7 +69,15 @@ def write_xlsx(result: QueryResult, sheet_title: str, note: str | None) -> bytes
         header_row = 2
         _grow(widths, 1, _text_width(note))
     bold = Font(bold=True)
+    utc_columns = {
+        index
+        for row in result.rows
+        for index, value in enumerate(row)
+        if isinstance(value, datetime) and value.utcoffset() is not None
+    }
     for column, name in enumerate(result.columns, start=1):
+        if column - 1 in utc_columns:
+            name = f"{name} (UTC)"
         header = _text_cell(sheet.cell(header_row, column), str(name))
         header.font = bold
         _grow(widths, column, _text_width(str(name)))
@@ -131,6 +139,10 @@ def _text_width(text: str) -> int:
 
 def _excel_value(type_name: object, value: object) -> tuple[object, str | None, int, bool]:
     kind = cell_kind(type_name, value)
+    if kind in {"date", "datetime"} and isinstance(value, datetime):
+        if value.utcoffset() is not None:
+            value = value.astimezone(UTC).replace(tzinfo=None)
+            kind = "datetime"
     shown = display_text(type_name, value)
     width = 0 if shown is None else _text_width(shown)
     if kind == "empty":
@@ -167,7 +179,7 @@ def _as_excel_date(value: object) -> datetime | None:
 
 def _as_excel_datetime(value: object) -> datetime | None:
     if isinstance(value, datetime):
-        return value.replace(tzinfo=None) if value.tzinfo is not None else value
+        return value
     return None
 
 

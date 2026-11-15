@@ -209,7 +209,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
                 return _export_error_page(refusal, back)
             cap = excel.EXPORT_MAX_ROWS
             try:
-                result = await run_in_threadpool(run_query, sql, target, cap)
+                result = await run_in_threadpool(run_query, sql, target, cap, read_only=True)
             except QueryError as exc:
                 await _keep_editor(exercises, exercise_id, sql)
                 return _export_error_page(exc.message, back)

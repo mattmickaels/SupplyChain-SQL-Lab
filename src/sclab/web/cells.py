@@ -7,6 +7,9 @@ _DATE = frozenset({"DATE"})
 _DATETIME = frozenset(
     {
         "TIMESTAMP",
+        "TIMESTAMP_S",
+        "TIMESTAMP_MS",
+        "TIMESTAMP_NS",
         "TIMESTAMP WITH TIME ZONE",
         "TIMESTAMP_TZ",
         "DATETIME",
@@ -49,7 +52,7 @@ def is_numeric_type(type_name: object) -> bool:
 def cell_kind(type_name: object, value: object) -> str:
     """Return empty, date, datetime, number, boolean, or text.
 
-    The column type wins. A missing type falls back to the Python value.
+    Known column types win. Other types fall back to Python temporal values.
     """
     if value is None:
         return "empty"
@@ -64,14 +67,16 @@ def cell_kind(type_name: object, value: object) -> str:
         return "boolean"
     if head in _NUMERIC:
         return "number"
-    if head:
+    if head in {"VARCHAR", "CHAR", "TEXT"}:
         return "text"
-    if isinstance(value, bool):
-        return "boolean"
     if isinstance(value, datetime):
         return "datetime" if _has_time(value) else "date"
     if isinstance(value, date):
         return "date"
+    if head:
+        return "text"
+    if isinstance(value, bool):
+        return "boolean"
     if isinstance(value, Decimal | int | float):
         return "number"
     return "text"
