@@ -198,8 +198,9 @@ id = "plan-shortages"
 title = "First shortage week"
 prompt_md = """
 Use the same 26 seven-day buckets and production-only RM01 balance convention as the preceding exercise, from DATE '2026-11-01' inclusive to DATE '2027-05-02' exclusive.
-Across all plants, find materials marked is_long_lead or described exactly as RF generator with future production demand in this horizon whose end-of-bucket projected balance is below that plant's safety_stock.
+Across all plants, find materials marked is_long_lead or described exactly as RF generator whose end-of-bucket projected balance is below that plant's safety_stock.
 Return material_no, plant_code, first_shortage_week (DATE), sorted by material_no then plant_code.
+Include material-plant pairs already below safety stock even when they have no future production demand.
 Keep only material-plant pairs with a breach, and return their earliest breach, not their lowest balance week.
 """
 hints = [
@@ -243,12 +244,6 @@ WITH RECURSIVE tree AS (
     SELECT mp.material_no, mp.plant_code, mp.safety_stock
     FROM material_plant mp JOIN material m ON m.material_no = mp.material_no
     WHERE (m.is_long_lead = true OR m.description = 'RF generator')
-      AND EXISTS (
-          SELECT 1 FROM production_order p JOIN leaves l ON l.root = p.material_no
-          WHERE l.material_no = mp.material_no AND p.plant_code = mp.plant_code
-            AND p.status IN ('Planned', 'Released')
-            AND p.planned_start > DATE '2026-11-01' AND p.planned_start < DATE '2027-05-02'
-      )
 ), demand AS (
     SELECT l.material_no, p.plant_code, p.planned_start AS day, SUM(p.qty * l.qty) AS qty
     FROM production_order p JOIN leaves l ON l.root = p.material_no
@@ -422,7 +417,7 @@ title = "Build bay load by week"
 prompt_md = """
 For production starts from DATE '2026-12-01' inclusive to DATE '2027-03-01' exclusive, count production orders per bay and ISO Monday week.
 Each production order consumes one start slot, regardless of quantity or duration.
-Include every build bay in every week represented by a production start in the period, including zero-load combinations.
+Include every build bay in all 13 ISO weeks intersecting the window, from DATE '2026-11-30' through DATE '2027-02-22', even when a week has no production starts anywhere.
 Boundary weeks count only starts inside the date range and retain a full weekly_slots denominator; do not prorate capacity.
 Return bay_id, week_start (DATE), starts, weekly_slots, load_pct (rounded to 2 decimals), overloaded (boolean, strictly over 100 percent).
 Sort by bay_id then week_start.
@@ -430,13 +425,16 @@ Sort by bay_id then week_start.
 hints = [
   "This is start-slot load, not the number of tools occupying a bay for their whole build.",
   "Cross join bays to weeks, left join COUNT of starts, then compare with weekly_slots.",
-  "WITH weeks AS (___), loads AS (___), grid AS (___) SELECT bay_id, week_start, ___, ROUND(100.0 * ___ / ___, 2) AS load_pct, ___ > ___ AS overloaded FROM grid ORDER BY ___"
+  "WITH RECURSIVE weeks(level) AS (___), calendar AS (___), loads AS (___), grid AS (___) SELECT bay_id, week_start, ___, ROUND(100.0 * ___ / ___, 2) AS load_pct, ___ > ___ AS overloaded FROM grid ORDER BY ___"
 ]
 reference_sql = ["""
-WITH weeks AS (
-    SELECT DISTINCT CAST(date_trunc('week', planned_start) AS DATE) AS week_start
-    FROM production_order
-    WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+WITH RECURSIVE weeks(level) AS (
+    SELECT 0
+    UNION ALL
+    SELECT level + 1 FROM weeks WHERE level < 12
+), calendar AS (
+    SELECT CAST(DATE '2026-11-30' + level * INTERVAL 7 DAY AS DATE) AS week_start
+    FROM weeks
 ), loads AS (
     SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
            COUNT(*) AS starts
@@ -445,7 +443,7 @@ WITH weeks AS (
     GROUP BY bay_id, CAST(date_trunc('week', planned_start) AS DATE)
 ), grid AS (
     SELECT b.bay_id, w.week_start, COALESCE(l.starts, 0) AS starts, b.weekly_slots
-    FROM build_bay b CROSS JOIN weeks w
+    FROM build_bay b CROSS JOIN calendar w
     LEFT JOIN loads l ON l.bay_id = b.bay_id AND l.week_start = w.week_start
 )
 SELECT bay_id, week_start, starts, weekly_slots,

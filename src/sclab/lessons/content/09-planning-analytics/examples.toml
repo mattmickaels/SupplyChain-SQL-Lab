@@ -166,3 +166,26 @@ expected_rows = [
   ["SG01-B5", 3, 0]
 ]
 order_matters = true
+
+[[example]]
+id = "complete-capacity-calendar"
+sql = """
+WITH RECURSIVE weeks(level) AS (SELECT 0 UNION ALL SELECT level + 1 FROM weeks WHERE level < 12)
+SELECT CAST(DATE '2026-11-30' + level * INTERVAL 7 DAY AS DATE) AS week_start FROM weeks ORDER BY week_start
+"""
+expected_rows = [
+  ["2026-11-30"],
+  ["2026-12-07"],
+  ["2026-12-14"],
+  ["2026-12-21"],
+  ["2026-12-28"],
+  ["2027-01-04"],
+  ["2027-01-11"],
+  ["2027-01-18"],
+  ["2027-01-25"],
+  ["2027-02-01"],
+  ["2027-02-08"],
+  ["2027-02-15"],
+  ["2027-02-22"]
+]
+order_matters = true

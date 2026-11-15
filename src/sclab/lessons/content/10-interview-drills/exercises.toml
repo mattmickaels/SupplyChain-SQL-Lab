@@ -100,8 +100,8 @@ id = "drill-bay-bottleneck"
 title = "Which bay is the bottleneck?"
 prompt_md = """
 For this drill, next quarter means the planning quarter DATE '2026-12-01' inclusive through DATE '2027-03-01' exclusive.
-Use the weekly start-slot method from lesson 9, including zero-load bay-weeks and full slots in boundary weeks.
-Return one row per bay: bay_id, total_starts, total_slots (weekly_slots times represented weeks), excess_starts (sum of positive weekly starts minus slots), load_pct (100 times total starts / total slots, rounded to 2 decimals).
+Use the weekly start-slot method from lesson 9, including all 13 ISO weeks from DATE '2026-11-30' through DATE '2027-02-22', zero-load bay-weeks and full slots in boundary weeks.
+Return one row per bay: bay_id, total_starts, total_slots (weekly_slots times all 13 calendar weeks), excess_starts (sum of positive weekly starts minus slots), load_pct (100 times total starts / total slots, rounded to 2 decimals).
 Each production order is one start slot.
 Sort by load_pct descending then bay_id and return all bays.
 Use excess_starts to describe how many starts need moving, even when average utilization hides peak weeks.
@@ -109,13 +109,16 @@ Use excess_starts to describe how many starts need moving, even when average uti
 hints = [
   "Include quiet weeks so an average does not exaggerate load.",
   "Make the bay-week grid first; sum positive weekly overload rather than netting peaks against spare weeks.",
-  "WITH weeks AS (___), loads AS (___), grid AS (___) SELECT bay_id, SUM(___), SUM(___), SUM(CASE WHEN ___ THEN ___ ELSE 0 END), ROUND(___, 2) AS load_pct FROM grid GROUP BY ___ ORDER BY ___"
+  "WITH RECURSIVE weeks(level) AS (___), calendar AS (___), loads AS (___), grid AS (___) SELECT bay_id, SUM(___), SUM(___), SUM(CASE WHEN ___ THEN ___ ELSE 0 END), ROUND(___, 2) AS load_pct FROM grid GROUP BY ___ ORDER BY ___"
 ]
 reference_sql = ["""
-WITH weeks AS (
-    SELECT DISTINCT CAST(date_trunc('week', planned_start) AS DATE) AS week_start
-    FROM production_order
-    WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+WITH RECURSIVE weeks(level) AS (
+    SELECT 0
+    UNION ALL
+    SELECT level + 1 FROM weeks WHERE level < 12
+), calendar AS (
+    SELECT CAST(DATE '2026-11-30' + level * INTERVAL 7 DAY AS DATE) AS week_start
+    FROM weeks
 ), loads AS (
     SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
            COUNT(*) AS starts
@@ -124,7 +127,7 @@ WITH weeks AS (
     GROUP BY bay_id, CAST(date_trunc('week', planned_start) AS DATE)
 ), grid AS (
     SELECT b.bay_id, w.week_start, COALESCE(l.starts, 0) AS starts, b.weekly_slots
-    FROM build_bay b CROSS JOIN weeks w
+    FROM build_bay b CROSS JOIN calendar w
     LEFT JOIN loads l ON l.bay_id = b.bay_id AND l.week_start = w.week_start
 )
 SELECT bay_id, SUM(starts) AS total_starts, SUM(weekly_slots) AS total_slots,
@@ -139,7 +142,7 @@ databricks_note = "Databricks: date_trunc('MONTH', d) and date_trunc('WEEK', d) 
 time_limit_s = 900
 summary_prompt = "Write three lines: the main result with numbers, the planning implication or limitation, and a specific next action."
 model_summary = """
-SC01-B3 is the Dec-Feb bottleneck: 104 starts against 78 slots, or 133.33% load.
+SC01-B3 is the Dec-Feb bottleneck: 104 starts against 78 slots across all 13 calendar weeks, or 133.33% load.
 Its positive weekly overload totals 26 starts; this start-slot metric does not measure occupied bay days.
 Move or add capacity for those 26 starts, checking compatible bays and customer promises week by week.
 """

@@ -66,6 +66,7 @@ Name each CTE's grain before writing the join.
 
 Projected available balance (PAB) is opening stock plus scheduled receipts minus planned requirements.
 Safety stock is a planning threshold; a balance below it is a warning even if the balance is positive.
+Include a material-plant pair already below safety stock even when it has no future production demand.
 An end-of-week balance can hide a midweek shortage, so use dated demand and supply to investigate customer risk.
 The projection exercises use 26 seven-day buckets starting on the snapshot Sunday.
 The capacity exercises use ISO Monday weeks instead; the prompts identify the convention.
@@ -171,6 +172,17 @@ It does not promise that customer shipment dates slip by the same number of days
 weekly_slots is capacity for production starts, not simultaneous occupied bays.
 Count one production order as one start slot in this lab.
 Create a complete bay-week grid before dividing starts by capacity, so quiet weeks stay visible.
+Build the calendar independently of production orders; otherwise a week with no starts anywhere vanishes.
+This example generates all 13 ISO Monday weeks intersecting December 2026 through February 2027, including the partial first week.
+The anchor starts at level 0, and the recursive term adds one until level 12.
+
+```sql
+WITH RECURSIVE weeks(level) AS (SELECT 0 UNION ALL SELECT level + 1 FROM weeks WHERE level < 12)
+SELECT CAST(DATE '2026-11-30' + level * INTERVAL 7 DAY AS DATE) AS week_start FROM weeks ORDER BY week_start
+```
+
+CROSS JOIN this calendar with build_bay, then LEFT JOIN the production counts and COALESCE missing counts to zero.
+Check yourself: does the calendar still return every week when production_order has no rows?
 Boundary weeks retain full capacity, while only starts inside the prompt's date range count.
 This is an explicit convention, not a detailed finite-capacity schedule.
 

@@ -5,16 +5,20 @@ import json
 import re
 import tomllib
 from copy import deepcopy
+from datetime import date, timedelta
 from functools import cache
 from pathlib import Path
 
 import duckdb
 import pytest
+from fastapi.testclient import TestClient
 
+from sclab.data.schema import create_all
 from sclab.engine.checker import compare, normalize_value
 from sclab.engine.query import QueryError, run_query
 from sclab.engine.types import QueryResult
 from sclab.lessons.model import Exercise, check_answer, load_lessons
+from sclab.web.app import create_app
 
 _CONTENT = Path(__file__).parents[1] / "src" / "sclab" / "lessons" / "content"
 _SNAPSHOT = Path(__file__).parent / "snapshots" / "exercises.json"
@@ -376,11 +380,46 @@ def _recursive_guard_problem(sql: str) -> str | None:
     for node in _walk(_parse_sql(sql)):
         if node.get("type") != "RECURSIVE_CTE_NODE":
             continue
+        if _is_bounded_week_sequence(node):
+            continue
         right = node.get("right")
         where = right.get("where_clause") if isinstance(right, dict) else None
         if not _where_has_level_guard(where):
             return "recursive term needs WHERE level < an integer of at most 10"
     return None
+
+
+def _is_bounded_week_sequence(node: dict) -> bool:
+    """Allow only the coordinator's zero-based, increment-by-one calendar, up to 26 weeks."""
+    left, right = node.get("left", {}), node.get("right", {})
+    anchor = left.get("select_list", [])
+    step = right.get("select_list", [])
+    source = right.get("from_table", {})
+    if not (
+        node.get("cte_name") == "weeks"
+        and node.get("aliases") == ["level"]
+        and node.get("union_all") is True
+        and left.get("from_table", {}).get("type") == "EMPTY"
+        and len(anchor) == 1
+        and _integer_constant(anchor[0]) == 0
+        and len(step) == 1
+        and _function_name(step[0]) == "+"
+        and source.get("type") == "BASE_TABLE"
+        and source.get("table_name") == "weeks"
+    ):
+        return False
+    arguments = _function_expressions(step[0])
+    where = right.get("where_clause") or {}
+    return (
+        len(arguments) == 2
+        and arguments[0].get("class") == "COLUMN_REF"
+        and arguments[0].get("column_names") == ["level"]
+        and _integer_constant(arguments[1]) == 1
+        and where.get("type") == "COMPARE_LESSTHAN"
+        and where.get("left", {}).get("class") == "COLUMN_REF"
+        and where.get("left", {}).get("column_names") == ["level"]
+        and _integer_constant(where.get("right")) in range(26)
+    )
 
 
 def test_reference_sql_is_portable() -> None:
@@ -2069,6 +2108,86 @@ _WRONG_ANSWERS = (
         GROUP BY d.material_no, s.supplier_no ORDER BY exposed_revenue DESC, d.material_no
         """,
     ),
+    (
+        "plan-shortages",
+        """
+WITH RECURSIVE tree AS (
+    SELECT m.material_no AS root, m.family_code, b.component_material_no AS material_no,
+           CAST(b.qty_per AS DECIMAL(20,6)) AS qty, 1 AS level
+    FROM material m JOIN bom_item b ON b.parent_material_no = m.material_no
+    WHERE m.material_type = 'TOOL'
+    UNION ALL
+    SELECT t.root, t.family_code, b.component_material_no,
+           CAST(t.qty * b.qty_per AS DECIMAL(20,6)), t.level + 1
+    FROM tree t JOIN bom_item b ON b.parent_material_no = t.material_no
+    WHERE t.level < 10
+), leaves AS (
+    SELECT t.root, t.family_code, t.material_no, SUM(t.qty) AS qty
+    FROM tree t JOIN material m ON m.material_no = t.material_no
+    WHERE m.material_type = 'COMPONENT'
+    GROUP BY t.root, t.family_code, t.material_no
+), outstanding AS (
+    SELECT i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+           i.confirmed_delivery_date, i.order_qty - COALESCE(SUM(g.qty), 0) AS qty
+    FROM purchase_order_item i JOIN purchase_order h ON h.po_no = i.po_no
+    LEFT JOIN goods_receipt g ON g.po_no = i.po_no AND g.line_no = i.line_no
+    WHERE h.order_date <= DATE '2026-11-01'
+    GROUP BY i.po_no, i.line_no, i.material_no, h.plant_code, h.supplier_no,
+             i.confirmed_delivery_date, i.order_qty
+    HAVING i.order_qty > COALESCE(SUM(g.qty), 0)
+), stock AS (
+    SELECT material_no, plant_code, SUM(qty_on_hand) AS qty FROM inventory
+    WHERE storage_location = 'RM01'
+    GROUP BY material_no, plant_code
+), periods AS (
+    SELECT CAST(DATE '2026-11-01' + n * INTERVAL 7 DAY AS DATE) AS week_start
+    FROM (VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12),
+                 (13), (14), (15), (16), (17), (18), (19), (20), (21), (22), (23), (24), (25))
+                 AS offsets(n)
+), targets AS (
+    SELECT mp.material_no, mp.plant_code, mp.safety_stock
+    FROM material_plant mp JOIN material m ON m.material_no = mp.material_no
+    WHERE (m.is_long_lead = true OR m.description = 'RF generator')
+      AND EXISTS (
+          SELECT 1 FROM production_order p JOIN leaves l ON l.root = p.material_no
+          WHERE l.material_no = mp.material_no AND p.plant_code = mp.plant_code
+            AND p.status IN ('Planned', 'Released')
+            AND p.planned_start > DATE '2026-11-01' AND p.planned_start < DATE '2027-05-02'
+      )
+), demand AS (
+    SELECT l.material_no, p.plant_code, p.planned_start AS day, SUM(p.qty * l.qty) AS qty
+    FROM production_order p JOIN leaves l ON l.root = p.material_no
+    WHERE p.status IN ('Planned', 'Released')
+      AND p.planned_start > DATE '2026-11-01' AND p.planned_start < DATE '2027-05-02'
+    GROUP BY l.material_no, p.plant_code, p.planned_start
+), weekly AS (
+    SELECT t.material_no, t.plant_code, t.safety_stock, w.week_start,
+           COALESCE((SELECT SUM(o.qty) FROM outstanding o
+                     WHERE o.material_no = t.material_no AND o.plant_code = t.plant_code
+                       AND o.confirmed_delivery_date IS NOT NULL
+                       AND GREATEST(o.confirmed_delivery_date, DATE '2026-11-01') >= w.week_start
+                       AND GREATEST(o.confirmed_delivery_date, DATE '2026-11-01')
+                           < w.week_start + INTERVAL 7 DAY), 0) AS receipts,
+           COALESCE((SELECT SUM(d.qty) FROM demand d
+                     WHERE d.material_no = t.material_no AND d.plant_code = t.plant_code
+                       AND d.day >= w.week_start AND d.day < w.week_start + INTERVAL 7 DAY), 0)
+               AS demand_qty,
+           COALESCE(s.qty, 0) AS opening_qty
+    FROM targets t CROSS JOIN periods w
+    LEFT JOIN stock s ON s.material_no = t.material_no AND s.plant_code = t.plant_code
+), balances AS (
+    SELECT material_no, plant_code, safety_stock, week_start, receipts, demand_qty,
+           opening_qty + SUM(receipts - demand_qty) OVER (
+               PARTITION BY material_no, plant_code ORDER BY week_start
+               ROWS UNBOUNDED PRECEDING) AS projected_balance
+    FROM weekly
+)
+SELECT material_no, plant_code, MIN(week_start) AS first_shortage_week
+FROM balances WHERE projected_balance < safety_stock
+GROUP BY material_no, plant_code ORDER BY material_no, plant_code
+
+        """,
+    ),
 )
 
 
@@ -2103,3 +2222,177 @@ def test_like_matches_text_with_a_prefix() -> None:
             rows = connection.execute(sql).fetchall()
         values = [value for row in rows for value in row]
         assert "Spare RF generator kit" in values, exercise.id
+
+
+@pytest.fixture
+def planning_scenario():
+    """A safety-stock breach without demand and twelve completely idle capacity weeks."""
+    with duckdb.connect(":memory:") as connection:
+        create_all(connection)
+        connection.execute("""
+            INSERT INTO plant VALUES ('SC01', 'Test plant', 'Santa Clara', 'US');
+            INSERT INTO product_family VALUES ('ETC', 'Etch');
+            INSERT INTO material VALUES
+                ('LL-NO-DEMAND', 'Long lead spare', 'COMPONENT', NULL, 'EA', true,
+                 DATE '2021-11-01'),
+                ('LL-COVERED', 'Covered long lead', 'COMPONENT', NULL, 'EA', true,
+                 DATE '2021-11-01'),
+                ('SHORT-LEAD', 'Short lead spare', 'COMPONENT', NULL, 'EA', false,
+                 DATE '2021-11-01'),
+                ('TOOL1', 'Test tool', 'TOOL', 'ETC', 'EA', false,
+                 DATE '2021-11-01');
+            INSERT INTO material_plant VALUES
+                ('LL-NO-DEMAND', 'SC01', 'PD', 140, 10),
+                ('LL-COVERED', 'SC01', 'PD', 140, 10),
+                ('SHORT-LEAD', 'SC01', 'PD', 7, 10);
+            INSERT INTO inventory VALUES
+                ('LL-NO-DEMAND', 'SC01', 'RM01', 3),
+                ('LL-COVERED', 'SC01', 'RM01', 12),
+                ('SHORT-LEAD', 'SC01', 'RM01', 0);
+            INSERT INTO build_bay VALUES ('TEST-B1', 'SC01', 'ETC', 2);
+            INSERT INTO production_order
+                (prod_order_no, material_no, plant_code, bay_id, qty,
+                 planned_start, planned_finish, status)
+            VALUES ('P1', 'TOOL1', 'SC01', 'TEST-B1', 1,
+                    DATE '2026-12-01', DATE '2027-01-01', 'Planned');
+        """)
+        yield connection
+
+
+def _scenario_runner(connection):
+    def run(sql, **_kwargs):
+        cursor = connection.execute(sql)
+        rows = cursor.fetchall()
+        return QueryResult(
+            columns=[item[0] for item in cursor.description],
+            column_types=[str(item[1]) for item in cursor.description],
+            rows=rows,
+            total_rows=len(rows),
+            truncated=False,
+            elapsed_ms=0,
+        )
+
+    return run
+
+
+@pytest.mark.parametrize(
+    ("exercise_id", "answer"),
+    [
+        (
+            "plan-shortages",
+            "SELECT 'LL-NO-DEMAND' AS material_no, 'SC01' AS plant_code, "
+            "DATE '2026-11-01' AS first_shortage_week",
+        ),
+        (
+            "drill-bay-bottleneck",
+            "SELECT 'TEST-B1' AS bay_id, 1 AS total_starts, 26 AS total_slots, "
+            "0 AS excess_starts, 3.85 AS load_pct",
+        ),
+    ],
+)
+def test_planning_answers_through_check_route(
+    planning_scenario, tmp_path, monkeypatch, exercise_id, answer
+) -> None:
+    monkeypatch.setenv("SCLAB_HOME", str(tmp_path))
+    monkeypatch.setattr("sclab.engine.query.run_query", _scenario_runner(planning_scenario))
+    with TestClient(create_app(), base_url="http://127.0.0.1") as client:
+        response = client.post(
+            f"/api/check/{exercise_id}", data={"sql": answer}, headers={"HX-Request": "true"}
+        )
+    assert response.status_code == 200
+    assert "Result matches." in response.text
+
+
+@pytest.mark.parametrize("has_starts", [True, False])
+def test_capacity_keeps_completely_idle_weeks(planning_scenario, has_starts) -> None:
+    if not has_starts:
+        planning_scenario.execute("DELETE FROM production_order")
+    exercises = {item.id: item for item in _exercises()}
+    run = _scenario_runner(planning_scenario)
+    weekly = run(exercises["plan-bay-load"].reference_sql[0]).rows
+    assert [row[1] for row in weekly] == [
+        date(2026, 11, 30) + timedelta(days=7 * n) for n in range(13)
+    ]
+    assert sum(row[2] for row in weekly) == int(has_starts)
+    assert all(row[3] == 2 for row in weekly)
+    assert sum(row[4] == 0 for row in weekly) == 13 - int(has_starts)
+    drill = run(exercises["drill-bay-bottleneck"].reference_sql[0]).rows
+    assert drill == [("TEST-B1", int(has_starts), 26, 0, 3.85 if has_starts else 0.0)]
+
+
+def test_calendar_guard_allows_only_bounded_week_sequence() -> None:
+    calendar = (
+        "WITH RECURSIVE weeks(level) AS (SELECT 0 UNION ALL "
+        "SELECT level + 1 FROM weeks WHERE level < 12) SELECT level FROM weeks"
+    )
+    assert _recursive_guard_problem(calendar) is None
+    assert _recursive_guard_problem(calendar.replace("< 12", "< 25")) is None
+    assert _recursive_guard_problem(calendar.replace("< 12", "< 26")) is not None
+    assert _recursive_guard_problem(calendar.replace("+ 1", "- 1")) is not None
+    assert _recursive_guard_problem(calendar.replace("SELECT 0", "SELECT -100")) is not None
+    assert _recursive_guard_problem(calendar.replace("< 12", "< 12 OR true")) is not None
+    assert _recursive_guard_problem(calendar.replace("SELECT 0", "SELECT 0, 1")) is not None
+    assert _recursive_guard_problem(calendar.replace(" WHERE level < 12", "")) is not None
+    joined = calendar.replace("FROM weeks WHERE", "FROM weeks JOIN bom_item ON true WHERE")
+    assert _recursive_guard_problem(joined) is not None
+
+
+_IDLE_WEEK_WRONG_ANSWERS = (
+    (
+        "plan-bay-load",
+        """
+WITH weeks AS (
+    SELECT DISTINCT CAST(date_trunc('week', planned_start) AS DATE) AS week_start
+    FROM production_order
+    WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+), loads AS (
+    SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
+           COUNT(*) AS starts
+    FROM production_order
+    WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+    GROUP BY bay_id, CAST(date_trunc('week', planned_start) AS DATE)
+), grid AS (
+    SELECT b.bay_id, w.week_start, COALESCE(l.starts, 0) AS starts, b.weekly_slots
+    FROM build_bay b CROSS JOIN weeks w
+    LEFT JOIN loads l ON l.bay_id = b.bay_id AND l.week_start = w.week_start
+)
+SELECT bay_id, week_start, starts, weekly_slots,
+       ROUND(100.0 * starts / weekly_slots, 2) AS load_pct,
+       starts > weekly_slots AS overloaded
+FROM grid ORDER BY bay_id, week_start
+
+        """,
+    ),
+    (
+        "drill-bay-bottleneck",
+        """
+WITH weeks AS (
+    SELECT DISTINCT CAST(date_trunc('week', planned_start) AS DATE) AS week_start
+    FROM production_order
+    WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+), loads AS (
+    SELECT bay_id, CAST(date_trunc('week', planned_start) AS DATE) AS week_start,
+           COUNT(*) AS starts
+    FROM production_order
+    WHERE planned_start >= DATE '2026-12-01' AND planned_start < DATE '2027-03-01'
+    GROUP BY bay_id, CAST(date_trunc('week', planned_start) AS DATE)
+), grid AS (
+    SELECT b.bay_id, w.week_start, COALESCE(l.starts, 0) AS starts, b.weekly_slots
+    FROM build_bay b CROSS JOIN weeks w
+    LEFT JOIN loads l ON l.bay_id = b.bay_id AND l.week_start = w.week_start
+)
+SELECT bay_id, SUM(starts) AS total_starts, SUM(weekly_slots) AS total_slots,
+       SUM(CASE WHEN starts > weekly_slots THEN starts - weekly_slots ELSE 0 END) AS excess_starts,
+       ROUND(100.0 * SUM(starts) / SUM(weekly_slots), 2) AS load_pct
+FROM grid GROUP BY bay_id ORDER BY load_pct DESC, bay_id
+
+        """,
+    ),
+)
+
+
+@pytest.mark.parametrize(("exercise_id", "sql"), _IDLE_WEEK_WRONG_ANSWERS)
+def test_production_derived_calendar_wrong_answers_fail(planning_scenario, exercise_id, sql):
+    exercise = next(item for item in _exercises() if item.id == exercise_id)
+    outcome = check_answer(exercise, sql, runner=_scenario_runner(planning_scenario))
+    assert outcome.passed is False
