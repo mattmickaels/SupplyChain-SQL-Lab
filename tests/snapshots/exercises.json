@@ -23,6 +23,34 @@
     "md5": "e4455b23a8a10f0ce1f3b4aae91a6dfa",
     "row_count": 1
   },
+  "clean-country-trim": {
+    "md5": "5415e644a9f2d65df46bed04b846f533",
+    "row_count": 10
+  },
+  "clean-duplicate-materials": {
+    "md5": "2efcc784e80b1863c4e7794e7262d598",
+    "row_count": 535
+  },
+  "clean-fill-lead-time": {
+    "md5": "ced359c114937425af3d91913076b65e",
+    "row_count": 479
+  },
+  "clean-lead-time-averages": {
+    "md5": "26904302a9e6aaefbb3e3dd99249d67a",
+    "row_count": 1
+  },
+  "clean-lead-time-counts": {
+    "md5": "28c10cefa6f67942a8077aa4db21d755",
+    "row_count": 3
+  },
+  "clean-removed-material-rows": {
+    "md5": "4eaf0eba265755e8b5937199791efd80",
+    "row_count": 1
+  },
+  "clean-uom": {
+    "md5": "015e6d14538a77f02b74d29d67d1bccc",
+    "row_count": 1
+  },
   "confirmed-after-today": {
     "md5": "f9282b0a8ce09302cdaa93782a888d7d",
     "row_count": 3352
@@ -62,6 +90,34 @@
   "cte-top-suppliers-by-country": {
     "md5": "ca68730e78bab9d9963970a47d70cbf4",
     "row_count": 27
+  },
+  "dates-actual-vs-quoted-lead-time": {
+    "md5": "e7b7680e536558b066e93c3a5b085126",
+    "row_count": 131
+  },
+  "dates-corvane-on-time-by-quarter": {
+    "md5": "ce039cc1bc7cd14935a98c9bccf8cbd0",
+    "row_count": 8
+  },
+  "dates-late-rate-by-year": {
+    "md5": "01a7524b82521c664652ba21eef24770",
+    "row_count": 5
+  },
+  "dates-lines-booked-by-month": {
+    "md5": "b9b2e037905681e8b620c631b0ebd0a5",
+    "row_count": 12
+  },
+  "dates-october-late-receipts": {
+    "md5": "3e5c221b4000f190b287e290f5098bde",
+    "row_count": 928
+  },
+  "dates-open-po-lines-by-week": {
+    "md5": "dd59cefe3b8ce5ad4cc2abf823357869",
+    "row_count": 9
+  },
+  "dates-quiet-tool-customers": {
+    "md5": "1c75db6a1fdba71109ad479a68d1f3d6",
+    "row_count": 1
   },
   "december-open-lines": {
     "md5": "fcc575016b5ca8f9c97809e8e9992e94",

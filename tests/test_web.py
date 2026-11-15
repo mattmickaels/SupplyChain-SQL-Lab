@@ -148,13 +148,31 @@ def test_no_external_urls_in_templates(client) -> None:
 
 
 def test_pick_port_skips_busy_port() -> None:
-    held = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    held.bind(("127.0.0.1", 8765))
-    held.listen(1)
+    held: socket.socket | None = None
     try:
-        assert pick_port() == 8766
+        for _ in range(32):
+            probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            probe.bind(("127.0.0.1", 0))
+            port = int(probe.getsockname()[1])
+            if port >= 65535:
+                probe.close()
+                continue
+            nxt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                nxt.bind(("127.0.0.1", port + 1))
+            except OSError:
+                nxt.close()
+                probe.close()
+                continue
+            nxt.close()
+            held = probe
+            held.listen(1)
+            assert pick_port(start=port, end=port + 5) == port + 1
+            return
+        raise AssertionError("No two consecutive free ports.")
     finally:
-        held.close()
+        if held is not None:
+            held.close()
 
 
 def test_app_js_syncs_editor_on_change() -> None:

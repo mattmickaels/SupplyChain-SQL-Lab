@@ -171,6 +171,21 @@ def test_start_drill_keeps_first_start(tmp_path: Path) -> None:
     assert reloaded.status("sample-drill") == "attempted"
 
 
+def test_drill_draft_round_trip(tmp_path: Path) -> None:
+    path = tmp_path / "progress.json"
+    store = ProgressStore(path)
+    text = "Draft finding: three plants."
+    assert store.drill_draft("sample-drill") is None
+    store.save_drill_draft("sample-drill", text)
+    assert store.drill_draft("sample-drill") == text
+    assert store.drill_summary("sample-drill") is None
+    store.record_attempt("sample-drill", "SELECT 1", False)
+    reloaded = ProgressStore(path)
+    assert reloaded.drill_draft("sample-drill") == text
+    assert reloaded.drill_summary("sample-drill") is None
+    assert reloaded.last_sql("sample-drill") == "SELECT 1"
+
+
 def test_drill_summary_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "progress.json"
     store = ProgressStore(path)

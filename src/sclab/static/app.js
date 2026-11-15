@@ -19,11 +19,15 @@
     }
   }
 
-  document.addEventListener("DOMContentLoaded", function () {
+  function mountEditors(root) {
     if (typeof CodeMirror === "undefined") {
       return;
     }
-    document.querySelectorAll("textarea[data-editor]").forEach(function (el) {
+    var scope = root && root.querySelectorAll ? root : document;
+    scope.querySelectorAll("textarea[data-editor]").forEach(function (el) {
+      if (el.editor) {
+        return;
+      }
       var editor = CodeMirror.fromTextArea(el, {
         mode: "text/x-sql",
         lineNumbers: true,
@@ -50,6 +54,79 @@
         },
       });
     });
+  }
+
+  function revealSummary(countdown) {
+    var section = countdown.closest("section");
+    var box = section ? section.querySelector("[data-summary-box]") : null;
+    if (box) {
+      box.hidden = false;
+    }
+  }
+
+  function formatRemaining(seconds) {
+    var minutes = Math.floor(seconds / 60);
+    var rest = seconds % 60;
+    return minutes + ":" + (rest < 10 ? "0" : "") + rest;
+  }
+
+  function armCountdown(el) {
+    if (el._sclabCountdown) {
+      return;
+    }
+    var total = Number(el.getAttribute("data-remaining"));
+    if (!isFinite(total)) {
+      return;
+    }
+    el._sclabCountdown = true;
+    var began = performance.now();
+    function paint() {
+      if (!document.body.contains(el)) {
+        return true;
+      }
+      var elapsed = Math.floor((performance.now() - began) / 1000);
+      var left = total - elapsed;
+      if (left <= 0) {
+        el.setAttribute("data-remaining", "0");
+        el.textContent = "Time is up - finish your answer, then write your summary";
+        revealSummary(el);
+        return true;
+      }
+      el.textContent = formatRemaining(left);
+      el.setAttribute("data-remaining", String(left));
+      return false;
+    }
+    if (paint()) {
+      return;
+    }
+    var timer = setInterval(function () {
+      if (paint()) {
+        clearInterval(timer);
+      }
+    }, 1000);
+  }
+
+  function armCountdowns(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    scope.querySelectorAll("[data-remaining]").forEach(armCountdown);
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    mountEditors(document);
+    armCountdowns(document);
+  });
+
+  document.body.addEventListener("htmx:afterSwap", function () {
+    mountEditors(document);
+    armCountdowns(document);
+  });
+
+  document.body.addEventListener("drill-summary", function (event) {
+    var section = event.target && event.target.closest ? event.target.closest("section") : null;
+    var box = section ? section.querySelector("[data-summary-box]") : null;
+    if (box) {
+      box.hidden = false;
+    }
   });
 
   function downloadExport(button) {
@@ -112,6 +189,27 @@
     event.preventDefault();
     downloadExport(button);
   });
+
+  function saveDrillDrafts() {
+    document.querySelectorAll("textarea[name='text'][hx-post]").forEach(function (area) {
+      var form = area.form;
+      var url = area.getAttribute("hx-post");
+      if (!form || !url) {
+        return;
+      }
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "HX-Request": "true",
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams(new FormData(form)),
+        keepalive: true,
+      });
+    });
+  }
+
+  window.addEventListener("pagehide", saveDrillDrafts);
 
   document.body.addEventListener("htmx:configRequest", saveEditors);
   document.body.addEventListener("htmx:responseError", function (event) {
