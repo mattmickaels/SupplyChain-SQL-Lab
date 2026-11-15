@@ -25,6 +25,7 @@ from sclab.lessons.progress import ProgressStore
 from sclab.paths import progress_path
 from sclab.web import export as excel
 from sclab.web.cells import display_text, is_numeric_type
+from sclab.web.screens_routes import create_router
 
 _WEB_DIR = Path(__file__).resolve().parent
 _STATIC_DIR = _WEB_DIR.parent / "static"
@@ -52,6 +53,8 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
     def render(request: Request, name: str, context: dict, status_code: int = 200):
         payload = {"company": COMPANY_NAME, "today": _today(), **context}
         return templates.TemplateResponse(request, name, payload, status_code=status_code)
+
+    app.include_router(create_router(templates, render))
 
     @app.get("/")
     def home(request: Request):

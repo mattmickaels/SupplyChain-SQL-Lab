@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Screens{% endblock %}
+{% block content %}
+<h1>Screens</h1>
+<p>Display screens over the same tables you query. They are read-only.</p>
+<form class="tcode-box" action="/screens" method="get">
+  <label for="q">Find a screen</label>
+  <input id="q" name="q" value="{{ q }}" autocomplete="off">
+  <button type="submit">Search</button>
+</form>
+{% if screens %}
+<ul class="schema-list">
+  {% for item in screens %}
+  <li><a href="/screens/{{ item.code }}">{{ item.code }}</a> <span>{{ item.title }}</span></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty">No screen matches that code.</p>
+{% endif %}
+{% endblock %}
