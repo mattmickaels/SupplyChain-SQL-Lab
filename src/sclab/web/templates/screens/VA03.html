@@ -1,0 +1,9 @@
+{% extends "screens/_layout.html" %}
+{% block screen_body %}
+{% with run=data.runs.header, header=true %}
+{% include "screens/_section.html" %}
+{% endwith %}
+{% with run=data.runs["items"], empty="No items on this order." %}
+{% include "screens/_section.html" %}
+{% endwith %}
+{% endblock %}

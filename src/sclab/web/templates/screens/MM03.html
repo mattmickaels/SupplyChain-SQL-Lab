@@ -1,0 +1,21 @@
+{% extends "screens/_layout.html" %}
+{% block screen_body %}
+{% with run=data.runs.general, header=true %}
+{% include "screens/_section.html" %}
+{% endwith %}
+{% with run=data.runs.plant, header=true, empty="No plant data for this plant." %}
+{% include "screens/_section.html" %}
+{% endwith %}
+{% with run=data.runs.stock, empty="No stock at this plant." %}
+{% include "screens/_section.html" %}
+{% endwith %}
+{% with run=data.runs.sources, empty="No supplier quote for this material." %}
+{% include "screens/_section.html" %}
+{% endwith %}
+{% with run=data.runs.open_po, empty="No open purchase order lines." %}
+{% include "screens/_section.html" %}
+{% endwith %}
+{% with run=data.runs.open_so, empty="No open sales lines." %}
+{% include "screens/_section.html" %}
+{% endwith %}
+{% endblock %}

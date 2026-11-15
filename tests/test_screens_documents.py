@@ -1,0 +1,266 @@
+"""Document screens: material, supplier, purchase order and sales order."""
+
+import pytest
+from fastapi.testclient import TestClient
+
+from sclab.data.story import CORVANE_SUPPLIER_NO, HALCYON_CUSTOMER_NO
+from sclab.engine.query import run_query
+from sclab.screens.documents import SCREENS
+from sclab.screens.framework import render_screen
+from sclab.web.app import create_app
+from tests.test_story import RISK_ROWS_SQL
+
+_CODES = ("MM03", "XK03", "ME23N", "VA03")
+
+
+def test_four_screens_are_registered() -> None:
+    assert tuple(SCREENS) == _CODES
+    assert [screen.code for screen in SCREENS.values()] == list(_CODES)
+    assert SCREENS["MM03"].title == "Display Material"
+    assert SCREENS["XK03"].title == "Display Supplier"
+    assert SCREENS["ME23N"].title == "Display Purchase Order"
+    assert SCREENS["VA03"].title == "Display Sales Order"
+    assert SCREENS["MM03"].params == ("plant",)
+
+
+@pytest.fixture
+def client(lab_home):
+    test_client = TestClient(create_app(), base_url="http://127.0.0.1")
+    return test_client
+
+
+def _rf_at_sc01() -> str:
+    rows = run_query(
+        """
+        SELECT m.material_no
+        FROM material AS m
+        JOIN material_supplier AS ms
+          ON ms.material_no = m.material_no AND ms.supplier_no = 'V-10017'
+        JOIN purchase_order_item AS i ON i.material_no = m.material_no
+        JOIN purchase_order AS h ON h.po_no = i.po_no
+        LEFT JOIN (
+            SELECT po_no, line_no, SUM(qty) AS received_qty
+            FROM goods_receipt
+            GROUP BY po_no, line_no
+        ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+        WHERE m.description LIKE 'RF generator,%'
+          AND h.supplier_no = 'V-10017'
+          AND h.plant_code = 'SC01'
+          AND h.order_date <= DATE '2026-11-01'
+          AND i.order_qty > COALESCE(r.received_qty, 0)
+        ORDER BY m.material_no
+        LIMIT 1
+        """
+    ).rows
+    assert rows, "expected an open Corvane RF generator line at SC01"
+    return rows[0][0]
+
+
+def _open_corvane_po() -> str:
+    rows = run_query(
+        """
+        SELECT h.po_no
+        FROM purchase_order AS h
+        JOIN purchase_order_item AS i ON i.po_no = h.po_no
+        LEFT JOIN (
+            SELECT po_no, line_no, SUM(qty) AS received_qty
+            FROM goods_receipt
+            GROUP BY po_no, line_no
+        ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+        WHERE h.supplier_no = 'V-10017'
+          AND h.order_date <= DATE '2026-11-01'
+          AND i.order_qty > COALESCE(r.received_qty, 0)
+        ORDER BY h.po_no
+        LIMIT 1
+        """
+    ).rows
+    assert rows, "expected an open Corvane purchase order"
+    return rows[0][0]
+
+
+def _at_risk_sales_order() -> str:
+    rows = run_query(
+        f"""
+        SELECT q.so_no
+        FROM ({RISK_ROWS_SQL}) AS q
+        JOIN sales_order AS h ON h.so_no = q.so_no
+        ORDER BY CASE WHEN h.customer_no = '{HALCYON_CUSTOMER_NO}' THEN 0 ELSE 1 END, q.so_no
+        LIMIT 1
+        """
+    ).rows
+    assert rows, "expected an at-risk Etch sales order"
+    return rows[0][0]
+
+
+def test_mm03_renders_corvane_rf_generator(client) -> None:
+    material = _rf_at_sc01()
+    response = client.get("/screens/MM03", params={"key": material, "plant": "SC01"})
+    assert response.status_code == 200
+    text = response.text
+    assert "Display Material" in text
+    assert "RF generator," in text
+    assert "SC01" in text
+    assert f"/screens/XK03?key={CORVANE_SUPPLIER_NO}" in text
+    assert "/screens/ME23N?key=" in text
+    assert "Show the SQL" in text
+    data = render_screen("MM03", material, {"plant": "SC01"})
+    assert data.found is True
+    sources = data.runs["sources"].result.rows
+    assert sources
+    assert {row[0] for row in sources} == {CORVANE_SUPPLIER_NO}
+    assert data.runs["open_po"].result.rows
+
+
+def test_mm03_needs_a_plant_and_unknown_material(client) -> None:
+    material = _rf_at_sc01()
+    missing_plant = render_screen("MM03", material, {})
+    assert missing_plant.found is False
+    assert missing_plant.message == "Enter a plant."
+    response = client.get("/screens/MM03", params={"key": "M-999999", "plant": "SC01"})
+    assert response.status_code == 200
+    assert "Material M-999999 was not found." in response.text
+    hostile = client.get("/screens/MM03", params={"key": "M-1' OR '1'='1", "plant": "SC01"})
+    assert hostile.status_code == 200
+    assert "was not found" in hostile.text
+
+
+def test_xk03_renders_corvane_and_shows_the_slip(client) -> None:
+    response = client.get("/screens/XK03", params={"key": CORVANE_SUPPLIER_NO})
+    assert response.status_code == 200
+    text = response.text
+    assert "Corvane RF Systems" in text
+    assert "On-time rate by quarter" in text
+    assert "/screens/MM03?key=" in text
+    assert "/screens/ME23N?key=" in text
+    data = render_screen("XK03", CORVANE_SUPPLIER_NO, {})
+    assert data.found is True
+    assert data.runs["materials"].result.rows
+    assert data.runs["open_po"].result.rows
+    assert "2026 Q4 covers October only, up to the lab&#39;s today." in text
+    assert "On-time rate, last 90 days" in text
+    rows = data.runs["on_time"].result.rows
+    assert len(rows) == 8
+    assert [(row[1], row[2]) for row in rows[-2:]] == [(2026, 3), (2026, 4)]
+    # Lesson 5 pins these rates. Q3 stays at 53.6 because July receipts are still on time.
+    # Q4 is October only, through the day before the lab's today.
+    assert rows[-2][3] == 28
+    assert float(rows[-2][4]) == 53.6
+    assert rows[-1][3] == 2
+    assert float(rows[-1][4]) < 45
+    assert float(rows[-3][4]) > float(rows[-2][4])
+    quarters_2025 = [row for row in rows if row[1] == 2025]
+    assert quarters_2025
+    assert all(float(row[4]) >= 90 for row in quarters_2025)
+    recent = data.runs["on_time_90"].result.rows
+    assert len(recent) == 1
+    assert recent[0][0] > 0
+    assert float(recent[0][1]) < 45
+    assert "DATE '2025-01-01'" in data.runs["on_time"].display_sql
+    assert "DATE '2026-11-01'" in data.runs["on_time"].display_sql
+    assert "DATE '2026-11-01' - INTERVAL 90 DAY" in data.runs["on_time_90"].display_sql
+    missing = client.get("/screens/XK03", params={"key": "V-99999"})
+    assert missing.status_code == 200
+    assert "Supplier V-99999 was not found." in missing.text
+
+
+def test_me23n_renders_open_corvane_po(client) -> None:
+    po_no = _open_corvane_po()
+    response = client.get("/screens/ME23N", params={"key": po_no})
+    assert response.status_code == 200
+    text = response.text
+    assert "Display Purchase Order" in text
+    assert f"/screens/XK03?key={CORVANE_SUPPLIER_NO}" in text
+    assert "/screens/MM03?key=" in text
+    assert "&amp;plant=" in text
+    data = render_screen("ME23N", po_no, {})
+    assert data.found is True
+    assert data.runs["header"].result.rows[0][1] == CORVANE_SUPPLIER_NO
+    items = data.runs["items"].result.rows
+    assert items
+    assert any(row[-1] > 0 for row in items)
+    missing = client.get("/screens/ME23N", params={"key": "PO-9999999"})
+    assert "Purchase order PO-9999999 was not found." in missing.text
+
+
+def test_va03_renders_at_risk_sales_order(client) -> None:
+    so_no = _at_risk_sales_order()
+    response = client.get("/screens/VA03", params={"key": so_no})
+    assert response.status_code == 200
+    text = response.text
+    assert "Display Sales Order" in text
+    assert "/screens/MM03?key=" in text
+    assert "&amp;plant=" in text
+    assert 'class="drill"' in text
+    assert "/screens/CO03" not in text
+    data = render_screen("VA03", so_no, {})
+    assert data.found is True
+    assert data.runs["items"].result.rows
+    prod_order = next(row[8] for row in data.runs["items"].result.rows if row[8])
+    assert prod_order in text
+    missing = client.get("/screens/VA03", params={"key": "SO-9999999"})
+    assert "Sales order SO-9999999 was not found." in missing.text
+
+
+def test_displayed_sql_reproduces_rows(lab_home) -> None:
+    material = _rf_at_sc01()
+    cases = (
+        ("MM03", material, {"plant": "SC01"}),
+        ("XK03", CORVANE_SUPPLIER_NO, {}),
+        ("ME23N", _open_corvane_po(), {}),
+        ("VA03", _at_risk_sales_order(), {}),
+    )
+    for code, key, extra in cases:
+        data = render_screen(code, key, extra)
+        assert data.found is True, code
+        for name, run in data.runs.items():
+            assert run.error is None, (code, name, run.error)
+            assert "$1" not in run.display_sql
+            again = run_query(run.display_sql)
+            assert again.columns == run.result.columns
+            assert again.rows == run.result.rows
+
+
+def _spare_sales_line() -> tuple[str, str]:
+    rows = run_query(
+        """
+        SELECT h.so_no, i.material_no
+        FROM sales_order_item AS i
+        JOIN sales_order AS h ON h.so_no = i.so_no
+        JOIN material AS m ON m.material_no = i.material_no
+        LEFT JOIN production_order AS p
+          ON p.so_no = i.so_no AND p.so_line_no = i.line_no
+        WHERE m.material_type = 'COMPONENT'
+          AND p.prod_order_no IS NULL
+        ORDER BY h.so_no, i.line_no
+        LIMIT 1
+        """
+    ).rows
+    assert rows, "expected a spare-part sales line with no production order"
+    return rows[0]
+
+
+def test_va03_spare_material_link_opens_mm03(client) -> None:
+    so_no, material = _spare_sales_line()
+    text = client.get("/screens/VA03", params={"key": so_no}).text
+    marker = f"/screens/MM03?key={material}&amp;plant="
+    assert marker in text
+    href = text[text.index(marker) : text.index('"', text.index(marker))].replace("&amp;", "&")
+    opened = client.get(href)
+    assert opened.status_code == 200
+    assert "Enter a plant." not in opened.text
+    assert "was not found" not in opened.text
+    assert "Plant data" in opened.text
+
+
+def test_planning_screens_are_reachable(client) -> None:
+    for code in ("MD04", "CM01"):
+        response = client.get(f"/screens/{code}")
+        assert response.status_code == 200
+        assert code in response.text
+
+
+def test_screens_index_lists_document_screens(client) -> None:
+    text = client.get("/screens").text
+    for code in _CODES:
+        assert code in text
+    assert "MM03" not in client.get("/screens", params={"q": "VA03"}).text

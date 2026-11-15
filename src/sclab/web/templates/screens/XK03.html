@@ -1,0 +1,21 @@
+{% extends "screens/_layout.html" %}
+{% block screen_body %}
+{% with run=data.runs.header, header=true %}
+{% include "screens/_section.html" %}
+{% endwith %}
+{% with run=data.runs.materials, empty="No materials supplied." %}
+{% include "screens/_section.html" %}
+{% endwith %}
+{% with run=data.runs.on_time, empty="No receipts in the last 8 quarters.", note="2026 Q4 covers October only, up to the lab's today." %}
+{% include "screens/_section.html" %}
+{% endwith %}
+{% with run=data.runs.on_time_90, empty="No receipts in the last 90 days." %}
+{% include "screens/_section.html" %}
+{% endwith %}
+{% with run=data.runs.open_po, empty="No open purchase order lines." %}
+{% include "screens/_section.html" %}
+{% endwith %}
+{% with run=data.runs.quality, empty="No quality notifications." %}
+{% include "screens/_section.html" %}
+{% endwith %}
+{% endblock %}
