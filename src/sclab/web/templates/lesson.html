@@ -5,9 +5,15 @@
 <h1>{{ lesson_title }}</h1>
 <div class="prose">{{ body_html }}</div>
 {% for exercise in exercises %}
+{% if exercise.is_drill %}
+{% include "_drill.html" %}
+{% else %}
 <section class="exercise" id="exercise-{{ exercise.id }}">
   <h2>{{ exercise.title }}</h2>
   <div class="prose">{{ exercise.prompt_html }}</div>
+  {% if exercise.databricks_note %}
+  <p class="note">On Databricks: {{ exercise.databricks_note }}</p>
+  {% endif %}
   {% if exercise.excel_tip %}
   <p class="tip">Excel tip. {{ exercise.excel_tip }}</p>
   {% endif %}
@@ -31,5 +37,6 @@
   <div id="result-{{ exercise.id }}"></div>
   <div id="check-{{ exercise.id }}"></div>
 </section>
+{% endif %}
 {% endfor %}
 {% endblock %}

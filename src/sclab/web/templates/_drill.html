@@ -1,0 +1,77 @@
+{% macro review_panel(exercise) %}
+<div class="summary-review">
+  <div>
+    <h3>Your summary</h3>
+    <p class="summary-text">{{ exercise.summary_text }}</p>
+  </div>
+  <div>
+    <h3>Model summary</h3>
+    <p class="model-summary">{{ exercise.model_summary }}</p>
+    <ul class="checklist">
+      {% for item in exercise.checklist %}
+      <li><label><input type="checkbox"> {{ item }}</label></li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro summary_box(exercise) %}
+<div class="summary-box" data-summary-box{% if not exercise.show_summary %} hidden{% endif %}>
+  <p>{{ exercise.summary_lead }}</p>
+  {% if exercise.summary_prompt %}
+  <p>{{ exercise.summary_prompt }}</p>
+  {% endif %}
+  <form id="summary-form-{{ exercise.id }}">
+    <label for="summary-{{ exercise.id }}">Your summary</label>
+    <textarea id="summary-{{ exercise.id }}" name="text" rows="4">{{ exercise.summary_text }}</textarea>
+    <div class="actions">
+      <button type="button" hx-post="/api/drill/{{ exercise.id }}/summary" hx-include="#summary-form-{{ exercise.id }}" hx-target="#summary-review-{{ exercise.id }}">Submit</button>
+    </div>
+  </form>
+  <div id="summary-review-{{ exercise.id }}">
+    {% if exercise.submitted %}
+    {{ review_panel(exercise) }}
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{% if mode == "review" %}
+{{ review_panel(exercise) }}
+{% elif not exercise.started %}
+<section class="exercise drill" id="exercise-{{ exercise.id }}">
+  <h2>{{ exercise.title }}</h2>
+  <p class="muted">{{ exercise.limit_label }}</p>
+  <div class="actions">
+    <button type="button" hx-post="/api/drill/{{ exercise.id }}/start" hx-target="#exercise-{{ exercise.id }}" hx-swap="outerHTML">Start</button>
+  </div>
+</section>
+{% else %}
+<section class="exercise drill" id="exercise-{{ exercise.id }}">
+  <h2>{{ exercise.title }}</h2>
+  <p class="countdown" data-remaining="{{ exercise.remaining }}" aria-live="polite">{{ exercise.countdown_text }}</p>
+  <div class="prose">{{ exercise.prompt_html }}</div>
+  {% if exercise.databricks_note %}
+  <p class="note">On Databricks: {{ exercise.databricks_note }}</p>
+  {% endif %}
+  <form id="form-{{ exercise.id }}">
+    <label for="sql-{{ exercise.id }}">SQL</label>
+    <textarea id="sql-{{ exercise.id }}" name="sql" data-editor rows="6" aria-label="{{ exercise.title }}">{{ exercise.sql }}</textarea>
+    <input type="hidden" name="target" value="lesson">
+    <input type="hidden" name="form_id" value="form-{{ exercise.id }}">
+    <input type="hidden" name="label" value="{{ exercise.id }}">
+    <input type="hidden" name="exercise_id" value="{{ exercise.id }}">
+    <input type="hidden" name="return_to" value="/lessons/{{ exercise.lesson_id }}#exercise-{{ exercise.id }}">
+    <div class="actions">
+      <button type="button" data-run hx-post="/api/run" hx-include="#form-{{ exercise.id }}" hx-target="#result-{{ exercise.id }}">Run</button>
+      <button type="button" hx-post="/api/check/{{ exercise.id }}" hx-include="#form-{{ exercise.id }}" hx-target="#check-{{ exercise.id }}">Check</button>
+    </div>
+  </form>
+  <div id="result-{{ exercise.id }}"></div>
+  <div id="check-{{ exercise.id }}"></div>
+  <div id="summary-slot-{{ exercise.id }}">
+    {{ summary_box(exercise) }}
+  </div>
+</section>
+{% endif %}
