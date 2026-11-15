@@ -38,8 +38,9 @@ SG drops out, because its count is 1.
 The only remaining row is US with 2 plants.
 
 SUM adds a number down the group.
-Tool M-000011 has five direct components on bom_item.
-Their qty_per values are 3, 4, 1, 1, and 3, and those add up to 12.
+Tool M-000011 has seven direct components on bom_item.
+Ordered by component number, the chamber module has qty_per 2 and the six platform modules have qty_per 1.
+Those values add up to 8.
 
 ```sql
 SELECT SUM(qty_per) AS total_qty_per
@@ -49,7 +50,7 @@ WHERE parent_material_no = 'M-000011'
 
 AVG averages a number inside the group.
 ROUND keeps a fixed number of decimal places.
-Supplier V-10001 has an average quoted lead time of 55.4 days.
+Supplier V-10001 has an average quoted lead time of 54.1 days.
 
 ```sql
 SELECT supplier_no, ROUND(AVG(quoted_lead_time_days), 1) AS avg_lead_time_days
@@ -58,8 +59,19 @@ WHERE supplier_no = 'V-10001'
 GROUP BY supplier_no
 ```
 
+IN (...) keeps a row when the value is one of the listed items.
+
+```sql
+SELECT material_no, created_on
+FROM material
+WHERE material_no IN ('M-000001', 'M-000011')
+```
+
+Both materials were created on 31 October 2021.
+The list names two materials, so two rows come back.
+
 EXTRACT(YEAR FROM a date) pulls out the year as a number you can group by.
-M-000001 was created in 2026, and M-000011 was created in 2024.
+M-000001 and M-000011 were both created in 2021.
 
 ```sql
 SELECT EXTRACT(YEAR FROM created_on) AS created_year, COUNT(*) AS material_count
@@ -69,12 +81,12 @@ GROUP BY EXTRACT(YEAR FROM created_on)
 ORDER BY created_year
 ```
 
-Two rows come back.
-2024 has 1 material, and 2026 has 1 material.
+One row comes back.
+2021 has 2 materials.
 
 COUNT(*) counts every row in the group, including rows where a column is NULL.
 COUNT(planned_lead_time_days) skips the NULL rows.
-At plant AU01, 165 rows have no planned lead time and 5175 rows have one.
+At plant AU01, 180 rows have no planned lead time and 5140 rows have one.
 
 ```sql
 SELECT plant_code,

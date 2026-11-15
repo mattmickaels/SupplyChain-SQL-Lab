@@ -11,7 +11,7 @@ Order by po_no, then line_no.
 hints = [
   "The supplier name is a lookup from the supplier number on the purchase order header.",
   "Join purchase_order_item to purchase_order on po_no, then supplier on supplier_no, and filter October 2026.",
-  "SELECT i.po_no, i.line_no, s.name AS supplier_name FROM purchase_order_item AS i JOIN purchase_order AS h ON h.po_no = i.po_no JOIN supplier AS s ON s.supplier_no = h.supplier_no WHERE h.order_date >= DATE '2026-10-01' AND h.order_date <= DATE '2026-10-31' ORDER BY i.po_no, i.line_no",
+  "SELECT i.po_no, i.line_no, s.name AS ___ FROM purchase_order_item AS i JOIN purchase_order AS h ON ___ JOIN supplier AS s ON ___ WHERE h.order_date >= ___ AND h.order_date <= ___ ORDER BY i.po_no, i.line_no",
 ]
 reference_sql = [
   """
@@ -37,11 +37,14 @@ A line is open here when confirmed_delivery_date is on or after 1 November 2026.
 Return material_no and description.
 Order by material_no.
 Use a LEFT JOIN and keep the rows where the purchase line is NULL.
+Some material descriptions are copies that end with a trailing space.
+Leave those copies out.
+A trailing space is not a second material that lacks supply.
 """
 hints = [
   "A long-lead material with no confirmed line on or after today shows up as a failed lookup.",
   "LEFT JOIN purchase_order_item on material_no and confirmed_delivery_date >= DATE '2026-11-01', then keep i.po_no IS NULL.",
-  "SELECT m.material_no, m.description FROM material AS m LEFT JOIN purchase_order_item AS i ON i.material_no = m.material_no AND i.confirmed_delivery_date >= DATE '2026-11-01' WHERE m.is_long_lead = true AND i.po_no IS NULL ORDER BY m.material_no",
+  "SELECT m.material_no, m.description FROM material AS m LEFT JOIN purchase_order_item AS i ON ___ WHERE m.is_long_lead = ___ AND i.po_no ___ AND m.description NOT LIKE ___ ORDER BY m.material_no",
 ]
 reference_sql = [
   """
@@ -52,6 +55,7 @@ LEFT JOIN purchase_order_item AS i
  AND i.confirmed_delivery_date >= DATE '2026-11-01'
 WHERE m.is_long_lead = true
   AND i.po_no IS NULL
+  AND m.description NOT LIKE '% '
 ORDER BY m.material_no
 """,
 ]
@@ -72,7 +76,7 @@ Order by so_no, then line_no.
 hints = [
   "The customer name and the material description each need their own lookup.",
   "Join the line to sales_order, that header to customer, and the line to material, then keep status = 'Open'.",
-  "SELECT i.so_no, i.line_no, c.name AS customer_name, m.description FROM sales_order_item AS i JOIN sales_order AS h ON h.so_no = i.so_no JOIN customer AS c ON c.customer_no = h.customer_no JOIN material AS m ON m.material_no = i.material_no WHERE i.status = 'Open' ORDER BY i.so_no, i.line_no",
+  "SELECT i.so_no, i.line_no, c.name AS ___, m.description FROM sales_order_item AS i JOIN sales_order AS h ON ___ JOIN customer AS c ON ___ JOIN material AS m ON ___ WHERE i.status = ___ ORDER BY i.so_no, i.line_no",
 ]
 reference_sql = [
   """
@@ -102,7 +106,7 @@ Order by requested_date, then so_no, then line_no.
 hints = [
   "Halcyon Memory is customer C-2003, and an open line has status Open.",
   "Join sales_order_item to sales_order on so_no, then filter customer_no and status.",
-  "SELECT i.so_no, i.line_no, i.material_no, i.qty, i.requested_date FROM sales_order_item AS i JOIN sales_order AS h ON h.so_no = i.so_no WHERE h.customer_no = 'C-2003' AND i.status = 'Open' ORDER BY i.requested_date, i.so_no, i.line_no",
+  "SELECT i.so_no, i.line_no, i.material_no, i.qty, i.requested_date FROM sales_order_item AS i JOIN sales_order AS h ON ___ WHERE h.customer_no = ___ AND i.status = ___ ORDER BY i.requested_date, i.so_no, i.line_no",
 ]
 reference_sql = [
   """
@@ -122,17 +126,18 @@ excel_tip = "Filter the order header to customer C-2003, then list the open line
 id = "join-open-rf-po-lines"
 title = "Open RF generator purchase lines"
 prompt_md = """
-List open purchase order lines for the material whose description is RF generator.
+List purchase order lines for the material whose description is RF generator.
 The order was placed on or before 1 November 2026.
 Received quantity is below order_qty.
-confirmed_delivery_date is on or after 1 November 2026.
+A line with no goods receipt counts as received quantity 0.
+A fully received line stays out.
 Return po_no, line_no, supplier_name, and confirmed_delivery_date.
 Order by confirmed_delivery_date, then po_no, then line_no.
 """
 hints = [
-  "An open RF generator line is not fully received, and its confirmed date is still ahead.",
+  "An open RF generator line is not fully received. A missing receipt counts as zero.",
   "Sum goods_receipt.qty by po_no and line_no before comparing it with order_qty, and join supplier for the name.",
-  "SELECT i.po_no, i.line_no, s.name AS supplier_name, i.confirmed_delivery_date FROM purchase_order_item AS i JOIN purchase_order AS h ON h.po_no = i.po_no JOIN supplier AS s ON s.supplier_no = h.supplier_no JOIN material AS m ON m.material_no = i.material_no LEFT JOIN (SELECT po_no, line_no, SUM(qty) AS received_qty FROM goods_receipt GROUP BY po_no, line_no) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no WHERE m.description = 'RF generator' AND h.order_date <= DATE '2026-11-01' AND COALESCE(r.received_qty, 0) < i.order_qty AND i.confirmed_delivery_date >= DATE '2026-11-01' ORDER BY i.confirmed_delivery_date, i.po_no, i.line_no",
+  "SELECT i.po_no, i.line_no, s.name AS ___, i.confirmed_delivery_date FROM purchase_order_item AS i JOIN purchase_order AS h ON ___ JOIN supplier AS s ON ___ JOIN material AS m ON ___ LEFT JOIN (SELECT po_no, line_no, SUM(___) AS received_qty FROM goods_receipt GROUP BY po_no, line_no) AS r ON ___ WHERE m.description = ___ AND h.order_date <= ___ AND COALESCE(r.received_qty, 0) < ___ ORDER BY i.confirmed_delivery_date, i.po_no, i.line_no",
 ]
 reference_sql = [
   """
@@ -149,7 +154,6 @@ LEFT JOIN (
 WHERE m.description = 'RF generator'
   AND h.order_date <= DATE '2026-11-01'
   AND coalesce(r.received_qty, 0) < i.order_qty
-  AND i.confirmed_delivery_date >= DATE '2026-11-01'
 ORDER BY i.confirmed_delivery_date, i.po_no, i.line_no
 """,
 ]
@@ -161,9 +165,9 @@ excel_tip = "Filter to RF generator, then look up the supplier name and keep lin
 id = "join-multi-receipt-qty"
 title = "Received quantity when a line has several receipts"
 prompt_md = """
-Show order quantity and received quantity for these purchase order lines.
-The lines are PO-0043687, PO-0043688, PO-0043689, PO-0043690, and PO-0043691.
-Each of those lines has three goods receipts.
+Show order quantity and received quantity for these purchase orders.
+The orders are PO-0000003, PO-0000006, PO-0000009, PO-0000012, and PO-0000015.
+Each order has one line, and that line has three goods receipts.
 Return po_no, line_no, order_qty, and received_qty.
 received_qty is the sum of goods_receipt.qty for that line, or 0 when nothing has been received.
 Order by po_no, then line_no.
@@ -172,7 +176,7 @@ Add the receipts up before you join them, so order_qty is not repeated once per 
 hints = [
   "These lines have three receipts each, so joining the receipts first would repeat order_qty.",
   "SUM goods_receipt.qty in a derived table grouped by po_no and line_no, then LEFT JOIN it.",
-  "SELECT i.po_no, i.line_no, i.order_qty, COALESCE(r.received_qty, 0) AS received_qty FROM purchase_order_item AS i LEFT JOIN (SELECT po_no, line_no, SUM(qty) AS received_qty FROM goods_receipt GROUP BY po_no, line_no) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no WHERE i.po_no IN ('PO-0043687', 'PO-0043688', 'PO-0043689', 'PO-0043690', 'PO-0043691') ORDER BY i.po_no, i.line_no",
+  "SELECT i.po_no, i.line_no, i.order_qty, COALESCE(r.received_qty, 0) AS ___ FROM purchase_order_item AS i LEFT JOIN (SELECT po_no, line_no, SUM(___) AS received_qty FROM goods_receipt GROUP BY ___) AS r ON ___ WHERE i.po_no IN (___) ORDER BY i.po_no, i.line_no",
 ]
 reference_sql = [
   """
@@ -184,7 +188,7 @@ LEFT JOIN (
     GROUP BY po_no, line_no
 ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
 WHERE i.po_no IN (
-    'PO-0043687', 'PO-0043688', 'PO-0043689', 'PO-0043690', 'PO-0043691'
+    'PO-0000003', 'PO-0000006', 'PO-0000009', 'PO-0000012', 'PO-0000015'
 )
 ORDER BY i.po_no, i.line_no
 """,
@@ -207,7 +211,7 @@ Another tool uses the same description, so keep this material number.
 hints = [
   "The bill of materials lists the direct components, and material holds their descriptions.",
   "Filter bom_item to parent_material_no = 'M-000011' and join material on component_material_no.",
-  "SELECT b.component_material_no, m.description, b.qty_per FROM bom_item AS b JOIN material AS m ON m.material_no = b.component_material_no WHERE b.parent_material_no = 'M-000011' ORDER BY b.component_material_no",
+  "SELECT b.component_material_no, m.description, b.qty_per FROM bom_item AS b JOIN material AS m ON ___ WHERE b.parent_material_no = ___ ORDER BY b.component_material_no",
 ]
 reference_sql = [
   """
@@ -224,23 +228,24 @@ excel_tip = "Filter the bill of materials to one parent, then VLOOKUP each compo
 
 [[exercise]]
 id = "join-single-source-long-lead"
-title = "Single-source long-lead materials"
+title = "Single-source materials"
 prompt_md = """
-Find long-lead materials that have exactly one row on material_supplier.
+Find materials that have exactly one row on material_supplier.
 Return material_no, description, and supplier_no.
 Order by material_no.
+Filtering to the description RF generator is not the definition.
+Other materials have exactly one supplier too.
 """
 hints = [
   "A single-source material has exactly one supplier row.",
-  "Join material to material_supplier, keep is_long_lead = true, and HAVING COUNT(*) = 1.",
-  "SELECT m.material_no, m.description, MIN(s.supplier_no) AS supplier_no FROM material AS m JOIN material_supplier AS s ON s.material_no = m.material_no WHERE m.is_long_lead = true GROUP BY m.material_no, m.description HAVING COUNT(*) = 1 ORDER BY m.material_no",
+  "Join material to material_supplier, group by material, and keep HAVING COUNT(*) = 1.",
+  "SELECT m.material_no, m.description, MIN(___) AS supplier_no FROM material AS m JOIN material_supplier AS s ON ___ GROUP BY m.material_no, m.description HAVING COUNT(*) = ___ ORDER BY m.material_no",
 ]
 reference_sql = [
   """
 SELECT m.material_no, m.description, min(s.supplier_no) AS supplier_no
 FROM material AS m
 JOIN material_supplier AS s ON s.material_no = m.material_no
-WHERE m.is_long_lead = true
 GROUP BY m.material_no, m.description
 HAVING count(*) = 1
 ORDER BY m.material_no
@@ -260,12 +265,13 @@ Received quantity is below order_qty.
 confirmed_delivery_date is at least 56 days after requested_delivery_date.
 Return po_no, line_no, description, requested_delivery_date, and confirmed_delivery_date.
 Order by po_no, then line_no.
-These are the late component lines behind the six Etch orders you will study in lesson 9.
+The RF generator lines in this list are the ones behind the at-risk Etch orders in lesson 9.
+Other late lines in this list are not that shortage.
 """
 hints = [
   "An open Corvane line is late when the confirmed date is at least 56 days after the requested date.",
   "Sum receipts before comparing them with order_qty, and compare the confirmed date to requested_delivery_date + INTERVAL 56 DAY.",
-  "SELECT i.po_no, i.line_no, m.description, i.requested_delivery_date, i.confirmed_delivery_date FROM purchase_order_item AS i JOIN purchase_order AS h ON h.po_no = i.po_no JOIN material AS m ON m.material_no = i.material_no LEFT JOIN (SELECT po_no, line_no, SUM(qty) AS received_qty FROM goods_receipt GROUP BY po_no, line_no) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no WHERE h.supplier_no = 'V-10017' AND h.order_date <= DATE '2026-11-01' AND COALESCE(r.received_qty, 0) < i.order_qty AND i.confirmed_delivery_date >= i.requested_delivery_date + INTERVAL 56 DAY ORDER BY i.po_no, i.line_no",
+  "SELECT i.po_no, i.line_no, m.description, i.requested_delivery_date, i.confirmed_delivery_date FROM purchase_order_item AS i JOIN purchase_order AS h ON ___ JOIN material AS m ON ___ LEFT JOIN (SELECT po_no, line_no, SUM(___) AS received_qty FROM goods_receipt GROUP BY po_no, line_no) AS r ON ___ WHERE h.supplier_no = ___ AND h.order_date <= ___ AND COALESCE(r.received_qty, 0) < ___ AND i.confirmed_delivery_date >= ___ ORDER BY i.po_no, i.line_no",
 ]
 reference_sql = [
   """

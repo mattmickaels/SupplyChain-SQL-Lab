@@ -69,7 +69,7 @@ LIMIT 2
 
 AS names a computed column.
 name_length below is the number of characters in the plant name.
-Santa Clara is 12 characters, Singapore is 9, and Austin is 6.
+Santa Clara is 11 characters, Singapore is 9, and Austin is 6.
 
 ```sql
 SELECT name, LENGTH(name) AS name_length

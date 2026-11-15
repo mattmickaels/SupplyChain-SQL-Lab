@@ -1,0 +1,113 @@
+[[example]]
+id = "plants-by-country"
+sql = """
+SELECT country, COUNT(*) AS plant_count
+FROM plant
+GROUP BY country
+ORDER BY country
+"""
+expected_rows = [
+  ["SG", 1],
+  ["US", 2],
+]
+order_matters = true
+
+[[example]]
+id = "countries-with-many-plants"
+sql = """
+SELECT country, COUNT(*) AS plant_count
+FROM plant
+GROUP BY country
+HAVING COUNT(*) > 1
+ORDER BY country
+"""
+expected_rows = [["US", 2]]
+order_matters = true
+
+[[example]]
+id = "tool-component-qty"
+sql = """
+SELECT qty_per
+FROM bom_item
+WHERE parent_material_no = 'M-000011'
+ORDER BY component_material_no
+"""
+expected_rows = [[2], [1], [1], [1], [1], [1], [1]]
+order_matters = true
+
+[[example]]
+id = "tool-qty-sum"
+sql = """
+SELECT SUM(qty_per) AS total_qty_per
+FROM bom_item
+WHERE parent_material_no = 'M-000011'
+"""
+expected_rows = [[8]]
+order_matters = false
+
+[[example]]
+id = "supplier-avg-lead-time"
+sql = """
+SELECT supplier_no, ROUND(AVG(quoted_lead_time_days), 1) AS avg_lead_time_days
+FROM material_supplier
+WHERE supplier_no = 'V-10001'
+GROUP BY supplier_no
+"""
+expected_rows = [["V-10001", 54.1]]
+order_matters = false
+
+[[example]]
+id = "two-materials-in-list"
+sql = """
+SELECT material_no, created_on
+FROM material
+WHERE material_no IN ('M-000001', 'M-000011')
+"""
+expected_rows = [
+  ["M-000001", "2021-10-31"],
+  ["M-000011", "2021-10-31"],
+]
+order_matters = false
+
+[[example]]
+id = "created-year-of-two-materials"
+sql = """
+SELECT EXTRACT(YEAR FROM created_on) AS created_year, COUNT(*) AS material_count
+FROM material
+WHERE material_no IN ('M-000001', 'M-000011')
+GROUP BY EXTRACT(YEAR FROM created_on)
+ORDER BY created_year
+"""
+expected_rows = [[2021, 2]]
+order_matters = true
+
+[[example]]
+id = "austin-lead-time-counts"
+sql = """
+SELECT plant_code,
+       COUNT(*) - COUNT(planned_lead_time_days) AS missing_lead_time,
+       COUNT(planned_lead_time_days) AS filled_lead_time
+FROM material_plant
+WHERE plant_code = 'AU01'
+GROUP BY plant_code
+"""
+expected_rows = [["AU01", 180, 5140]]
+order_matters = false
+
+[[fact]]
+id = "requested-year-2021"
+sql = """
+SELECT COUNT(*)
+FROM sales_order_item
+WHERE EXTRACT(YEAR FROM requested_date) = 2021
+"""
+expected = 625
+
+[[fact]]
+id = "requested-year-2027"
+sql = """
+SELECT COUNT(*)
+FROM sales_order_item
+WHERE EXTRACT(YEAR FROM requested_date) = 2027
+"""
+expected = 242

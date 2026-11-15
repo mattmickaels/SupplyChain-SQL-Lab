@@ -6,7 +6,9 @@ summary = "Look up a matching row from another table, and do not let one match b
 An inner join keeps rows that match in both tables.
 VLOOKUP does this when it looks up a name from a code.
 
-This query looks up the supplier name for one purchase order.
+AS h is a short name for a table in one query.
+This query uses h for the purchase order and s for the supplier.
+h.po_no means the po_no column from that purchase order.
 
 ```sql
 SELECT h.po_no, s.name
@@ -16,7 +18,7 @@ WHERE h.po_no = 'PO-0043687'
 ```
 
 One row comes back.
-The supplier name is Drift Circuit.
+The supplier name is Kindred Flow Controls.
 
 A left join keeps every row from the first table.
 When nothing matches, the columns from the second table are NULL.
@@ -34,6 +36,56 @@ WHERE p.plant_code = 'SG01'
 
 The plant row stays.
 bay_id is NULL, because that bay does not exist.
+
+A test written as = NULL does not find those blank values.
+The comparison is unknown, so the row is thrown away.
+
+```sql
+SELECT p.plant_code, b.bay_id
+FROM plant AS p
+LEFT JOIN build_bay AS b
+  ON b.plant_code = p.plant_code
+ AND b.bay_id = 'SG01-B9'
+WHERE p.plant_code = 'SG01'
+  AND b.bay_id = NULL
+```
+
+No rows come back.
+
+IS NULL is the test that keeps a blank value.
+
+```sql
+SELECT p.plant_code, b.bay_id
+FROM plant AS p
+LEFT JOIN build_bay AS b
+  ON b.plant_code = p.plant_code
+ AND b.bay_id = 'SG01-B9'
+WHERE p.plant_code = 'SG01'
+  AND b.bay_id IS NULL
+```
+
+One row comes back.
+plant_code is SG01, and bay_id is NULL.
+
+That pattern is an anti-join.
+A left join plus WHERE the right-hand key IS NULL keeps left rows that had no match.
+
+A condition on the right-hand table belongs in ON.
+Put it in WHERE and the blank match is thrown away, so the left join behaves like an inner join.
+
+The query above keeps the condition b.bay_id = 'SG01-B9' in ON, and the plant row stays.
+Move that test to WHERE and the plant row disappears.
+
+```sql
+SELECT p.plant_code, b.bay_id
+FROM plant AS p
+LEFT JOIN build_bay AS b
+  ON b.plant_code = p.plant_code
+WHERE p.plant_code = 'SG01'
+  AND b.bay_id = 'SG01-B9'
+```
+
+No rows come back.
 
 COALESCE replaces a NULL with a value you choose.
 It does not change a real bay id.
@@ -66,18 +118,18 @@ Three rows come back.
 AU01, SC01, and SG01 each have 5 bays.
 
 A join can multiply rows.
-Line 1 of PO-0043687 orders 18 units and has three goods receipts.
+Line 1 of PO-0000003 orders 75 and has three goods receipts of 25.
 
 ```sql
 SELECT i.po_no, i.line_no, SUM(i.order_qty) AS summed_order_qty
 FROM purchase_order_item AS i
 JOIN goods_receipt AS g
   ON g.po_no = i.po_no AND g.line_no = i.line_no
-WHERE i.po_no = 'PO-0043687' AND i.line_no = 1
+WHERE i.po_no = 'PO-0000003' AND i.line_no = 1
 GROUP BY i.po_no, i.line_no
 ```
 
-summed_order_qty is 54, because 18 was added once per receipt.
+summed_order_qty is 225, because 75 was added once per receipt.
 Sum the receipts first, then join that one row back.
 
 ```sql
@@ -88,30 +140,35 @@ JOIN (
     FROM goods_receipt
     GROUP BY po_no, line_no
 ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
-WHERE i.po_no = 'PO-0043687' AND i.line_no = 1
+WHERE i.po_no = 'PO-0000003' AND i.line_no = 1
 ```
 
-order_qty stays 18.
-received_qty is 18.
+order_qty stays 75.
+received_qty is 75.
+
+When a group has exactly one supplier, MIN(supplier_no) returns that supplier.
+supplier_no has to sit inside an aggregate when it is not in the GROUP BY.
+HAVING COUNT(*) = 1 is what makes the minimum the only supplier.
 
 Write the test as confirmed_delivery_date >= requested_delivery_date + INTERVAL 56 DAY, because that sum is a date-time (timestamp) on both DuckDB and Databricks.
 A date-time still compares correctly with a date.
 Date minus date is not used here, because those engines do not return the same kind of value.
 
-Line 1 of PO-0012389 was requested for 18 January 2027 and confirmed for 15 March 2027.
-The confirmed date is on or after the requested date plus 56 days.
+Line 1 of PO-0006562 was requested for 28 December 2026 and confirmed for 22 February 2027.
+The confirmed date is the requested date plus 56 days.
 
 ```sql
 SELECT i.po_no, i.line_no
 FROM purchase_order_item AS i
-WHERE i.po_no = 'PO-0012389'
+WHERE i.po_no = 'PO-0006562'
   AND i.line_no = 1
   AND i.confirmed_delivery_date >= i.requested_delivery_date + INTERVAL 56 DAY
 ```
 
 That filter keeps the line.
 Corvane RF Systems, supplier V-10017, has open lines that pass the same test.
-Those late lines are why six open Etch tool orders are at risk in this lab.
+The RF generator lines among those late lines are why a handful of open Etch tool orders are at risk.
+Other late lines from Corvane are not that shortage.
 Lesson 9 is where you build that at-risk list.
 
 Check yourself.

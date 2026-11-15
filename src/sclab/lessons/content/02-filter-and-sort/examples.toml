@@ -1,0 +1,72 @@
+[[example]]
+id = "us-plants-sorted"
+sql = """
+SELECT plant_code, name
+FROM plant
+WHERE country = 'US'
+ORDER BY plant_code
+"""
+expected_rows = [
+  ["AU01", "Austin"],
+  ["SC01", "Santa Clara"],
+]
+order_matters = true
+
+[[example]]
+id = "plant-names-desc"
+sql = """
+SELECT name
+FROM plant
+ORDER BY name DESC
+"""
+expected_rows = [
+  ["Singapore"],
+  ["Santa Clara"],
+  ["Austin"],
+]
+order_matters = true
+
+[[example]]
+id = "plant-codes-limit"
+sql = """
+SELECT plant_code
+FROM plant
+ORDER BY plant_code
+LIMIT 2
+"""
+expected_rows = [
+  ["AU01"],
+  ["SC01"],
+]
+order_matters = true
+
+[[example]]
+id = "plant-name-lengths"
+sql = """
+SELECT name, LENGTH(name) AS name_length
+FROM plant
+"""
+expected_rows = [
+  ["Austin", 6],
+  ["Santa Clara", 11],
+  ["Singapore", 9],
+]
+order_matters = false
+
+[[fact]]
+id = "japan-country-code"
+sql = """
+SELECT MIN(country)
+FROM supplier
+WHERE country = 'JP'
+"""
+expected = "JP"
+
+[[fact]]
+id = "spare-rf-generator-kit"
+sql = """
+SELECT COUNT(*)
+FROM material
+WHERE description = 'Spare RF generator kit'
+"""
+expected = 1

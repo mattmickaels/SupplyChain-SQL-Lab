@@ -8,7 +8,7 @@ The columns are plant_code, name, city, and country.
 hints = [
   "Every column means the whole plant row, not a filtered subset.",
   "Use SELECT and FROM, with no WHERE.",
-  "SELECT plant_code, name, city, country FROM plant",
+  "SELECT ___, ___, ___, ___ FROM plant",
 ]
 reference_sql = [
   """
@@ -30,7 +30,7 @@ List material_no, description, and material_type for every material.
 hints = [
   "You want three facts about every material, and the other columns stay out.",
   "SELECT those three names FROM material.",
-  "SELECT material_no, description, material_type FROM material",
+  "SELECT ___, ___, ___ FROM material",
 ]
 reference_sql = [
   """
@@ -56,7 +56,7 @@ Return one column with that number.
 hints = [
   "The question asks how many rows exist, which is one number.",
   "Use COUNT(*) on purchase_order_item.",
-  "SELECT COUNT(*) AS row_count FROM purchase_order_item",
+  "SELECT COUNT(*) AS ___ FROM ___",
 ]
 reference_sql = [
   """
@@ -85,7 +85,7 @@ When the two numbers match, every supplier number appears on exactly one row.
 hints = [
   "A unique key means the row count equals the count of different supplier numbers.",
   "Use COUNT(*) and COUNT(DISTINCT supplier_no) in the same SELECT.",
-  "SELECT COUNT(*) AS row_count, COUNT(DISTINCT supplier_no) AS supplier_count FROM supplier",
+  "SELECT COUNT(*) AS ___, COUNT(DISTINCT ___) AS ___ FROM supplier",
 ]
 reference_sql = [
   """
@@ -105,26 +105,26 @@ excel_tip = "This is like comparing a row count with the count of unique values 
 id = "corvane-po-lines"
 title = "Lines on one Corvane order"
 prompt_md = """
-Purchase order PO-0011971 was sent to Corvane RF Systems, supplier V-10017.
+Purchase order PO-0006180 was sent to Corvane RF Systems, supplier V-10017.
 Show po_no, line_no, material_no, and order_qty for every line on that order.
 po_no alone is not the key, because one order has several lines.
 po_no plus line_no is the key, because that pair identifies exactly one line.
 """
 hints = [
   "Several lines can share one purchase order number, so filter to the named order.",
-  "Use WHERE po_no = 'PO-0011971' on purchase_order_item.",
-  "SELECT po_no, line_no, material_no, order_qty FROM purchase_order_item WHERE po_no = 'PO-0011971'",
+  "Use WHERE po_no = 'PO-0006180' on purchase_order_item.",
+  "SELECT po_no, line_no, material_no, order_qty FROM ___ WHERE po_no = ___",
 ]
 reference_sql = [
   """
   SELECT po_no, line_no, material_no, order_qty
   FROM purchase_order_item
-  WHERE po_no = 'PO-0011971'
+  WHERE po_no = 'PO-0006180'
   """,
   """
   SELECT line_no, po_no, order_qty, material_no
   FROM purchase_order_item
-  WHERE po_no = 'PO-0011971'
+  WHERE po_no = 'PO-0006180'
   ORDER BY line_no
   """,
 ]

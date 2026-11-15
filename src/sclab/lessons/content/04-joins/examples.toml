@@ -1,0 +1,216 @@
+[[example]]
+id = "supplier-for-one-po"
+sql = """
+SELECT h.po_no, s.name
+FROM purchase_order AS h
+JOIN supplier AS s ON s.supplier_no = h.supplier_no
+WHERE h.po_no = 'PO-0043687'
+"""
+expected_rows = [["PO-0043687", "Kindred Flow Controls"]]
+order_matters = false
+
+[[example]]
+id = "missing-bay-left-join"
+sql = """
+SELECT p.plant_code, b.bay_id
+FROM plant AS p
+LEFT JOIN build_bay AS b
+  ON b.plant_code = p.plant_code
+ AND b.bay_id = 'SG01-B9'
+WHERE p.plant_code = 'SG01'
+"""
+expected_rows = [["SG01", "NULL"]]
+order_matters = false
+
+[[example]]
+id = "equals-null-returns-nothing"
+sql = """
+SELECT p.plant_code, b.bay_id
+FROM plant AS p
+LEFT JOIN build_bay AS b
+  ON b.plant_code = p.plant_code
+ AND b.bay_id = 'SG01-B9'
+WHERE p.plant_code = 'SG01'
+  AND b.bay_id = NULL
+"""
+expected_rows = []
+order_matters = false
+
+[[example]]
+id = "is-null-keeps-the-plant"
+sql = """
+SELECT p.plant_code, b.bay_id
+FROM plant AS p
+LEFT JOIN build_bay AS b
+  ON b.plant_code = p.plant_code
+ AND b.bay_id = 'SG01-B9'
+WHERE p.plant_code = 'SG01'
+  AND b.bay_id IS NULL
+"""
+expected_rows = [["SG01", "NULL"]]
+order_matters = false
+
+[[example]]
+id = "right-table-condition-in-where"
+sql = """
+SELECT p.plant_code, b.bay_id
+FROM plant AS p
+LEFT JOIN build_bay AS b
+  ON b.plant_code = p.plant_code
+WHERE p.plant_code = 'SG01'
+  AND b.bay_id = 'SG01-B9'
+"""
+expected_rows = []
+order_matters = false
+
+[[example]]
+id = "coalesce-missing-bay"
+sql = """
+SELECT p.plant_code, COALESCE(b.bay_id, 'none') AS bay_id
+FROM plant AS p
+LEFT JOIN build_bay AS b
+  ON b.plant_code = p.plant_code
+ AND b.bay_id = 'SG01-B9'
+WHERE p.plant_code = 'SG01'
+"""
+expected_rows = [["SG01", "none"]]
+order_matters = false
+
+[[example]]
+id = "bays-by-plant"
+sql = """
+SELECT plant_code, bay_count
+FROM (
+    SELECT plant_code, COUNT(*) AS bay_count
+    FROM build_bay
+    GROUP BY plant_code
+) AS bay_totals
+ORDER BY plant_code
+"""
+expected_rows = [
+  ["AU01", 5],
+  ["SC01", 5],
+  ["SG01", 5],
+]
+order_matters = true
+
+[[example]]
+id = "receipt-qtys"
+sql = """
+SELECT qty
+FROM goods_receipt
+WHERE po_no = 'PO-0000003' AND line_no = 1
+"""
+expected_rows = [[25], [25], [25]]
+order_matters = false
+
+[[example]]
+id = "fan-out-order-qty"
+sql = """
+SELECT i.po_no, i.line_no, SUM(i.order_qty) AS summed_order_qty
+FROM purchase_order_item AS i
+JOIN goods_receipt AS g
+  ON g.po_no = i.po_no AND g.line_no = i.line_no
+WHERE i.po_no = 'PO-0000003' AND i.line_no = 1
+GROUP BY i.po_no, i.line_no
+"""
+expected_rows = [["PO-0000003", 1, 225]]
+order_matters = false
+
+[[example]]
+id = "aggregated-receipt"
+sql = """
+SELECT i.po_no, i.line_no, i.order_qty, r.received_qty
+FROM purchase_order_item AS i
+JOIN (
+    SELECT po_no, line_no, SUM(qty) AS received_qty
+    FROM goods_receipt
+    GROUP BY po_no, line_no
+) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+WHERE i.po_no = 'PO-0000003' AND i.line_no = 1
+"""
+expected_rows = [["PO-0000003", 1, 75, 75]]
+order_matters = false
+
+[[example]]
+id = "late-line-stays"
+sql = """
+SELECT i.po_no, i.line_no
+FROM purchase_order_item AS i
+WHERE i.po_no = 'PO-0006562'
+  AND i.line_no = 1
+  AND i.confirmed_delivery_date >= i.requested_delivery_date + INTERVAL 56 DAY
+"""
+expected_rows = [["PO-0006562", 1]]
+order_matters = false
+
+[[fact]]
+id = "multi-receipt-line-count"
+sql = """
+SELECT COUNT(*)
+FROM (
+    SELECT i.po_no, i.line_no
+    FROM purchase_order_item AS i
+    JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
+    WHERE i.po_no IN (
+        'PO-0000003', 'PO-0000006', 'PO-0000009', 'PO-0000012', 'PO-0000015'
+    )
+    GROUP BY i.po_no, i.line_no
+    HAVING COUNT(*) = 3
+) AS lines
+"""
+expected = 5
+
+[[fact]]
+id = "etch-tool-description"
+sql = """
+SELECT description
+FROM material
+WHERE material_no = 'M-000011'
+"""
+expected = "Etch system, 300mm, 2-chamber"
+
+[[fact]]
+id = "etch-tool-same-description"
+sql = """
+SELECT COUNT(*)
+FROM material
+WHERE description = 'Etch system, 300mm, 2-chamber'
+"""
+expected = 2
+
+[[fact]]
+id = "halcyon-name"
+sql = """
+SELECT name
+FROM customer
+WHERE customer_no = 'C-2003'
+"""
+expected = "Halcyon Memory"
+
+[[fact]]
+id = "corvane-name"
+sql = """
+SELECT name
+FROM supplier
+WHERE supplier_no = 'V-10017'
+"""
+expected = "Corvane RF Systems"
+
+[[fact]]
+id = "late-line-requested"
+sql = """
+SELECT requested_delivery_date
+FROM purchase_order_item
+WHERE po_no = 'PO-0006562' AND line_no = 1
+"""
+expected = "2026-12-28"
+
+[[fact]]
+id = "late-line-confirmed"
+sql = """
+SELECT confirmed_delivery_date
+FROM purchase_order_item
+WHERE po_no = 'PO-0006562' AND line_no = 1
+"""
+expected = "2027-02-22"

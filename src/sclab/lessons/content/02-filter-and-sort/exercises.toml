@@ -9,7 +9,7 @@ Return material_no and description, ordered by material_no.
 hints = [
   "Long-lead materials are the rows where is_long_lead is true.",
   "Filter with WHERE is_long_lead = TRUE, then sort.",
-  "SELECT material_no, description FROM material WHERE is_long_lead = TRUE ORDER BY material_no",
+  "SELECT material_no, description FROM ___ WHERE is_long_lead = ___ ORDER BY ___",
 ]
 reference_sql = [
   """
@@ -40,7 +40,7 @@ Return supplier_no and name, ordered by name.
 hints = [
   "Japan is stored as the country code JP, not the word Japan.",
   "Filter with WHERE country = 'JP', then sort by name.",
-  "SELECT supplier_no, name FROM supplier WHERE country = 'JP' ORDER BY name",
+  "SELECT supplier_no, name FROM supplier WHERE country = ___ ORDER BY ___",
 ]
 reference_sql = [
   """
@@ -71,7 +71,7 @@ Order by confirmed_delivery_date, then po_no, then line_no.
 hints = [
   "Keep lines whose confirmed date is after today and whose quantity is at least 10.",
   "Use WHERE confirmed_delivery_date > DATE '2026-11-01' AND order_qty >= 10.",
-  "SELECT po_no, line_no, material_no, confirmed_delivery_date FROM purchase_order_item WHERE confirmed_delivery_date > DATE '2026-11-01' AND order_qty >= 10 ORDER BY confirmed_delivery_date, po_no, line_no",
+  "SELECT po_no, line_no, material_no, confirmed_delivery_date FROM purchase_order_item WHERE confirmed_delivery_date ___ DATE '2026-11-01' AND order_qty >= ___ ORDER BY confirmed_delivery_date, po_no, line_no",
 ]
 reference_sql = [
   """
@@ -106,7 +106,7 @@ Order by requested_date, then so_no, then line_no.
 hints = [
   "An open line has status Open, and December 2026 is a range of requested dates.",
   "Filter sales_order_item with status = 'Open' and requested_date in that month.",
-  "SELECT so_no, line_no, material_no, qty, requested_date FROM sales_order_item WHERE status = 'Open' AND requested_date BETWEEN DATE '2026-12-01' AND DATE '2026-12-31' ORDER BY requested_date, so_no, line_no",
+  "SELECT so_no, line_no, material_no, qty, requested_date FROM sales_order_item WHERE status = ___ AND requested_date >= ___ AND requested_date < ___ ORDER BY requested_date, so_no, line_no",
 ]
 reference_sql = [
   """
@@ -140,7 +140,7 @@ Return material_no and description, ordered by material_no.
 hints = [
   "Contains means the phrase can sit in the middle of the description, not only at the start.",
   "Use LIKE '%RF generator%', with a percent sign on both sides.",
-  "SELECT material_no, description FROM material WHERE description LIKE '%RF generator%' ORDER BY material_no",
+  "SELECT material_no, description FROM material WHERE description LIKE ___ ORDER BY material_no",
 ]
 reference_sql = [
   """
@@ -172,7 +172,7 @@ Order by net_value descending, then po_no, then line_no, and keep 10 rows.
 hints = [
   "Net value is quantity times price, and you want the 10 largest.",
   "Name the product with AS, sort with ORDER BY net_value DESC, and stop with LIMIT.",
-  "SELECT po_no, line_no, material_no, order_qty * net_price AS net_value FROM purchase_order_item ORDER BY net_value DESC, po_no, line_no LIMIT 10",
+  "SELECT po_no, line_no, material_no, ___ AS net_value FROM purchase_order_item ORDER BY net_value DESC, po_no, line_no LIMIT ___",
 ]
 reference_sql = [
   """
@@ -206,7 +206,7 @@ Order by planned_lead_time_days, then material_no.
 hints = [
   "The range includes 120 and 180, and only plant SG01.",
   "Use WHERE plant_code = 'SG01' AND planned_lead_time_days BETWEEN 120 AND 180.",
-  "SELECT material_no, planned_lead_time_days FROM material_plant WHERE plant_code = 'SG01' AND planned_lead_time_days BETWEEN 120 AND 180 ORDER BY planned_lead_time_days, material_no",
+  "SELECT material_no, planned_lead_time_days FROM material_plant WHERE plant_code = ___ AND planned_lead_time_days BETWEEN ___ AND ___ ORDER BY planned_lead_time_days, material_no",
 ]
 reference_sql = [
   """

@@ -40,6 +40,17 @@ SELECT COUNT(DISTINCT country) AS country_count
 FROM plant
 ```
 
+WHERE keeps rows that pass a test.
+
+```sql
+SELECT plant_code, name
+FROM plant
+WHERE country = 'US'
+```
+
+Two rows remain.
+AU01 is Austin, and SC01 is Santa Clara.
+
 Check yourself.
 Point at a table and name the column, or the columns, that match at most one row.
 If you cannot, you do not know which row a value refers to.

@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+import tomllib
 from copy import deepcopy
 from functools import cache
 from pathlib import Path
@@ -13,8 +14,9 @@ import pytest
 from sclab.engine.checker import compare, normalize_value
 from sclab.engine.query import QueryError, run_query
 from sclab.engine.types import QueryResult
-from sclab.lessons.model import Exercise, load_lessons
+from sclab.lessons.model import Exercise, check_answer, load_lessons
 
+_CONTENT = Path(__file__).parents[1] / "src" / "sclab" / "lessons" / "content"
 _SNAPSHOT = Path(__file__).parent / "snapshots" / "exercises.json"
 _MAX_ROWS = 200_000
 _FORBIDDEN = re.compile(
@@ -352,39 +354,248 @@ def test_portability_round_trip_preserves_banned_constructs(sql: str) -> None:
     assert _FORBIDDEN.search(_portable_sql(sql)) is not None
 
 
-_MULTI_RECEIPT_POS = (
-    "PO-0043687",
-    "PO-0043688",
-    "PO-0043689",
-    "PO-0043690",
-    "PO-0043691",
-)
+def _lesson_folders() -> list[Path]:
+    folders = [
+        folder for folder in _CONTENT.iterdir() if folder.is_dir() and folder.name != "00-sample"
+    ]
+    return sorted(folders, key=lambda folder: folder.name)
 
 
-def test_receipt_fan_out_unsafe_query_does_not_match(reference_results) -> None:
-    exercise = next(item for item in _exercises() if item.id == "join-multi-receipt-qty")
-    quoted = ", ".join(f"'{po_no}'" for po_no in _MULTI_RECEIPT_POS)
-    unsafe = f"""
+def _cell(value: object) -> object:
+    if value == "NULL":
+        return None
+    return value
+
+
+def _normalize_ws(text: str) -> str:
+    return " ".join(text.split())
+
+
+def test_worked_examples_match_text(lab_home) -> None:
+    assert lab_home is not None
+    for folder in _lesson_folders():
+        path = folder / "examples.toml"
+        assert path.is_file(), folder.name
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        examples = data.get("example", [])
+        assert examples, folder.name
+        for example in examples:
+            result = _run(example["sql"])
+            expected = QueryResult(
+                columns=list(result.columns),
+                rows=[tuple(_cell(value) for value in row) for row in example["expected_rows"]],
+                total_rows=len(example["expected_rows"]),
+                truncated=False,
+                elapsed_ms=0,
+            )
+            outcome = compare(
+                result,
+                expected,
+                order_matters=example["order_matters"],
+                names_matter=False,
+                columns_in_order=True,
+            )
+            assert outcome.passed, f"{folder.name} {example['id']}: {outcome.summary}"
+        for fact in data.get("fact", []):
+            result = _run(fact["sql"])
+            assert len(result.rows) == 1, fact["id"]
+            assert len(result.rows[0]) == 1, fact["id"]
+            assert normalize_value(result.rows[0][0]) == normalize_value(fact["expected"]), fact[
+                "id"
+            ]
+
+
+def test_hints_are_not_reference_queries() -> None:
+    for exercise in _exercises():
+        for hint in exercise.hints:
+            folded = _normalize_ws(hint)
+            for sql in exercise.reference_sql:
+                reference = _normalize_ws(sql)
+                assert folded != reference, exercise.id
+                assert reference not in folded, exercise.id
+
+
+_WRONG_ANSWERS = (
+    (
+        "join-open-rf-po-lines",
+        """
+        SELECT i.po_no, i.line_no, s.name AS supplier_name, i.confirmed_delivery_date
+        FROM purchase_order_item AS i
+        JOIN purchase_order AS h ON h.po_no = i.po_no
+        JOIN supplier AS s ON s.supplier_no = h.supplier_no
+        JOIN material AS m ON m.material_no = i.material_no
+        LEFT JOIN (
+            SELECT po_no, line_no, sum(qty) AS received_qty
+            FROM goods_receipt
+            GROUP BY po_no, line_no
+        ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+        WHERE m.description = 'RF generator'
+          AND h.order_date <= DATE '2026-11-01'
+        ORDER BY i.confirmed_delivery_date, i.po_no, i.line_no
+        """,
+    ),
+    (
+        "join-open-rf-po-lines",
+        """
+        SELECT i.po_no, i.line_no, s.name AS supplier_name, i.confirmed_delivery_date
+        FROM purchase_order_item AS i
+        JOIN purchase_order AS h ON h.po_no = i.po_no
+        JOIN supplier AS s ON s.supplier_no = h.supplier_no
+        JOIN material AS m ON m.material_no = i.material_no
+        JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
+        WHERE m.description = 'RF generator'
+          AND h.order_date <= DATE '2026-11-01'
+          AND g.qty < i.order_qty
+        ORDER BY i.confirmed_delivery_date, i.po_no, i.line_no
+        """,
+    ),
+    (
+        "join-corvane-late-lines",
+        """
+        SELECT i.po_no, i.line_no, m.description,
+               i.requested_delivery_date, i.confirmed_delivery_date
+        FROM purchase_order_item AS i
+        JOIN purchase_order AS h ON h.po_no = i.po_no
+        JOIN material AS m ON m.material_no = i.material_no
+        LEFT JOIN (
+            SELECT po_no, line_no, sum(qty) AS received_qty
+            FROM goods_receipt
+            GROUP BY po_no, line_no
+        ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+        WHERE h.supplier_no = 'V-10017'
+          AND h.order_date <= DATE '2026-11-01'
+          AND i.confirmed_delivery_date >= i.requested_delivery_date + INTERVAL 56 DAY
+        ORDER BY i.po_no, i.line_no
+        """,
+    ),
+    (
+        "join-corvane-late-lines",
+        """
+        SELECT i.po_no, i.line_no, m.description,
+               i.requested_delivery_date, i.confirmed_delivery_date
+        FROM purchase_order_item AS i
+        JOIN purchase_order AS h ON h.po_no = i.po_no
+        JOIN material AS m ON m.material_no = i.material_no
+        JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
+        WHERE h.supplier_no = 'V-10017'
+          AND h.order_date <= DATE '2026-11-01'
+          AND g.qty < i.order_qty
+          AND i.confirmed_delivery_date >= i.requested_delivery_date + INTERVAL 56 DAY
+        ORDER BY i.po_no, i.line_no
+        """,
+    ),
+    (
+        "join-long-lead-without-open-po",
+        """
+        SELECT m.material_no, m.description
+        FROM material AS m
+        LEFT JOIN purchase_order_item AS i ON i.material_no = m.material_no
+        WHERE m.is_long_lead = true
+          AND i.po_no IS NULL
+          AND m.description NOT LIKE '% '
+        ORDER BY m.material_no
+        """,
+    ),
+    (
+        "join-long-lead-without-open-po",
+        """
+        SELECT m.material_no, m.description
+        FROM material AS m
+        LEFT JOIN purchase_order_item AS i
+          ON i.material_no = m.material_no
+         AND i.confirmed_delivery_date >= DATE '2026-11-01'
+        WHERE m.is_long_lead = true
+          AND i.po_no = NULL
+          AND m.description NOT LIKE '% '
+        ORDER BY m.material_no
+        """,
+    ),
+    (
+        "join-long-lead-without-open-po",
+        """
+        SELECT m.material_no, m.description
+        FROM material AS m
+        LEFT JOIN purchase_order_item AS i ON i.material_no = m.material_no
+        WHERE m.is_long_lead = true
+          AND i.confirmed_delivery_date >= DATE '2026-11-01'
+          AND i.po_no IS NULL
+          AND m.description NOT LIKE '% '
+        ORDER BY m.material_no
+        """,
+    ),
+    (
+        "join-single-source-long-lead",
+        """
+        SELECT m.material_no, m.description, s.supplier_no
+        FROM material AS m
+        JOIN material_supplier AS s ON s.material_no = m.material_no
+        WHERE m.description = 'RF generator'
+        ORDER BY m.material_no
+        """,
+    ),
+    (
+        "confirmed-after-today",
+        """
+        SELECT po_no, line_no, material_no, confirmed_delivery_date
+        FROM purchase_order_item
+        WHERE confirmed_delivery_date >= DATE '2026-11-01'
+          AND order_qty >= 10
+        ORDER BY confirmed_delivery_date, po_no, line_no
+        """,
+    ),
+    (
+        "rf-generator-search",
+        """
+        SELECT material_no, description
+        FROM material
+        WHERE description = 'RF generator'
+        ORDER BY material_no
+        """,
+    ),
+    (
+        "rf-generator-search",
+        """
+        SELECT material_no, description
+        FROM material
+        WHERE description LIKE 'RF generator%'
+        ORDER BY material_no
+        """,
+    ),
+    (
+        "join-multi-receipt-qty",
+        """
         SELECT i.po_no, i.line_no, SUM(i.order_qty) AS order_qty, SUM(g.qty) AS received_qty
         FROM purchase_order_item AS i
         JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
-        WHERE i.po_no IN ({quoted})
+        WHERE i.po_no IN (
+            'PO-0000003', 'PO-0000006', 'PO-0000009', 'PO-0000012', 'PO-0000015'
+        )
         GROUP BY i.po_no, i.line_no
         ORDER BY i.po_no, i.line_no
-    """
-    unsafe_result = _run(unsafe)
-    reference = reference_results[exercise.reference_sql[0]]
-    outcome = compare(
-        unsafe_result,
-        reference,
-        order_matters=exercise.order_matters,
-        names_matter=exercise.names_matter,
-    )
-    assert outcome.passed is False
-    by_line = {(row[0], row[1]): row[2] for row in unsafe_result.rows}
-    assert by_line[("PO-0043687", 1)] == 54
-    reference_qty = {(row[0], row[1]): row[2] for row in reference.rows}
-    assert reference_qty[("PO-0043687", 1)] == 18
+        """,
+    ),
+)
+
+
+def test_common_wrong_answers_fail(lab_home, reference_results) -> None:
+    assert lab_home is not None
+    exercises = {item.id: item for item in _exercises()}
+    for exercise_id, sql in _WRONG_ANSWERS:
+        exercise = exercises[exercise_id]
+        outcome = check_answer(exercise, sql, runner=_run)
+        assert outcome.passed is False, exercise_id
+        if exercise_id == "join-open-rf-po-lines" and "JOIN goods_receipt AS g" not in sql:
+            wrong_rows = _run(sql).total_rows
+            right_rows = reference_results[exercise.reference_sql[0]].total_rows
+            assert wrong_rows > right_rows, exercise_id
+        if exercise_id != "join-multi-receipt-qty":
+            continue
+        unsafe_result = _run(sql)
+        reference = reference_results[exercise.reference_sql[0]]
+        unsafe_qty = {(row[0], row[1]): row[2] for row in unsafe_result.rows}
+        reference_qty = {(row[0], row[1]): row[2] for row in reference.rows}
+        assert unsafe_qty[("PO-0000003", 1)] == 225
+        assert reference_qty[("PO-0000003", 1)] == 75
 
 
 def test_like_matches_text_with_a_prefix() -> None:

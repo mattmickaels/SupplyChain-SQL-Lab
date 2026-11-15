@@ -1,0 +1,72 @@
+[[example]]
+id = "product-families"
+sql = """
+SELECT family_code, name
+FROM product_family
+"""
+expected_rows = [
+  ["CMP", "CMP"],
+  ["DEP", "Deposition"],
+  ["ETC", "Etch"],
+  ["INS", "Inspection"],
+]
+order_matters = false
+
+[[example]]
+id = "plant-count"
+sql = """
+SELECT COUNT(*) AS row_count
+FROM plant
+"""
+expected_rows = [[3]]
+order_matters = false
+
+[[example]]
+id = "country-count"
+sql = """
+SELECT COUNT(DISTINCT country) AS country_count
+FROM plant
+"""
+expected_rows = [[2]]
+order_matters = false
+
+[[example]]
+id = "us-plants"
+sql = """
+SELECT plant_code, name
+FROM plant
+WHERE country = 'US'
+"""
+expected_rows = [
+  ["AU01", "Austin"],
+  ["SC01", "Santa Clara"],
+]
+order_matters = false
+
+[[fact]]
+id = "corvane-po-supplier-no"
+sql = """
+SELECT supplier_no
+FROM purchase_order
+WHERE po_no = 'PO-0006180'
+"""
+expected = "V-10017"
+
+[[fact]]
+id = "corvane-po-supplier-name"
+sql = """
+SELECT s.name
+FROM purchase_order AS h
+JOIN supplier AS s ON s.supplier_no = h.supplier_no
+WHERE h.po_no = 'PO-0006180'
+"""
+expected = "Corvane RF Systems"
+
+[[fact]]
+id = "corvane-po-line-count"
+sql = """
+SELECT COUNT(*)
+FROM purchase_order_item
+WHERE po_no = 'PO-0006180'
+"""
+expected = 3
