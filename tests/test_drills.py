@@ -259,6 +259,29 @@ def test_drill_hints_and_solution_wait_for_start(client, monkeypatch) -> None:
     assert _CHECK_FIRST not in opened.text
 
 
+def test_summary_and_draft_wait_for_start(client) -> None:
+    summary = client.post(
+        "/api/drill/sample-drill/summary",
+        data={"text": "There are 3 plants.\nThe number is 3.\nNo change."},
+    )
+    assert summary.status_code == 200
+    assert _START_FIRST in summary.text
+    assert _MODEL_FIRST not in summary.text
+    assert _MODEL_LAST not in summary.text
+    assert "Model summary" not in summary.text
+    draft = client.post(
+        "/api/drill/sample-drill/draft",
+        data={"text": "Draft finding before the timer starts."},
+    )
+    assert draft.status_code == 200
+    assert _START_FIRST in draft.text
+    assert _MODEL_FIRST not in draft.text
+    store = ProgressStore(progress_path())
+    assert store.drill_summary("sample-drill") is None
+    assert store.drill_draft("sample-drill") is None
+    assert store.drill_started_at("sample-drill") is None
+
+
 def test_blank_summary_does_not_reveal_model(client, monkeypatch) -> None:
     monkeypatch.setattr("sclab.web.app._now", lambda: datetime(2026, 11, 1, 9, 0, 0))
     started = client.post("/api/drill/sample-drill/start")

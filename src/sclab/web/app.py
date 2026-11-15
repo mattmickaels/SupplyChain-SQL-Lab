@@ -235,6 +235,8 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
             exercise = _require_exercise(exercises, exercise_id)
             if not exercise.is_drill:
                 raise HTTPException(status_code=404, detail="That exercise is not a drill.")
+            if store().drill_started_at(exercise_id) is None:
+                return _plain_message("Start the drill first.")
             text = (await _form(request)).get("text", "")
             store().save_drill_draft(exercise_id, text)
             return HTMLResponse("")
@@ -249,6 +251,8 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
             exercise = _require_exercise(exercises, exercise_id)
             if not exercise.is_drill:
                 raise HTTPException(status_code=404, detail="That exercise is not a drill.")
+            if store().drill_started_at(exercise_id) is None:
+                return _plain_message("Start the drill first.")
             text = (await _form(request)).get("text", "")
             if not text.strip():
                 return _plain_message("Write your summary first.")
