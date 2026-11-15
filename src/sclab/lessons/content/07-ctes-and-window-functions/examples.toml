@@ -1,0 +1,313 @@
+[[example]]
+id = "bays-above-average"
+sql = """
+SELECT bay_id, weekly_slots
+FROM build_bay
+WHERE weekly_slots > (SELECT AVG(weekly_slots) FROM build_bay)
+ORDER BY bay_id
+"""
+expected_rows = [
+  ["AU01-B4", 6],
+  ["AU01-B5", 5],
+  ["SC01-B1", 6],
+  ["SC01-B2", 6],
+  ["SC01-B3", 6],
+  ["SC01-B4", 5],
+  ["SG01-B4", 6],
+]
+order_matters = true
+
+[[example]]
+id = "bays-above-average-cte"
+sql = """
+WITH bay_slots AS (
+    SELECT bay_id, weekly_slots
+    FROM build_bay
+)
+SELECT bay_id, weekly_slots
+FROM bay_slots
+WHERE weekly_slots > (SELECT AVG(weekly_slots) FROM bay_slots)
+ORDER BY bay_id
+"""
+expected_rows = [
+  ["AU01-B4", 6],
+  ["AU01-B5", 5],
+  ["SC01-B1", 6],
+  ["SC01-B2", 6],
+  ["SC01-B3", 6],
+  ["SC01-B4", 5],
+  ["SG01-B4", 6],
+]
+order_matters = true
+
+[[example]]
+id = "one-rf-open-qty"
+sql = """
+SELECT i.material_no,
+       SUM(i.order_qty - COALESCE(r.received_qty, 0)) AS open_qty
+FROM purchase_order_item AS i
+JOIN purchase_order AS h ON h.po_no = i.po_no
+LEFT JOIN (
+    SELECT po_no, line_no, SUM(qty) AS received_qty
+    FROM goods_receipt
+    GROUP BY po_no, line_no
+) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+WHERE h.order_date <= DATE '2026-11-01'
+  AND i.material_no = 'M-001331'
+  AND i.order_qty > COALESCE(r.received_qty, 0)
+GROUP BY i.material_no
+"""
+expected_rows = [["M-001331", 32]]
+order_matters = false
+
+[[example]]
+id = "rf-open-above-average"
+sql = """
+WITH received AS (
+    SELECT po_no, line_no, SUM(qty) AS received_qty
+    FROM goods_receipt
+    GROUP BY po_no, line_no
+),
+open_by_material AS (
+    SELECT i.material_no,
+           SUM(i.order_qty - COALESCE(r.received_qty, 0)) AS open_qty
+    FROM purchase_order_item AS i
+    JOIN purchase_order AS h ON h.po_no = i.po_no
+    JOIN material AS m ON m.material_no = i.material_no
+    LEFT JOIN received AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+    WHERE h.order_date <= DATE '2026-11-01'
+      AND m.description = 'RF generator'
+      AND i.order_qty > COALESCE(r.received_qty, 0)
+    GROUP BY i.material_no
+)
+SELECT material_no, open_qty
+FROM open_by_material
+WHERE open_qty > (SELECT AVG(open_qty) FROM open_by_material)
+ORDER BY open_qty DESC, material_no
+"""
+expected_rows = [
+  ["M-001325", 1153],
+  ["M-001324", 1020],
+  ["M-001323", 864],
+]
+order_matters = true
+
+[[example]]
+id = "three-supplier-ranks"
+sql = """
+WITH rates AS (
+    SELECT s.supplier_no,
+           s.name AS supplier_name,
+           COUNT(*) AS receipts,
+           ROUND(
+               100.0 * AVG(
+                   CASE
+                       WHEN g.receipt_date <= i.confirmed_delivery_date THEN 1.0
+                       ELSE 0.0
+                   END
+               ),
+               1
+           ) AS on_time_pct
+    FROM goods_receipt AS g
+    JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+    JOIN purchase_order AS h ON h.po_no = g.po_no
+    JOIN supplier AS s ON s.supplier_no = h.supplier_no
+    WHERE g.receipt_date >= DATE '2025-11-01'
+      AND g.receipt_date < DATE '2026-11-01'
+      AND s.supplier_no IN ('V-10064', 'V-10076', 'V-10078')
+    GROUP BY s.supplier_no, s.name
+)
+SELECT supplier_no,
+       supplier_name,
+       receipts,
+       on_time_pct,
+       RANK() OVER (ORDER BY on_time_pct DESC) AS rank_no
+FROM rates
+ORDER BY rank_no, supplier_no
+"""
+expected_rows = [
+  ["V-10064", "Fern Thermal Systems", 24, 95.8, 1],
+  ["V-10076", "Harbor Thermal Systems", 43, 90.7, 2],
+  ["V-10078", "Harbor Gas Delivery", 43, 90.7, 2],
+]
+order_matters = true
+
+[[example]]
+id = "three-receipts-numbered"
+sql = """
+SELECT gr_no,
+       receipt_date,
+       qty,
+       ROW_NUMBER() OVER (
+           ORDER BY receipt_date DESC, gr_no DESC
+       ) AS rn
+FROM goods_receipt
+WHERE po_no = 'PO-0000104'
+  AND line_no = 1
+ORDER BY rn
+"""
+expected_rows = [
+  ["GR-0109573", "2026-10-23", 2, 1],
+  ["GR-0109520", "2026-10-21", 3, 2],
+  ["GR-0109420", "2026-10-19", 3, 3],
+]
+order_matters = true
+
+[[example]]
+id = "rf-running-total-q1"
+sql = """
+WITH monthly AS (
+    SELECT CAST(date_trunc('month', g.receipt_date) AS DATE) AS month,
+           SUM(g.qty) AS month_qty
+    FROM goods_receipt AS g
+    JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+    JOIN material AS m ON m.material_no = i.material_no
+    WHERE m.description = 'RF generator'
+      AND g.receipt_date >= DATE '2026-01-01'
+      AND g.receipt_date < DATE '2026-04-01'
+    GROUP BY CAST(date_trunc('month', g.receipt_date) AS DATE)
+)
+SELECT month,
+       month_qty,
+       SUM(month_qty) OVER (
+           ORDER BY month ROWS UNBOUNDED PRECEDING
+       ) AS running_qty
+FROM monthly
+ORDER BY month
+"""
+expected_rows = [
+  ["2026-01-01", 371, 371],
+  ["2026-02-01", 385, 756],
+  ["2026-03-01", 188, 944],
+]
+order_matters = true
+
+[[example]]
+id = "tool-order-change-q1"
+sql = """
+WITH monthly AS (
+    SELECT CAST(date_trunc('month', h.order_date) AS DATE) AS month,
+           SUM(i.qty) AS order_qty
+    FROM sales_order_item AS i
+    JOIN sales_order AS h ON h.so_no = i.so_no
+    JOIN material AS m ON m.material_no = i.material_no
+    WHERE m.material_type = 'TOOL'
+      AND h.order_date >= DATE '2026-01-01'
+      AND h.order_date < DATE '2026-04-01'
+    GROUP BY CAST(date_trunc('month', h.order_date) AS DATE)
+)
+SELECT month,
+       order_qty,
+       order_qty - LAG(order_qty) OVER (ORDER BY month) AS qty_change
+FROM monthly
+ORDER BY month
+"""
+expected_rows = [
+  ["2026-01-01", 40, "NULL"],
+  ["2026-02-01", 40, 0],
+  ["2026-03-01", 40, 0],
+]
+order_matters = true
+
+[[example]]
+id = "halcyon-open-share"
+sql = """
+WITH open_lines AS (
+    SELECT h.customer_no,
+           c.name AS customer_name,
+           SUM(i.qty) AS open_qty
+    FROM sales_order_item AS i
+    JOIN sales_order AS h ON h.so_no = i.so_no
+    JOIN customer AS c ON c.customer_no = h.customer_no
+    JOIN material AS m ON m.material_no = i.material_no
+    WHERE i.status = 'Open'
+      AND m.material_type = 'TOOL'
+    GROUP BY h.customer_no, c.name
+),
+shares AS (
+    SELECT customer_no,
+           customer_name,
+           open_qty,
+           ROUND(100.0 * open_qty / SUM(open_qty) OVER (), 1) AS share_pct
+    FROM open_lines
+)
+SELECT customer_no, customer_name, open_qty, share_pct
+FROM shares
+WHERE customer_no = 'C-2003'
+"""
+expected_rows = [["C-2003", "Halcyon Memory", 41, 13.4]]
+order_matters = false
+
+[[example]]
+id = "us-top-supplier"
+sql = """
+WITH spend AS (
+    SELECT s.country,
+           s.supplier_no,
+           s.name AS supplier_name,
+           ROUND(SUM(i.order_qty * i.net_price), 2) AS spend
+    FROM purchase_order_item AS i
+    JOIN purchase_order AS h ON h.po_no = i.po_no
+    JOIN supplier AS s ON s.supplier_no = h.supplier_no
+    WHERE s.country = 'US'
+      AND h.order_date >= DATE '2025-11-01'
+      AND h.order_date < DATE '2026-11-01'
+    GROUP BY s.country, s.supplier_no, s.name
+),
+ranked AS (
+    SELECT country,
+           supplier_no,
+           supplier_name,
+           spend,
+           ROW_NUMBER() OVER (
+               PARTITION BY country
+               ORDER BY spend DESC, supplier_no
+           ) AS rank_no
+    FROM spend
+)
+SELECT country, supplier_no, supplier_name, spend, rank_no
+FROM ranked
+WHERE rank_no = 1
+"""
+expected_rows = [["US", "V-10113", "Kindred Quartz Ceramics", 26119815.52, 1]]
+order_matters = false
+
+[[fact]]
+id = "rf-generator-count"
+sql = """
+SELECT COUNT(*)
+FROM material
+WHERE description = 'RF generator'
+"""
+expected = 12
+
+[[fact]]
+id = "spare-rf-kit-name"
+sql = """
+SELECT description
+FROM material
+WHERE material_no = 'M-001561'
+"""
+expected = "Spare RF generator kit"
+
+[[fact]]
+id = "spare-rf-kit-not-long-lead"
+sql = """
+SELECT is_long_lead
+FROM material
+WHERE material_no = 'M-001561'
+"""
+expected = false
+
+[[fact]]
+id = "rf-receipts-sep-oct-2026"
+sql = """
+SELECT COUNT(*)
+FROM goods_receipt AS g
+JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+JOIN material AS m ON m.material_no = i.material_no
+WHERE m.description = 'RF generator'
+  AND g.receipt_date >= DATE '2026-09-01'
+  AND g.receipt_date < DATE '2026-11-01'
+"""
+expected = 0

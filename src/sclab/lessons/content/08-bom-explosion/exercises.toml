@@ -1,0 +1,277 @@
+[[exercise]]
+id = "bom-direct-children"
+title = "Direct children of one etch tool"
+prompt_md = """
+List the direct components of tool M-000011, Etch system, 300mm, 2-chamber.
+The parent is parent_material_no on bom_item.
+Return component_material_no, description, and qty_per.
+The description comes from material.
+Order by component_material_no.
+Another tool uses the same description, so keep this material number.
+"""
+hints = [
+  "This is one join from the bill of materials to material, for a single parent.",
+  "Filter bom_item to parent_material_no = 'M-000011' and join material on component_material_no.",
+  "SELECT b.component_material_no, m.description, b.qty_per FROM bom_item AS b JOIN material AS m ON ___ WHERE b.parent_material_no = ___ ORDER BY b.component_material_no",
+]
+reference_sql = [
+  """
+SELECT b.component_material_no, m.description, b.qty_per
+FROM bom_item AS b
+JOIN material AS m ON m.material_no = b.component_material_no
+WHERE b.parent_material_no = 'M-000011'
+ORDER BY b.component_material_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Filter the bill of materials to one parent, then look up each component description."
+
+[[exercise]]
+id = "bom-full-explosion"
+title = "Full explosion of one etch tool"
+prompt_md = """
+Explode tool M-000011 down every level with WITH RECURSIVE.
+Level 1 is a direct child of the tool.
+Each later level is a child of the previous component.
+Guard the recursive term with level < 10.
+Return one row for each bill-of-materials link.
+The same component can appear more than once when more than one parent uses it.
+Return level, parent_material_no, component_material_no, and description.
+Order by level, then component_material_no, then parent_material_no.
+"""
+hints = [
+  "The anchor is the tool's own bom_item rows at level 1. The recursive term joins the next bom_item rows.",
+  "WHERE level < 10 belongs in the recursive term, not only in the outer query.",
+  "WITH RECURSIVE tree AS (SELECT ___, 1 AS level FROM bom_item WHERE ___ UNION ALL SELECT ___, level + 1 FROM tree JOIN bom_item WHERE level < ___) SELECT level, parent_material_no, component_material_no, description FROM tree ORDER BY ___",
+]
+reference_sql = [
+  """
+WITH RECURSIVE tree AS (
+    SELECT b.parent_material_no,
+           b.component_material_no,
+           1 AS level
+    FROM bom_item AS b
+    WHERE b.parent_material_no = 'M-000011'
+    UNION ALL
+    SELECT b.parent_material_no,
+           b.component_material_no,
+           t.level + 1
+    FROM tree AS t
+    JOIN bom_item AS b ON b.parent_material_no = t.component_material_no
+    WHERE t.level < 10
+)
+SELECT t.level, t.parent_material_no, t.component_material_no, m.description
+FROM tree AS t
+JOIN material AS m ON m.material_no = t.component_material_no
+ORDER BY t.level, t.component_material_no, t.parent_material_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "A bill of materials that you keep expanding until there are no more children, with a stop at level 10."
+
+[[exercise]]
+id = "bom-extended-qty"
+title = "Extended quantity down the etch tool"
+prompt_md = """
+Add extended quantity to the full explosion of tool M-000011.
+Extended quantity starts as qty_per on the first link.
+Each later link multiplies that running quantity by the next qty_per.
+Guard the recursive term with level < 10.
+Return one row for each bill-of-materials link.
+Return level, parent_material_no, component_material_no, description, and extended_qty.
+Order by level, then component_material_no, then parent_material_no.
+"""
+hints = [
+  "Carry the multiplied quantity in the recursive column, and cast it so the product keeps its decimals.",
+  "Anchor: CAST(qty_per AS DECIMAL(20,6)). Recursive term: CAST(extended_qty * qty_per AS DECIMAL(20,6)), and WHERE level < 10.",
+  "WITH RECURSIVE tree AS (SELECT ___, CAST(qty_per AS DECIMAL(20,6)) AS extended_qty, 1 AS level UNION ALL SELECT ___, CAST(extended_qty * ___ AS DECIMAL(20,6)), level + 1 WHERE level < ___) SELECT ___ FROM tree ORDER BY ___",
+]
+reference_sql = [
+  """
+WITH RECURSIVE tree AS (
+    SELECT b.parent_material_no,
+           b.component_material_no,
+           CAST(b.qty_per AS DECIMAL(20,6)) AS extended_qty,
+           1 AS level
+    FROM bom_item AS b
+    WHERE b.parent_material_no = 'M-000011'
+    UNION ALL
+    SELECT b.parent_material_no,
+           b.component_material_no,
+           CAST(t.extended_qty * b.qty_per AS DECIMAL(20,6)),
+           t.level + 1
+    FROM tree AS t
+    JOIN bom_item AS b ON b.parent_material_no = t.component_material_no
+    WHERE t.level < 10
+)
+SELECT t.level,
+       t.parent_material_no,
+       t.component_material_no,
+       m.description,
+       t.extended_qty
+FROM tree AS t
+JOIN material AS m ON m.material_no = t.component_material_no
+ORDER BY t.level, t.component_material_no, t.parent_material_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Multiply the quantity-per down the tree, the way a multi-level BOM rolls quantity to the finished tool."
+
+[[exercise]]
+id = "bom-long-lead-count"
+title = "Long-lead components in each tool"
+prompt_md = """
+Count the distinct long-lead components in each tool's full bill of materials.
+A tool has material_type TOOL.
+A long-lead component has material_type COMPONENT and is_long_lead = true.
+Count a component once per tool even when more than one path reaches it.
+Include tools whose count is zero.
+Guard every recursive term with level < 10.
+Return tool_material_no, description, and long_lead_count.
+Order by long_lead_count descending, then tool_material_no.
+"""
+hints = [
+  "Explode every tool, keep component rows that are long-lead, then count distinct materials per tool.",
+  "Start from every tool, including tools that never join a long-lead part, so the count can be zero.",
+  "WITH RECURSIVE tree AS (___) SELECT tool_material_no, description, COUNT(___) AS long_lead_count FROM material LEFT JOIN ___ GROUP BY ___ ORDER BY long_lead_count DESC, tool_material_no",
+]
+reference_sql = [
+  """
+WITH RECURSIVE tree AS (
+    SELECT m.material_no AS tool_no,
+           b.component_material_no AS material_no,
+           1 AS level
+    FROM material AS m
+    JOIN bom_item AS b ON b.parent_material_no = m.material_no
+    WHERE m.material_type = 'TOOL'
+    UNION ALL
+    SELECT t.tool_no, b.component_material_no, t.level + 1
+    FROM tree AS t
+    JOIN bom_item AS b ON b.parent_material_no = t.material_no
+    WHERE t.level < 10
+),
+long_lead AS (
+    SELECT DISTINCT t.tool_no, t.material_no
+    FROM tree AS t
+    JOIN material AS c ON c.material_no = t.material_no
+    WHERE c.material_type = 'COMPONENT'
+      AND c.is_long_lead = true
+)
+SELECT tool.material_no AS tool_material_no,
+       tool.description,
+       COUNT(long_lead.material_no) AS long_lead_count
+FROM material AS tool
+LEFT JOIN long_lead ON long_lead.tool_no = tool.material_no
+WHERE tool.material_type = 'TOOL'
+GROUP BY tool.material_no, tool.description
+ORDER BY long_lead_count DESC, tool.material_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Explode each tool to its components, keep the long-lead ones, and count distinct part numbers."
+
+[[exercise]]
+id = "bom-where-used"
+title = "Tools that use one RF generator"
+prompt_md = """
+List every tool that contains RF generator M-001324 at any depth.
+Walk from that component up through parent_material_no.
+Guard the recursive term with level < 10.
+Keep rows whose material_type is TOOL.
+Return material_no and description.
+Order by material_no.
+A tool that only shares the description RF generator is not this part.
+"""
+hints = [
+  "Start from bom_item rows whose component is M-001324, then keep joining parents.",
+  "WHERE level < 10 stays in the recursive term. Filter material_type = 'TOOL' after the walk.",
+  "WITH RECURSIVE used AS (SELECT parent_material_no, 1 AS level FROM bom_item WHERE ___ UNION ALL SELECT ___, level + 1 WHERE level < ___) SELECT material_no, description FROM used JOIN material WHERE material_type = ___ ORDER BY material_no",
+]
+reference_sql = [
+  """
+WITH RECURSIVE used AS (
+    SELECT parent_material_no AS material_no, 1 AS level
+    FROM bom_item
+    WHERE component_material_no = 'M-001324'
+    UNION ALL
+    SELECT b.parent_material_no, u.level + 1
+    FROM used AS u
+    JOIN bom_item AS b ON b.component_material_no = u.material_no
+    WHERE u.level < 10
+)
+SELECT DISTINCT t.material_no, t.description
+FROM used AS u
+JOIN material AS t ON t.material_no = u.material_no
+WHERE t.material_type = 'TOOL'
+ORDER BY t.material_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Start from the component and follow parent links until you reach a tool."
+
+[[exercise]]
+id = "bom-rf-for-open-orders"
+title = "RF generators for open tool orders"
+prompt_md = """
+How many of each RF generator are needed for all open tool sales orders?
+A tool sales line has status = 'Open' and the ordered material has material_type TOOL.
+An RF generator has material_type COMPONENT and description exactly RF generator.
+Explode every tool, multiply qty_per down the path, and sum that extended quantity by tool and component.
+Then multiply by the sales line quantity and sum across open lines.
+Guard the recursive term with level < 10.
+Return material_no, description, and required_qty.
+Order by material_no.
+"""
+hints = [
+  "Sum the extended quantity of each RF generator on a tool before you multiply by the order quantity.",
+  "required_qty is the sum of extended quantity times the open sales line quantity.",
+  "WITH RECURSIVE tree AS (___ WHERE level < ___), per_tool AS (___) SELECT material_no, description, SUM(qty_per_tool * ___) AS required_qty FROM per_tool JOIN sales_order_item WHERE status = ___ GROUP BY ___ ORDER BY material_no",
+]
+reference_sql = [
+  """
+WITH RECURSIVE tree AS (
+    SELECT m.material_no AS tool_no,
+           b.component_material_no AS material_no,
+           CAST(b.qty_per AS DECIMAL(20,6)) AS extended_qty,
+           1 AS level
+    FROM material AS m
+    JOIN bom_item AS b ON b.parent_material_no = m.material_no
+    WHERE m.material_type = 'TOOL'
+    UNION ALL
+    SELECT t.tool_no,
+           b.component_material_no,
+           CAST(t.extended_qty * b.qty_per AS DECIMAL(20,6)),
+           t.level + 1
+    FROM tree AS t
+    JOIN bom_item AS b ON b.parent_material_no = t.material_no
+    WHERE t.level < 10
+),
+per_tool AS (
+    SELECT t.tool_no,
+           t.material_no,
+           SUM(t.extended_qty) AS qty_per_tool
+    FROM tree AS t
+    JOIN material AS c ON c.material_no = t.material_no
+    WHERE c.material_type = 'COMPONENT'
+      AND c.description = 'RF generator'
+    GROUP BY t.tool_no, t.material_no
+)
+SELECT p.material_no,
+       c.description,
+       SUM(p.qty_per_tool * i.qty) AS required_qty
+FROM per_tool AS p
+JOIN sales_order_item AS i ON i.material_no = p.tool_no
+JOIN material AS c ON c.material_no = p.material_no
+WHERE i.status = 'Open'
+GROUP BY p.material_no, c.description
+ORDER BY p.material_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Roll the bill of materials quantity to each RF generator, then multiply by the open tool order quantity."

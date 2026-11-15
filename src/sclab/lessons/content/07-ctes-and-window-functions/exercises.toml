@@ -1,0 +1,391 @@
+[[exercise]]
+id = "cte-open-qty-above-avg"
+title = "Materials above the average open quantity"
+prompt_md = """
+Find materials whose open purchase quantity is above the average open quantity.
+An open line has order_date on or before 1 November 2026, and order_qty greater than the sum of its goods receipts.
+A material's open quantity is the sum of those remaining quantities.
+Compare that material total with the average of the material totals, using a subquery in WHERE.
+Return material_no, description, and open_qty.
+Order by open_qty descending, then material_no.
+"""
+hints = [
+  "Subtract receipts from order quantity at the purchase line, then sum by material.",
+  "Put the material totals in a derived table and compare each total with a subquery that averages the same totals.",
+  "SELECT material_no, description, open_qty FROM (___) AS totals WHERE open_qty > (SELECT AVG(___) FROM (___)) ORDER BY open_qty DESC, material_no",
+]
+reference_sql = [
+  """
+SELECT t.material_no, m.description, t.open_qty
+FROM (
+    SELECT i.material_no,
+           SUM(i.order_qty - COALESCE(r.received_qty, 0)) AS open_qty
+    FROM purchase_order_item AS i
+    JOIN purchase_order AS h ON h.po_no = i.po_no
+    LEFT JOIN (
+        SELECT po_no, line_no, SUM(qty) AS received_qty
+        FROM goods_receipt
+        GROUP BY po_no, line_no
+    ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+    WHERE h.order_date <= DATE '2026-11-01'
+      AND i.order_qty > COALESCE(r.received_qty, 0)
+    GROUP BY i.material_no
+) AS t
+JOIN material AS m ON m.material_no = t.material_no
+WHERE t.open_qty > (
+    SELECT AVG(open_qty)
+    FROM (
+        SELECT i.material_no,
+               SUM(i.order_qty - COALESCE(r.received_qty, 0)) AS open_qty
+        FROM purchase_order_item AS i
+        JOIN purchase_order AS h ON h.po_no = i.po_no
+        LEFT JOIN (
+            SELECT po_no, line_no, SUM(qty) AS received_qty
+            FROM goods_receipt
+            GROUP BY po_no, line_no
+        ) AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+        WHERE h.order_date <= DATE '2026-11-01'
+          AND i.order_qty > COALESCE(r.received_qty, 0)
+        GROUP BY i.material_no
+    ) AS totals
+)
+ORDER BY t.open_qty DESC, t.material_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "A helper column of remaining quantity, a pivot by material, then keep rows above AVERAGE of that pivot."
+
+[[exercise]]
+id = "cte-open-qty-with-cte"
+title = "The same open quantity, written with a CTE"
+prompt_md = """
+Rewrite the previous exercise with a CTE.
+Name the material open-quantity totals once, then filter that named result.
+An open line has order_date on or before 1 November 2026, and order_qty greater than the sum of its goods receipts.
+A material's open quantity is the sum of those remaining quantities.
+Keep materials whose open quantity is above the average of those material totals.
+Return material_no, description, and open_qty.
+Order by open_qty descending, then material_no.
+"""
+hints = [
+  "The filter is the same comparison. The CTE means you do not paste the total twice.",
+  "WITH open_by_material AS (the material totals) SELECT ... WHERE open_qty > (SELECT AVG(open_qty) FROM open_by_material).",
+  "WITH open_by_material AS (___) SELECT material_no, description, open_qty FROM open_by_material WHERE open_qty > (SELECT AVG(___) FROM open_by_material) ORDER BY ___",
+]
+reference_sql = [
+  """
+WITH received AS (
+    SELECT po_no, line_no, SUM(qty) AS received_qty
+    FROM goods_receipt
+    GROUP BY po_no, line_no
+),
+open_by_material AS (
+    SELECT i.material_no,
+           SUM(i.order_qty - COALESCE(r.received_qty, 0)) AS open_qty
+    FROM purchase_order_item AS i
+    JOIN purchase_order AS h ON h.po_no = i.po_no
+    LEFT JOIN received AS r ON r.po_no = i.po_no AND r.line_no = i.line_no
+    WHERE h.order_date <= DATE '2026-11-01'
+      AND i.order_qty > COALESCE(r.received_qty, 0)
+    GROUP BY i.material_no
+)
+SELECT t.material_no, m.description, t.open_qty
+FROM open_by_material AS t
+JOIN material AS m ON m.material_no = t.material_no
+WHERE t.open_qty > (SELECT AVG(open_qty) FROM open_by_material)
+ORDER BY t.open_qty DESC, t.material_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Name the remaining-quantity pivot once, then filter it with AVERAGE of that same range."
+
+[[exercise]]
+id = "cte-supplier-on-time-rank"
+title = "Rank suppliers by on-time rate"
+prompt_md = """
+Rank suppliers by on-time receipt rate over the last 12 months.
+The window is receipt_date from 1 November 2025 up to, and not including, 1 November 2026.
+A receipt is on time when receipt_date is on or before confirmed_delivery_date.
+The rate is 100 times the average of that test, rounded to 1 decimal.
+Keep suppliers with at least 20 receipts in the window.
+Use RANK(), so a tie shares a rank and the next rank skips.
+Return supplier_no, supplier_name, receipts, on_time_pct, and rank_no.
+Order by rank_no, then supplier_no.
+"""
+hints = [
+  "Count receipts and the on-time share by supplier, then keep groups of at least 20.",
+  "RANK() OVER (ORDER BY on_time_pct DESC) leaves ties on the same rank.",
+  "WITH rates AS (___) SELECT supplier_no, supplier_name, receipts, on_time_pct, RANK() OVER (ORDER BY ___) AS rank_no FROM rates ORDER BY rank_no, supplier_no",
+]
+reference_sql = [
+  """
+WITH rates AS (
+    SELECT s.supplier_no,
+           s.name AS supplier_name,
+           COUNT(*) AS receipts,
+           ROUND(
+               100.0 * AVG(
+                   CASE
+                       WHEN g.receipt_date <= i.confirmed_delivery_date THEN 1.0
+                       ELSE 0.0
+                   END
+               ),
+               1
+           ) AS on_time_pct
+    FROM goods_receipt AS g
+    JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+    JOIN purchase_order AS h ON h.po_no = g.po_no
+    JOIN supplier AS s ON s.supplier_no = h.supplier_no
+    WHERE g.receipt_date >= DATE '2025-11-01'
+      AND g.receipt_date < DATE '2026-11-01'
+    GROUP BY s.supplier_no, s.name
+    HAVING COUNT(*) >= 20
+)
+SELECT supplier_no,
+       supplier_name,
+       receipts,
+       on_time_pct,
+       RANK() OVER (ORDER BY on_time_pct DESC) AS rank_no
+FROM rates
+ORDER BY rank_no, supplier_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "A pivot of on-time receipts by supplier, then the RANK of that rate. Ties stay on the same rank."
+
+[[exercise]]
+id = "cte-latest-receipt"
+title = "Latest receipt on each October order line"
+prompt_md = """
+For each purchase order line placed in October 2026, keep the latest goods receipt.
+October is order_date from 1 October 2026 through 31 October 2026.
+Latest means the greatest receipt_date.
+When two receipts share that date, the greater gr_no wins.
+Number the receipts with ROW_NUMBER() inside a CTE, then keep row 1 in an outer query.
+Return po_no, line_no, gr_no, receipt_date, and qty.
+Order by po_no, then line_no.
+Lines with no receipt are left out.
+"""
+hints = [
+  "The October filter is on the purchase order date, not the receipt date.",
+  "ROW_NUMBER() OVER (PARTITION BY po_no, line_no ORDER BY receipt_date DESC, gr_no DESC), then keep rn = 1 outside that step.",
+  "WITH numbered AS (SELECT ___, ROW_NUMBER() OVER (PARTITION BY ___ ORDER BY ___) AS rn FROM ___) SELECT po_no, line_no, gr_no, receipt_date, qty FROM numbered WHERE rn = ___ ORDER BY po_no, line_no",
+]
+reference_sql = [
+  """
+WITH numbered AS (
+    SELECT i.po_no,
+           i.line_no,
+           g.gr_no,
+           g.receipt_date,
+           g.qty,
+           ROW_NUMBER() OVER (
+               PARTITION BY i.po_no, i.line_no
+               ORDER BY g.receipt_date DESC, g.gr_no DESC
+           ) AS rn
+    FROM purchase_order_item AS i
+    JOIN purchase_order AS h ON h.po_no = i.po_no
+    JOIN goods_receipt AS g ON g.po_no = i.po_no AND g.line_no = i.line_no
+    WHERE h.order_date >= DATE '2026-10-01'
+      AND h.order_date <= DATE '2026-10-31'
+)
+SELECT po_no, line_no, gr_no, receipt_date, qty
+FROM numbered
+WHERE rn = 1
+ORDER BY po_no, line_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Sort receipts newest first inside each order line, then keep the first row of each group."
+
+[[exercise]]
+id = "cte-rf-running-total"
+title = "Running total of RF generator receipts"
+prompt_md = """
+Build a running total of goods-receipt quantity for RF generators in 2026.
+Keep materials whose description is exactly RF generator.
+The receipt dates run from 1 January 2026 up to, and not including, 1 November 2026.
+One row per month that has a receipt.
+month is the first day of that month.
+month_qty is the receipt quantity in the month.
+running_qty is SUM(month_qty) OVER (ORDER BY month).
+Return month, month_qty, and running_qty.
+Order by month.
+"""
+hints = [
+  "Group receipt quantity to one row per month before the window, or each receipt becomes its own step.",
+  "date_trunc('month', receipt_date) gives the month. SUM(month_qty) OVER (ORDER BY month ROWS UNBOUNDED PRECEDING) is the running total.",
+  "WITH monthly AS (___) SELECT month, month_qty, SUM(___) OVER (ORDER BY month ROWS UNBOUNDED PRECEDING) AS running_qty FROM monthly ORDER BY month",
+]
+reference_sql = [
+  """
+WITH monthly AS (
+    SELECT CAST(date_trunc('month', g.receipt_date) AS DATE) AS month,
+           SUM(g.qty) AS month_qty
+    FROM goods_receipt AS g
+    JOIN purchase_order_item AS i ON i.po_no = g.po_no AND i.line_no = g.line_no
+    JOIN material AS m ON m.material_no = i.material_no
+    WHERE m.description = 'RF generator'
+      AND g.receipt_date >= DATE '2026-01-01'
+      AND g.receipt_date < DATE '2026-11-01'
+    GROUP BY CAST(date_trunc('month', g.receipt_date) AS DATE)
+)
+SELECT month,
+       month_qty,
+       SUM(month_qty) OVER (
+           ORDER BY month ROWS UNBOUNDED PRECEDING
+       ) AS running_qty
+FROM monthly
+ORDER BY month
+""",
+]
+order_matters = true
+names_matter = true
+databricks_note = "On Databricks, date_trunc('MONTH', receipt_date) matches date_trunc('month', receipt_date)."
+excel_tip = "A monthly sum, then a running total down that month column."
+
+[[exercise]]
+id = "cte-tool-order-change"
+title = "Month-over-month change in tool orders"
+prompt_md = """
+Show the month-over-month change in tool sales-order quantity for 2025 and 2026.
+A tool has material_type TOOL.
+The order dates run from 1 January 2025 up to, and not including, 1 November 2026.
+One row per month that has an order.
+month is the first day of that month.
+order_qty is the sum of line quantity in the month.
+qty_change is order_qty minus the previous month's order_qty, using LAG().
+The first month's change is NULL.
+Return month, order_qty, and qty_change.
+Order by month.
+"""
+hints = [
+  "Sum tool sales quantity by order month first.",
+  "qty_change is order_qty - LAG(order_qty) OVER (ORDER BY month). Leave the first month NULL.",
+  "WITH monthly AS (___) SELECT month, order_qty, order_qty - LAG(___) OVER (ORDER BY month) AS qty_change FROM monthly ORDER BY month",
+]
+reference_sql = [
+  """
+WITH monthly AS (
+    SELECT CAST(date_trunc('month', h.order_date) AS DATE) AS month,
+           SUM(i.qty) AS order_qty
+    FROM sales_order_item AS i
+    JOIN sales_order AS h ON h.so_no = i.so_no
+    JOIN material AS m ON m.material_no = i.material_no
+    WHERE m.material_type = 'TOOL'
+      AND h.order_date >= DATE '2025-01-01'
+      AND h.order_date < DATE '2026-11-01'
+    GROUP BY CAST(date_trunc('month', h.order_date) AS DATE)
+)
+SELECT month,
+       order_qty,
+       order_qty - LAG(order_qty) OVER (ORDER BY month) AS qty_change
+FROM monthly
+ORDER BY month
+""",
+]
+order_matters = true
+names_matter = true
+databricks_note = "On Databricks, date_trunc('MONTH', order_date) matches date_trunc('month', order_date)."
+excel_tip = "A monthly sum of tool order quantity, then this month minus the cell above."
+
+[[exercise]]
+id = "cte-customer-share"
+title = "Each customer's share of open tool quantity"
+prompt_md = """
+For each customer, show that customer's share of total open tool quantity.
+Open means status = 'Open'.
+A tool has material_type TOOL.
+open_qty is the sum of line quantity.
+share_pct is 100 times open_qty divided by the total open quantity, rounded to 1 decimal.
+Use SUM(open_qty) OVER () for that total.
+Return customer_no, customer_name, open_qty, and share_pct.
+Order by share_pct descending, then customer_no.
+"""
+hints = [
+  "Sum open tool quantity by customer before you take the share.",
+  "ROUND(100.0 * open_qty / SUM(open_qty) OVER (), 1) uses every customer in the total.",
+  "WITH open_lines AS (___) SELECT customer_no, customer_name, open_qty, ROUND(100.0 * open_qty / SUM(___) OVER (), 1) AS share_pct FROM open_lines ORDER BY share_pct DESC, customer_no",
+]
+reference_sql = [
+  """
+WITH open_lines AS (
+    SELECT h.customer_no,
+           c.name AS customer_name,
+           SUM(i.qty) AS open_qty
+    FROM sales_order_item AS i
+    JOIN sales_order AS h ON h.so_no = i.so_no
+    JOIN customer AS c ON c.customer_no = h.customer_no
+    JOIN material AS m ON m.material_no = i.material_no
+    WHERE i.status = 'Open'
+      AND m.material_type = 'TOOL'
+    GROUP BY h.customer_no, c.name
+)
+SELECT customer_no,
+       customer_name,
+       open_qty,
+       ROUND(100.0 * open_qty / SUM(open_qty) OVER (), 1) AS share_pct
+FROM open_lines
+ORDER BY share_pct DESC, customer_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Quantity divided by the total of the quantity column, shown as a percent."
+
+[[exercise]]
+id = "cte-top-suppliers-by-country"
+title = "Top 3 suppliers by spend in each country"
+prompt_md = """
+List the top 3 suppliers by spend in each supplier country.
+Spend is the sum of order_qty times net_price, rounded to 2 decimals.
+Use purchase orders placed from 1 November 2025 up to, and not including, 1 November 2026.
+Number suppliers inside each country with ROW_NUMBER(), ordered by spend descending.
+When spend ties, the lower supplier_no comes first.
+Keep rank 1, 2, and 3 in an outer query.
+Return country, supplier_no, supplier_name, spend, and rank_no.
+Order by country, then rank_no.
+"""
+hints = [
+  "Sum spend by supplier, and take the country from the supplier.",
+  "ROW_NUMBER() OVER (PARTITION BY country ORDER BY spend DESC, supplier_no), then keep rank_no <= 3 outside that step.",
+  "WITH spend AS (___), ranked AS (___) SELECT country, supplier_no, supplier_name, spend, rank_no FROM ranked WHERE rank_no <= ___ ORDER BY country, rank_no",
+]
+reference_sql = [
+  """
+WITH spend AS (
+    SELECT s.country,
+           s.supplier_no,
+           s.name AS supplier_name,
+           ROUND(SUM(i.order_qty * i.net_price), 2) AS spend
+    FROM purchase_order_item AS i
+    JOIN purchase_order AS h ON h.po_no = i.po_no
+    JOIN supplier AS s ON s.supplier_no = h.supplier_no
+    WHERE h.order_date >= DATE '2025-11-01'
+      AND h.order_date < DATE '2026-11-01'
+    GROUP BY s.country, s.supplier_no, s.name
+),
+ranked AS (
+    SELECT country,
+           supplier_no,
+           supplier_name,
+           spend,
+           ROW_NUMBER() OVER (
+               PARTITION BY country
+               ORDER BY spend DESC, supplier_no
+           ) AS rank_no
+    FROM spend
+)
+SELECT country, supplier_no, supplier_name, spend, rank_no
+FROM ranked
+WHERE rank_no <= 3
+ORDER BY country, rank_no
+""",
+]
+order_matters = true
+names_matter = true
+excel_tip = "Rank spend inside each country, then filter the rank to 1, 2, and 3."
