@@ -7,17 +7,20 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/vendor/codemirror.min.css">
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/learning-ui.css">
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Skip to content</a>
   <header class="top">
-    <a class="wordmark" href="/">{{ company }}</a>
+    <a class="wordmark" href="/"><span class="brand-symbol" aria-hidden="true">K</span><span>Kestrel <strong>SQL Lab</strong><small>Learn through the business</small></span></a>
     <nav aria-label="Main">
-      <a href="/">Lessons</a>
-      <a href="/screens">Screens</a>
-      <a href="/notebooks">Notebook</a>
-      <a href="/schema">Schema</a>
-      <a href="/playground">Playground</a>
+      <a href="/"{% if request.url.path == '/' or request.url.path == '/start' or request.url.path.startswith('/lessons') %} aria-current="page"{% endif %}>Lessons</a>
+      <a href="/erp"{% if request.url.path == '/erp' or request.url.path.startswith('/screens') %} aria-current="page"{% endif %}>ERP Explorer</a>
+      <a href="/notebooks"{% if request.url.path.startswith('/notebooks') %} aria-current="page"{% endif %}>Notebook</a>
+      <a href="/schema"{% if request.url.path.startswith('/schema') %} aria-current="page"{% endif %}>Schema</a>
+      <a href="/playground"{% if request.url.path == '/playground' %} aria-current="page"{% endif %}>Playground</a>
     </nav>
+    <details class="transaction-jump"><summary>Go to transaction</summary>
     <form class="tcode-box" action="/screens/go" method="get">
       <label for="header-tcode">Transaction code</label>
       <input id="header-tcode" name="tcode" size="6" maxlength="8" autocomplete="off" spellcheck="false">
@@ -29,10 +32,13 @@
       {% endif %}
       <button type="submit">Go</button>
     </form>
+    </details>
   </header>
-  <main>
+  <main id="main-content">
     {% block content %}{% endblock %}
   </main>
+  <footer class="app-footer"><span>{{ company }} &middot; Fictional data. Real SQL.</span><a href="/start#company">Meet the company</a></footer>
+  <div class="request-indicator" role="status" aria-live="polite">Working…</div>
   <script src="/static/vendor/htmx.min.js"></script>
   <script src="/static/vendor/codemirror.min.js"></script>
   <script src="/static/vendor/mode/sql/sql.min.js"></script>

@@ -1,0 +1,55 @@
+body:has(.erp-explorer) main { max-width: 100rem; }
+.top nav a[aria-current="page"] { text-decoration: underline; text-underline-offset: 0.4rem; }
+.erp-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1.5rem; background: #315470; color: #fff; border-radius: 0.6rem 0.6rem 0 0; }
+.erp-heading h1 { font-size: 1.8rem; margin: 0.3rem 0; }
+.erp-heading p:last-child { margin-bottom: 0; max-width: 45rem; color: #e3edf5; }
+.erp-heading > a { color: #fff; font-size: 0.85rem; white-space: nowrap; }
+.erp-eyebrow { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.09em; margin: 0; }
+.erp-layout { display: grid; grid-template-columns: 15rem minmax(0, 1fr); border: 1px solid var(--line); background: var(--paper); }
+.erp-sidebar { background: var(--bg); border-right: 1px solid var(--line); padding: 1rem; }
+.erp-sidebar > h2 { font-size: 0.8rem; color: var(--muted); margin: 0.4rem 0 1rem; }
+.erp-sidebar nav { display: flex; flex-direction: column; gap: 0.4rem; }
+.erp-sidebar nav a { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.75rem; color: var(--ink); border: 1px solid transparent; border-radius: 0.3rem; font-size: 0.8rem; }
+.erp-sidebar nav a span { font: 0.7rem var(--mono); color: var(--muted); }
+.erp-sidebar nav a[aria-current] { background: var(--paper); border-color: var(--line); border-left: 4px solid var(--accent); }
+.erp-sidebar nav a:hover { background: var(--paper); }
+.erp-help { margin-top: 1.5rem; font-size: 0.8rem; color: var(--muted); }
+.erp-help h3 { color: var(--ink); font-size: 0.85rem; }
+.erp-help ol { padding-left: 1.1rem; }
+.erp-help li { margin: 0.5rem 0; }
+.erp-directory { display: block; font-size: 0.8rem; margin-top: 1rem; }
+.erp-content { padding: 1.3rem; min-width: 0; }
+.erp-area-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
+.erp-area-heading .erp-eyebrow { color: var(--accent); }
+.erp-area-heading h2 { font-size: 1.45rem; margin: 0.25rem 0; }
+.erp-area-heading p:last-child { margin-top: 0.2rem; color: var(--muted); }
+.erp-area-heading > a { font-size: 0.8rem; }
+.erp-search { display: flex; flex-wrap: wrap; align-items: end; gap: 0.7rem; padding: 1rem; background: var(--bg); border: 1px solid var(--line); border-radius: 0.4rem; }
+.erp-search-text { flex: 1 1 15rem; }
+.erp-search label { font-size: 0.78rem; }
+.erp-search input, .erp-search select { width: 100%; background: var(--paper); color: var(--ink); font: inherit; padding: 0.5rem; border: 1px solid var(--line); border-radius: 0.25rem; min-height: 2.4rem; }
+.erp-search > a { padding: 0.5rem; font-size: 0.85rem; }
+.erp-result-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; font-size: 0.76rem; color: var(--muted); margin: 1rem 0 0.5rem; }
+.erp-results { margin-top: 0; }
+.erp-results table { width: 100%; font-family: var(--sans); font-size: 0.8rem; }
+.erp-results caption { text-align: left; padding-bottom: 0.5rem; color: var(--muted); }
+.erp-results th, .erp-results td { padding: 0.6rem; }
+.erp-results th[scope="row"] { background: var(--paper); font-family: var(--mono); font-weight: 500; }
+.erp-results td.prose { min-width: 12rem; }
+.erp-results tbody tr:nth-child(even) td { background: var(--bg); }
+.erp-record-actions a { display: inline-block; margin: 0.15rem 0.5rem 0.15rem 0; }
+.erp-pagination { display: flex; justify-content: flex-end; align-items: center; gap: 1rem; margin: 1rem 0; font-size: 0.8rem; }
+.erp-query { border-top: 1px solid var(--line); padding: 1rem 0; }
+.erp-query summary { font-weight: 600; color: var(--accent); }
+.erp-query p { font-size: 0.85rem; }
+.erp-query pre { font-size: 0.8rem; }
+.erp-journeys { margin-top: 1rem; }
+.erp-journeys h2 { font-size: 1rem; }
+.erp-journeys > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.8rem; }
+.erp-journeys a { display: flex; flex-direction: column; gap: 0.65rem; padding: 1rem; border: 1px solid var(--line); background: var(--bg); border-radius: 0.4rem; text-decoration: none; }
+.erp-journeys a span { color: var(--ink); font-size: 0.85rem; }
+.erp-journeys a small { color: var(--muted); font-size: 0.73rem; }
+.erp-empty { padding: 2rem 1rem; text-align: center; border: 1px dashed var(--line); }
+.erp-explorer :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 65rem) { .erp-layout { grid-template-columns: 12rem minmax(0, 1fr); } .erp-content { padding: 1rem; } .erp-journeys > div { grid-template-columns: 1fr; } }
+@media (max-width: 45rem) { .erp-layout { grid-template-columns: 1fr; } .erp-sidebar { border-right: 0; border-bottom: 1px solid var(--line); } .erp-sidebar nav { display: grid; grid-template-columns: 1fr 1fr; } .erp-help { display: none; } .erp-heading { align-items: flex-start; flex-direction: column; } .erp-search > div { width: 100%; } .erp-pagination { justify-content: center; } }

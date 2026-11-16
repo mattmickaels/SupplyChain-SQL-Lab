@@ -75,7 +75,24 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
     def home(request: Request):
         progress = store()
         cards = [_lesson_card(lesson, progress) for lesson in lessons]
-        return render(request, "home.html", {"lessons": cards, "screens": all_screens()})
+        completed = sum(card["passed"] for card in cards)
+        total = sum(card["total"] for card in cards)
+        resume = next((card for card in cards if card["passed"] < card["total"]), None)
+        return render(
+            request,
+            "home.html",
+            {
+                "lessons": cards,
+                "screens": all_screens(),
+                "completed": completed,
+                "exercise_total": total,
+                "resume": resume,
+            },
+        )
+
+    @app.get("/start")
+    def database_intro(request: Request):
+        return render(request, "database_intro.html", {})
 
     @app.get("/lessons/{lesson_id}")
     def lesson_page(request: Request, lesson_id: str):
@@ -505,6 +522,8 @@ def _lesson_card(lesson, progress: ProgressStore) -> dict:
         "title": lesson.title,
         "summary": lesson.summary,
         "progress": f"{passed} of {total} passed",
+        "passed": passed,
+        "total": total,
     }
 
 

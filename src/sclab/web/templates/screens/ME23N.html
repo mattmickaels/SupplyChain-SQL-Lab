@@ -1,12 +1,98 @@
-{% extends "screens/_layout.html" %}
-{% block screen_body %}
-{% with run=data.runs.header, header=true %}
-{% include "screens/_section.html" %}
-{% endwith %}
-{% with run=data.runs["items"], empty="No items on this order." %}
-{% include "screens/_section.html" %}
-{% endwith %}
-{% with run=data.runs.receipts, empty="No goods receipts on this order." %}
-{% include "screens/_section.html" %}
-{% endwith %}
+{% extends "base.html" %}
+{% block title %}Display Purchase Order{% endblock %}
+{% block head_scripts %}<link rel="stylesheet" href="/static/purchase-order.css">{% endblock %}
+{% block content %}
+{% set history = view == 'history' %}
+{% set chosen = namespace(row=none) %}
+{% if data.found and data.runs['items'].result and data.runs['items'].result.rows %}
+  {% set chosen.row = data.runs['items'].result.rows[0] %}
+  {% for row in data.runs['items'].result.rows %}
+    {% if row[0] | string == request.query_params.get('line', '') %}{% set chosen.row = row %}{% endif %}
+  {% endfor %}
+{% endif %}
+<section class="po-workspace" aria-label="Purchase order workbench">
+  <div class="po-titlebar">
+    <div><span class="po-app-name">KESTREL ERP</span><h1>Display Purchase Order{% if data.found %} <span>{{ key }}</span>{% endif %}</h1></div>
+    <span class="po-mode">Display only</span>
+  </div>
+  <div class="po-toolbar">
+    <a href="/erp?area=purchases" class="po-tool">&#8592; ERP Explorer</a>
+    <form action="/screens/ME23N" method="get" class="po-search">
+      <label for="po-number">Purchase order</label>
+      <input id="po-number" name="key" value="{{ key }}" placeholder="PO-0006693" size="15" autocomplete="off" spellcheck="false" required>
+      <button type="submit">Display</button>
+    </form>
+    {% if data.found %}<a class="po-tool" href="#po-sql">Show the SQL</a>{% endif %}
+  </div>
+  {% if not data.found %}
+  <div class="po-entry">
+    <h2>Open a purchase order</h2>
+    {% include "screens/not_found.html" %}
+    <p>Enter a PO number above, or explore a training document below.</p>
+    <div class="po-examples">
+      <a href="/screens/ME23N?key=PO-0006693"><strong>PO-0006693</strong><span>Corvane RF Systems</span><small>Explore an order with multiple items.</small></a>
+      <a href="/screens/ME23N?key=PO-0000003"><strong>PO-0000003</strong><span>Receipt history</span><small>Follow partial deliveries against an item.</small></a>
+    </div>
+    <p class="po-learning-note">These are the same fictional records used in the SQL lessons. This screen is read-only.</p>
+  </div>
+  {% else %}
+  <div class="po-body">
+    <div class="po-document">
+      <section class="po-panel" aria-labelledby="po-header-title">
+        <div class="po-section-bar"><h2 id="po-header-title">Header data</h2><a href="#po-sql-header">SQL for header</a></div>
+        {% with run=data.runs.header, header=true %}{% include "screens/_section.html" %}{% endwith %}
+      </section>
+      <section class="po-panel" aria-label="Order lines and receipt history">
+        <nav class="po-tabs" aria-label="Purchase order views">
+          <a href="/screens/ME23N?key={{ key | urlencode }}{% if chosen.row %}&amp;line={{ chosen.row[0] }}{% endif %}"{% if not history %} aria-current="page"{% endif %}>Item overview{% if data.runs['items'].result %} <span>{{ data.runs['items'].result.total_rows }}</span>{% endif %}</a>
+          <a href="/screens/ME23N?key={{ key | urlencode }}&amp;view=history{% if chosen.row %}&amp;line={{ chosen.row[0] }}{% endif %}"{% if history %} aria-current="page"{% endif %}>Purchase order history</a>
+        </nav>
+        {% if history %}
+          <div class="po-section-bar"><h2>Goods receipts</h2><a href="#po-sql-receipts">SQL for history</a></div>
+          <p class="po-grid-help">All items on this order. Each row is a goods receipt; an item can have several deliveries.</p>
+          {% with run=data.runs.receipts, selectable=false %}{% include "screens/_po_grid.html" %}{% endwith %}
+        {% else %}
+          <div class="po-section-bar"><h2>Items</h2><a href="#po-sql-items">SQL for items</a></div>
+          <p class="po-grid-help">Select an item number to see its details. Select a material to open its master record.</p>
+          {% with run=data.runs['items'], selectable=true %}{% include "screens/_po_grid.html" %}{% endwith %}
+        {% endif %}
+      </section>
+      {% if chosen.row %}
+      <section class="po-panel" aria-labelledby="po-detail-title">
+        <div class="po-section-bar"><h2 id="po-detail-title">Item {{ chosen.row[0] }} details</h2><span>Delivery and quantities</span></div>
+        <dl class="doc-header po-item-detail">
+          {% set row = chosen.row %}
+          {% set columns = data.runs['items'].result.columns %}
+          {% for column in columns %}
+          {% if column != 'line_no' %}
+          <div><dt>{{ column | header_label | capitalize }}</dt><dd>
+            {% with value=row[loop.index0], type_name=data.runs['items'].result.column_types[loop.index0] %}{% include "screens/_drill.html" %}{% endwith %}
+          </dd></div>
+          {% endif %}
+          {% endfor %}
+        </dl>
+      </section>
+      {% endif %}
+    </div>
+    <aside class="po-sql" id="po-sql" aria-labelledby="po-sql-title">
+      <div class="po-sql-heading"><span class="po-app-name">SCREEN TO SQL</span><h2 id="po-sql-title">Where does this data come from?</h2><p>One document, three queries. Expand a section to see the SQL used for this order.</p><p><a href="/start#relationships">New to tables and relationships?</a></p></div>
+      {% set explanations = {
+        'header': 'Start with purchase_order. JOIN supplier and plant to turn codes into names. WHERE selects this PO.',
+        'items': 'Each row is one order item. SUM combines its receipts before the JOIN, so multiple deliveries do not duplicate the ordered quantity. Open quantity is ordered minus received.',
+        'receipts': 'Each row is one delivery. JOIN on both PO number and item number to attach the right material to each receipt.'
+      } %}
+      {% set table_links = {'header': 'purchase_order', 'items': 'purchase_order_item', 'receipts': 'goods_receipt'} %}
+      {% for name, run in data.runs.items() %}
+      <section id="po-sql-{{ name }}" class="po-query-card">
+        <h3>{{ run.query.title }}</h3><p>{{ explanations[name] }}</p>
+        {% include "screens/_sql_panel.html" %}
+        <a class="po-schema-link" href="/schema/{{ table_links[name] }}" target="_blank" rel="noopener">Explore {{ table_links[name] }} &#8599;</a>
+      </section>
+      {% endfor %}
+      <p class="po-learning-note">The queries return the whole order. Selecting an item only changes the detail panel. The playground uses a separate practice copy.</p>
+    </aside>
+  </div>
+  {% endif %}
+  <footer class="po-statusbar"><span><span class="po-status-dot" aria-hidden="true"></span> {% if data.found %}Purchase order loaded{% else %}Ready to display a purchase order{% endif %}</span><span>Kestrel training system &middot; ME23N &middot; {{ today }}</span></footer>
+</section>
 {% endblock %}

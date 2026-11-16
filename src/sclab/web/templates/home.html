@@ -1,35 +1,47 @@
 {% extends "base.html" %}
 {% block title %}Lessons{% endblock %}
 {% block content %}
-<p class="today">Today in the lab is {{ today }}.</p>
-<h1>Lessons</h1>
+<div class="learning-dashboard">
 {% if lessons %}
-<section class="prose" aria-label="Getting started">
-  <h2>New to SQL? Start here</h2>
-  <p>SQL is a language for asking questions about data stored in tables. You do not need programming or supply-chain experience.</p>
-  <p>Start with lessons 1 and 2 to select columns, filter rows, and sort results. Continue with lessons 3 and 4 to summarize data and combine tables. Lessons 5 and 6 build confidence with dates and missing values.</p>
-  <p>Lessons 7 to 10 are optional next steps: advanced queries, planning problems, and timed practice. You can leave them until the basics feel comfortable.</p>
-  <p>Read a worked example, then try one exercise at a time. Run shows your results; Check tells you whether they answer the question. Mistakes are safe: lessons cannot change the data.</p>
+<section class="learning-welcome" aria-label="Getting started">
+  <div><p class="eyebrow">YOUR LEARNING WORKSPACE</p><h1>Familiar business.<br>New SQL skills.</h1><p>Explore Kestrel's operations, understand the data, and learn to answer questions one query at a time.</p><div class="actions"><a class="button-link" href="/start">Start with Kestrel &#8594;</a>{% if completed and resume %}<a class="quiet-link" href="/lessons/{{ resume.id }}">Continue: {{ resume.title }}</a>{% else %}<a class="quiet-link" href="#learning-path">Explore the lessons &#8595;</a>{% endif %}</div></div>
+  <aside class="learning-progress"><p class="eyebrow">YOUR PROGRESS</p><p class="progress-number">{{ completed }} <span>/ {{ exercise_total }}</span></p><p>exercises completed</p><progress value="{{ completed }}" max="{{ exercise_total or 1 }}" aria-label="Exercises completed"></progress><p class="progress-reassurance">No deadlines. Hints when you need them. Learn at your own pace.</p></aside>
 </section>
-<ul class="lesson-list">
+<div class="dashboard-heading"><div><p class="eyebrow">BUILD YOUR CONFIDENCE</p><h2 id="learning-path">Your learning path</h2></div><p class="today">Today in the lab is {{ today }}.</p></div>
+<p class="path-guide">Lessons 1-4 build the foundations. Lessons 5-6 cover dates and missing values. Lessons 7-10 are optional advanced practice.</p>
+<ul class="lesson-list learning-path">
+  <li>
+    <a href="/start">
+      <span class="lesson-number">00</span>
+      <span><strong>Databases and relationships</strong><small>Meet Kestrel, then take a visual tour from purchase orders to tables, keys, and SQL.</small></span>
+      <span class="progress">Start here &middot; No SQL needed</span>
+    </a>
+  </li>
   {% for lesson in lessons %}
   <li>
-    <a href="/lessons/{{ lesson.id }}">
+    <a href="/lessons/{{ lesson.id }}"{% if lesson.passed == lesson.total %} class="lesson-complete"{% endif %}>
       <span class="lesson-number">{{ lesson.number }}</span>
       <span>
-        <strong>{{ lesson.title }}</strong>
+        <span class="lesson-stage">{% if lesson.number <= 4 %}Foundations{% elif lesson.number <= 6 %}Working with data{% else %}Optional challenge{% endif %}</span><strong>{{ lesson.title }}</strong>
         <small>{{ lesson.summary }}</small>
       </span>
-      <span class="progress">{{ lesson.progress }}</span>
+      <span class="progress">{{ lesson.progress }}<progress value="{{ lesson.passed }}" max="{{ lesson.total or 1 }}" aria-label="Progress for {{ lesson.title }}"></progress></span>
     </a>
   </li>
   {% endfor %}
 </ul>
 {% else %}
+<h1>Lessons</h1>
 <p class="empty">No lessons are loaded yet.</p>
 {% endif %}
+<section class="learning-tools"><div class="dashboard-heading"><div><p class="eyebrow">LEARN BY EXPLORING</p><h2>Your workbench</h2></div></div><div class="tool-grid">
+  <a href="/erp"><span class="tool-symbol" aria-hidden="true">▦</span><strong>ERP Explorer</strong><span>Find the records behind a business question in familiar transaction screens.</span><small>Browse the business &#8594;</small></a>
+  <a href="/notebooks"><span class="tool-symbol" aria-hidden="true">≡</span><strong>Notebook</strong><span>Build an answer step by step with SQL, notes, and charts.</span><small>Open your notebook &#8594;</small></a>
+  <a href="/schema"><span class="tool-symbol" aria-hidden="true">⌘</span><strong>Data dictionary</strong><span>Find the table, column, or key you need for your next query.</span><small>Explore the schema &#8594;</small></a>
+</div></section>
+<details class="transaction-directory"><summary>Browse the Kestrel ERP transaction directory</summary>
 <h2>Kestrel ERP</h2>
-<p>Display screens over the same tables. They are read-only.</p>
+<p><a href="/erp">Open ERP Explorer</a> to find records by name or number, then follow their connections. Display screens use the same lesson tables and are read-only.</p>
 <ul class="schema-list screen-list">
   {% for item in screens %}
   <li>
@@ -39,4 +51,6 @@
   </li>
   {% endfor %}
 </ul>
+</details>
+</div>
 {% endblock %}

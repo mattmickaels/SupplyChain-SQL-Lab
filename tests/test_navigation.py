@@ -15,7 +15,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 _CONTENT = _ROOT / "src" / "sclab" / "lessons" / "content"
 _NAV = [
     ("/", "Lessons"),
-    ("/screens", "Screens"),
+    ("/erp", "ERP Explorer"),
     ("/notebooks", "Notebook"),
     ("/schema", "Schema"),
     ("/playground", "Playground"),
@@ -302,7 +302,8 @@ def test_po_path_reaches_bom_and_where_used(client) -> None:
     ).rows[0]
     order = client.get("/screens/ME23N", params={"key": po_no})
     assert f"/screens/MM03?key={material}" in order.text
-    assert f"/screens/ME23N?key={po_no}" not in order.text
+    # The PO header must not drill into itself; view and item navigation may reuse the URL.
+    assert f'class="drill" href="/screens/ME23N?key={po_no}"' not in order.text
     material_page = client.get("/screens/MM03", params={"key": material, "plant": plant})
     assert "Display BOM" in material_page.text
     assert f"/screens/CS03?key={material}" in material_page.text

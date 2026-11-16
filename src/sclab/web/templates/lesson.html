@@ -1,9 +1,16 @@
 {% extends "base.html" %}
 {% block title %}{{ lesson_title }}{% endblock %}
 {% block content %}
-<p class="today">Today in the lab is {{ today }}.</p>
+<div class="lesson-heading"><p class="eyebrow">LEARN / PRACTICE / UNDERSTAND</p>
 <h1>{{ lesson_title }}</h1>
+<p class="today">Today in the lab is {{ today }}.</p></div>
 <p><a href="/">All lessons</a> &middot; <a href="#exercises">Go to exercises</a></p>
+<p><a href="/erp" target="_blank" rel="noopener">Open ERP Explorer in a new tab</a> to look up the records behind your SQL without leaving this lesson.</p>
+{% if lesson_id == '01-tables-and-keys' %}<p>New to databases? <a href="/start">Start with the visual introduction to tables and relationships.</a></p>{% endif %}
+<div class="lesson-workspace">
+<aside class="lesson-outline"><h2>In this lesson</h2><a href="#lesson-notes">Read the examples</a><nav aria-label="Exercise outline">{% for exercise in exercises %}<a href="#exercise-{{ exercise.id }}"><span>{{ loop.index }}</span>{{ exercise.title }}</a>{% endfor %}</nav><div class="outline-help"><strong>Need a hand?</strong><p>Try a hint, inspect the schema, or explore the record in ERP.</p><a href="/erp" target="_blank" rel="noopener">Open ERP Explorer &#8599;</a></div></aside>
+<div class="lesson-main">
+<details id="lesson-notes" class="lesson-notes" open><summary>Concepts and worked examples</summary>
 <div class="prose">{{ body_html }}</div>
 {% if sap_links %}
 <h2>SAP views</h2>
@@ -17,14 +24,18 @@
   {% endfor %}
 </ul>
 {% endif %}
+</details>
+<div class="practice-heading"><p class="eyebrow">PUT IT INTO PRACTICE</p>
 <h2 id="exercises">Practice</h2>
 <p>Write one query in an SQL box. Run shows its rows; Check compares your answer with the exercise. Use Hint if you get stuck, or Show solution after your first Check.</p>
 <p>Run and Check save your SQL on this computer. Run or Check before leaving the page to keep your latest edits. <a href="/schema" target="_blank" rel="noopener">Open the schema in a new tab</a> to look up columns without leaving your work.</p>
+</div>
 {% for exercise in exercises %}
 {% if exercise.is_drill %}
 {% include "_drill.html" %}
 {% else %}
 <section class="exercise" id="exercise-{{ exercise.id }}">
+  <p class="eyebrow">EXERCISE {{ loop.index }} / {{ exercises | length }}</p>
   <h2>{{ exercise.title }}</h2>
   <div class="prose">{{ exercise.prompt_html }}</div>
   {% if exercise.databricks_note %}
@@ -50,7 +61,7 @@
   </form>
   <div class="hint-panel" id="hint-{{ exercise.id }}"></div>
   <div id="solution-{{ exercise.id }}"></div>
-  <div id="result-{{ exercise.id }}"></div>
+  <div id="result-{{ exercise.id }}" aria-live="polite"></div>
   <div id="check-{{ exercise.id }}" aria-live="polite">
     {% if exercise.status == "passed" %}<p class="banner">You have passed this exercise.</p>{% endif %}
   </div>
@@ -62,4 +73,5 @@
   <a href="/">All lessons</a>
   {% if next_lesson %}<a href="/lessons/{{ next_lesson.id }}">Next: {{ next_lesson.title }}</a>{% endif %}
 </nav>
+</div></div>
 {% endblock %}

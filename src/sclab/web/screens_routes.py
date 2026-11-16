@@ -2,11 +2,13 @@
 
 from urllib.parse import quote, urlencode
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 
 import sclab.screens  # noqa: F401  # registers every screen
+from sclab.engine.query import QueryError, run_query
 from sclab.screens.bom import render_level
+from sclab.screens.explorer import AREA_BY_SLUG, AREAS, browse
 from sclab.screens.framework import all_screens, get_screen, render_screen
 from sclab.screens.planning import capacity_grid
 from sclab.screens.plants import link_plants, material_numbers
@@ -14,6 +16,43 @@ from sclab.screens.plants import link_plants, material_numbers
 
 def create_router(templates, render) -> APIRouter:
     router = APIRouter()
+
+    @router.get("/erp")
+    def erp_explorer(
+        request: Request,
+        area: str = "materials",
+        q: str = Query(default="", max_length=200),
+        plant: str = Query(default="", max_length=20),
+        page: int = Query(default=1, ge=1, le=100000),
+    ):
+        selected = AREA_BY_SLUG.get(area)
+        if selected is None:
+            raise HTTPException(status_code=404, detail="That explorer area is not in the lab.")
+        plant = plant.strip().upper() if selected.has_plant else ""
+        query = q.strip()
+        error = None
+        found = None
+        plants = []
+        try:
+            found = browse(selected, query, plant, page)
+            plants = run_query("SELECT plant_code, name FROM plant ORDER BY plant_code").rows
+        except QueryError as exc:
+            error = exc.message
+        paging = urlencode({"area": area, "q": query, "plant": plant})
+        return render(
+            request,
+            "screens/explorer.html",
+            {
+                "areas": AREAS,
+                "area": selected,
+                "q": query,
+                "plant": plant,
+                "plant_options": plants,
+                "found": found,
+                "error": error,
+                "paging": paging,
+            },
+        )
 
     @router.get("/screens")
     def screens_index(request: Request):

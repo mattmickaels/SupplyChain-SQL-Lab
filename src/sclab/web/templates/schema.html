@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% block title %}{% if spec %}{{ spec.name }}{% elif view %}{{ view.name }}{% else %}Schema{% endif %}{% endblock %}
 {% block content %}
-<p class="today">Today in the lab is {{ today }}.</p>
+<p class="eyebrow">YOUR DATA DICTIONARY</p>
 <h1>{% if spec %}{{ spec.name }}{% elif view %}{{ view.name }}{% else %}Schema{% endif %}</h1>
+<p class="today">Today in the lab is {{ today }}.</p>
+{% if not spec and not view %}<p class="page-lead">Find the tables, columns, and keys behind your next question. Open a table to inspect its structure and preview real rows.</p>{% endif %}
 {% if spec %}
 <p>{{ spec.description }}</p>
 <p><strong>Primary key:</strong> <code>{{ spec.primary_key | join(', ') }}</code>. This column, or combination of columns, identifies one row.</p>

@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Notebooks{% endblock %}
 {% block content %}
-<p class="today">Today in the lab is {{ today }}.</p>
+<p class="eyebrow">YOUR ANALYSIS WORKSPACE</p>
 <h1>Notebooks</h1>
-<form hx-post="/notebooks">
+<p class="page-lead">Build an answer one step at a time. Keep your SQL, observations, and charts together.</p>
+<p class="today">Today in the lab is {{ today }}.</p>
+<form hx-post="/notebooks" class="notebook-create">
   <label for="notebook-title">New notebook</label>
   <input id="notebook-title" name="title" type="text" maxlength="80">
   <div class="actions">

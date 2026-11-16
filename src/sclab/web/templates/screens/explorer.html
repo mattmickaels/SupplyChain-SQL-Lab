@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}ERP Explorer - {{ area.title }}{% endblock %}
+{% block head_scripts %}<link rel="stylesheet" href="/static/explorer.css">{% endblock %}
+{% block content %}
+<section class="erp-explorer">
+  <header class="erp-heading">
+    <div><p class="erp-eyebrow">KESTREL ERP &middot; READ-ONLY TRAINING SYSTEM</p><h1>ERP Explorer</h1><p>Know the business question, but not the SQL yet? Start with a record and follow its connections.</p></div>
+    <a href="/start#company">Meet the company &#8599;</a>
+  </header>
+  <div class="erp-layout">
+    <aside class="erp-sidebar">
+      <h2>Explore by business area</h2>
+      <nav aria-label="ERP business areas">
+        {% for item in areas %}
+        <a href="/erp?area={{ item.slug }}"{% if area.slug == item.slug %} aria-current="page"{% endif %}><strong>{{ item.title }}</strong><span>{{ item.code }}</span></a>
+        {% endfor %}
+      </nav>
+      <div class="erp-help"><h3>Stuck in a SQL lesson?</h3><ol><li>Find a material, supplier, or order.</li><li>Open its familiar display screen.</li><li>Expand <strong>Show the SQL</strong> to see how the screen gets its data.</li></ol><p>These screens use the original lesson database. They cannot change your records.</p></div>
+      <a href="/screens" class="erp-directory">All transaction codes &#8594;</a>
+    </aside>
+    <div class="erp-content">
+      <section class="erp-browse" aria-labelledby="erp-area-title">
+        <div class="erp-area-heading"><div><p class="erp-eyebrow">{{ area.code }} / DISPLAY</p><h2 id="erp-area-title">{{ area.title }}</h2><p>{{ area.question }}</p></div><a href="/schema/{{ area.table }}" target="_blank" rel="noopener">Table reference &#8599;</a></div>
+        <form action="/erp" method="get" class="erp-search">
+          <input type="hidden" name="area" value="{{ area.slug }}">
+          <div class="erp-search-text"><label for="erp-query">Find a record</label><input id="erp-query" name="q" value="{{ q }}" maxlength="200" placeholder="Number, name, description, or date" autocomplete="off"></div>
+          {% if area.has_plant %}<div><label for="erp-plant">Plant</label><select id="erp-plant" name="plant"><option value="">All plants</option>{% for code, name in plant_options %}<option value="{{ code }}"{% if plant == code %} selected{% endif %}>{{ code }} - {{ name }}</option>{% endfor %}{% if plant and plant not in plant_options | map(attribute=0) | list %}<option selected value="{{ plant }}">{{ plant }} (unknown plant)</option>{% endif %}</select></div>{% endif %}
+          <button type="submit">Search</button><a href="/erp?area={{ area.slug }}">Clear</a>
+        </form>
+        {% if error %}<p class="message">{{ error }}</p>
+        {% elif found %}
+          <div class="erp-result-meta"><span>{{ found.first }}-{{ found.last }} of {{ found.total }} records{% if area.slug in ['materials', 'stock'] %} &middot; One row per material and plant{% endif %}</span><span>Lab date: {{ today }}</span></div>
+          {% if found.records %}
+          <div class="grid-wrap erp-results" tabindex="0" role="region" aria-label="Search results; scroll horizontally for more columns">
+            <table class="grid">
+              <caption>{{ area.title }} matching your search</caption>
+              <thead><tr><th scope="col">Record</th><th scope="col">{% if area.slug == 'purchases' %}Supplier{% elif area.slug == 'sales' %}Customer{% else %}Description{% endif %}</th>{% if area.has_plant %}<th scope="col">Plant</th>{% endif %}<th scope="col">{% if area.slug in ['purchases', 'sales'] %}Order date{% elif area.slug in ['suppliers', 'capacity'] %}Country{% else %}Material type{% endif %}</th><th scope="col">Explore</th></tr></thead>
+              <tbody>{% for row in found.records %}<tr>
+                <th scope="row">{% if row.href %}<a href="{{ row.href }}">{{ row.key }}</a>{% else %}{{ row.key }}{% endif %}</th><td class="prose">{{ row.description }}</td>{% if area.has_plant %}<td>{{ row.plant or 'No plant data' }}</td>{% endif %}<td>{{ row.detail }}</td>
+                <td class="erp-record-actions">
+                  {% if row.href %}<a href="{{ row.href }}">Open {{ area.code }}</a>{% endif %}
+                  {% if area.slug == 'materials' %}
+                    {% if row.plant %}<a href="/screens/MD04?key={{ row.key | urlencode }}&amp;plant={{ row.plant | urlencode }}">Stock/requirements</a>{% endif %}
+                    <a href="/screens/CS03?key={{ row.key | urlencode }}">BOM</a><a href="/screens/CS15?key={{ row.key | urlencode }}">Where-used</a>
+                  {% endif %}
+                </td>
+              </tr>{% endfor %}</tbody>
+            </table>
+          </div>
+          <nav class="erp-pagination" aria-label="Result pages">{% if found.page > 1 %}<a href="/erp?{{ paging }}&amp;page={{ found.page - 1 }}">&#8592; Previous</a>{% endif %}<span>Page {{ found.page }} of {{ found.pages }}</span>{% if found.page < found.pages %}<a href="/erp?{{ paging }}&amp;page={{ found.page + 1 }}">Next &#8594;</a>{% endif %}</nav>
+          {% else %}<div class="erp-empty"><h3>No matching records</h3><p>Try part of a name or number, choose another plant, or clear the search.</p><a href="/erp?area={{ area.slug }}">Show all {{ area.title | lower }}</a></div>{% endif %}
+          <details class="sql-panel erp-query"><summary>Show the SQL: this record search</summary><p>This query reads the same lesson data as the display screens. Search values and the current page are included.</p><pre class="solution"><code>{{ found.display_sql }}</code></pre><p class="actions"><button type="button" data-copy-sql>Copy</button><a href="/playground?sql={{ found.display_sql | urlencode }}">Open in playground</a></p><p class="muted">The playground is a separate practice copy; any edits made there can change its results.</p></details>
+        {% endif %}
+      </section>
+      <section class="erp-journeys" aria-labelledby="erp-journey-title"><h2 id="erp-journey-title">Not sure where to begin?</h2><div>
+        <a href="/screens/XK03?key=V-10017"><strong>Investigate a supplier</strong><span>Corvane RF Systems: materials, open orders, and delivery performance.</span><small>Supplier → purchase order → material</small></a>
+        <a href="/screens/CS03?key=M-000011"><strong>Look inside a tool</strong><span>Expand its bill of materials to see assemblies and components.</span><small>Finished tool → module → component</small></a>
+        <a href="/screens/CM01?key=SC01"><strong>Check the build plan</strong><span>Explore weekly bay load at the Santa Clara plant.</span><small>Plant → build bay → production order</small></a>
+      </div></section>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Start here: databases and relationships{% endblock %}
+{% block head_scripts %}<link rel="stylesheet" href="/static/database-intro.css">{% endblock %}
+{% block content %}
+<article class="db-intro">
+  <header class="db-hero">
+    <p class="db-eyebrow">START HERE &middot; NO SQL REQUIRED</p>
+    <h1>Meet Kestrel.<br>Then meet the data behind it.</h1>
+    <p>Step into the operations team at a fictional equipment manufacturer. Get to know the business, then discover how its familiar orders and reports connect to a relational database.</p>
+    <a class="db-primary-link" href="#company">Meet the company &#8595;</a>
+  </header>
+  <nav class="db-contents" aria-label="Introduction sections">
+    <a href="#company">Meet Kestrel</a><a href="#big-picture">1. The big picture</a><a href="#table-anatomy">2. Inside a table</a><a href="#relationships">3. Connecting tables</a><a href="#screen-to-data">4. Back to the screen</a><a href="#quick-reference">Quick reference</a>
+  </nav>
+
+  <section id="company" class="db-section">
+    <p class="db-eyebrow">YOUR TRAINING COMPANY</p>
+    <h2>Kestrel Process Equipment</h2>
+    <p>Kestrel builds the specialized equipment that semiconductor manufacturers use to make and inspect chips. Its finished products are called <strong>tools</strong>: complex machines assembled from modules, which in turn contain purchased components. Kestrel also sells spare parts to support equipment already in use.</p>
+    <p>This is a fictional company created for the lab. Its suppliers, customers, materials, and transactions are made up, but the questions facing its operations team should feel familiar.</p>
+    <div class="db-company-products">
+      <div><span>DEP</span><h3>Deposition</h3><p>Equipment for adding thin layers of material to wafers.</p></div>
+      <div><span>ETC</span><h3>Etch</h3><p>Equipment for removing material to form patterns.</p></div>
+      <div><span>CMP</span><h3>Polishing</h3><p>Chemical mechanical polishing equipment for flattening wafer surfaces.</p></div>
+      <div><span>INS</span><h3>Inspection</h3><p>Equipment for checking wafers and finding defects.</p></div>
+    </div>
+    <h3>Three plants, one connected business</h3>
+    <div class="db-company-sites"><div><strong>AU01</strong><span>Austin, US</span></div><div><strong>SC01</strong><span>Santa Clara, US</span></div><div><strong>SG01</strong><span>Singapore, SG</span></div></div>
+    <p>Sales records customer demand. Purchasing places orders with suppliers. Warehouses receive parts and track stock. Planners schedule production into build bays. A delay in one component can ripple through the plan to a customer's delivery.</p>
+    <ol class="db-flow db-company-flow" aria-label="Kestrel order-to-delivery flow"><li><strong>Customer demand</strong><span>Sales orders specify what customers need and when.</span></li><li><strong>Parts and supply</strong><span>BOMs define the parts; purchase orders bring them in.</span></li><li><strong>Build and deliver</strong><span>Stock, production orders, and bay capacity determine what can be built.</span></li><li><strong>Follow the impact</strong><span>Connect a supplier delay to the tools and customers affected.</span></li></ol>
+    <div class="db-callout"><h3>Your role in the story</h3><p>Imagine you have joined Kestrel's operations team. You know how to read ERP screens; now you need to answer questions that span them. What is still due from a supplier? Which builds need those parts? Which customer orders could be affected?</p></div>
+    <p>The lab is frozen at <strong>1 November 2026</strong>. You have five years of history and forward demand through April 2028. One storyline follows <strong>Corvane RF Systems</strong>, a supplier whose slipping deliveries affect RF components used in Etch tools. Your job is to trace the evidence, rather than assume every late order causes a shortage.</p>
+    <p><a class="db-primary-link" href="/erp">Explore Kestrel's records &#8594;</a> <a class="db-secondary-link" href="#big-picture">Continue: how databases organize this business &#8595;</a></p>
+  </section>
+
+  <section id="big-picture" class="db-section">
+    <p class="db-eyebrow">01 / THE BIG PICTURE</p>
+    <h2>A database stores data. SQL asks questions.</h2>
+    <p>A <strong>database</strong> is an organized collection of data. A <strong>database engine</strong> is the software that stores it, applies rules, and answers queries. This lab uses an engine called DuckDB.</p>
+    <ol class="db-flow" aria-label="How data reaches a screen">
+      <li><span class="db-flow-icon" aria-hidden="true">▦</span><strong>Tables store facts</strong><span>Suppliers, orders, and order items each have a place.</span></li>
+      <li><span class="db-flow-icon" aria-hidden="true">?</span><strong>A query asks a question</strong><span>“Which items belong to this purchase order?”</span></li>
+      <li><span class="db-flow-icon" aria-hidden="true">≡</span><strong>The engine returns rows</strong><span>A result contains the columns and rows requested.</span></li>
+      <li><span class="db-flow-icon" aria-hidden="true">▣</span><strong>A screen presents them</strong><span>The application arranges the result into fields and grids.</span></li>
+    </ol>
+    <p><strong>SQL</strong> is a language for expressing those questions. A SELECT query reads data; it does not change the stored rows. Other SQL commands can change data, but this lab's lessons are read-only.</p>
+    <div class="db-callout"><strong>If you know Excel:</strong> a table resembles a named sheet with column headers. A database adds explicit data types, keys, and rules for connecting records. You do not need Excel experience to continue.</div>
+  </section>
+
+  <section id="table-anatomy" class="db-section">
+    <p class="db-eyebrow">02 / INSIDE A TABLE</p>
+    <h2>One kind of thing. One row per thing.</h2>
+    <p>The <a href="/schema/plant" target="_blank" rel="noopener">plant table</a> stores factory locations. Each row represents one plant; each column describes one fact about it.</p>
+    <div class="db-anatomy">
+      <div class="db-table-card">
+        <h3>plant <span>Table name</span></h3>
+        <div class="db-table-scroll"><table>
+          <caption>Three plants, four columns. The Austin row is highlighted.</caption>
+          <thead><tr><th scope="col">plant_code <span class="db-key-label">PK</span></th><th scope="col">name</th><th scope="col">city</th><th scope="col">country</th></tr></thead>
+          <tbody>
+            <tr class="db-example-row"><td>AU01</td><td>Austin</td><td>Austin</td><td class="db-example-cell">US</td></tr>
+            <tr><td>SC01</td><td>Santa Clara</td><td>Santa Clara</td><td>US</td></tr>
+            <tr><td>SG01</td><td>Singapore</td><td>Singapore</td><td>SG</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+      <dl class="db-anatomy-notes">
+        <div><dt>Column / field</dt><dd>A named fact, such as country. A column has a type: text, number, date, or true/false.</dd></div>
+        <div><dt>Row / record</dt><dd>The highlighted row is one complete plant record.</dd></div>
+        <div><dt>Value</dt><dd>The outlined cell contains US, the country value for Austin.</dd></div>
+        <div><dt>Primary key (PK)</dt><dd>plant_code uniquely identifies a plant. Country cannot be the key: US appears twice.</dd></div>
+      </dl>
+    </div>
+    <p>A <strong>NULL</strong> represents a missing or unknown value. It is different from zero or an empty text string. Also, stored rows have no guaranteed display order; SQL uses ORDER BY when order matters.</p>
+  </section>
+
+  <section id="relationships" class="db-section">
+    <p class="db-eyebrow">03 / CONNECTING TABLES</p>
+    <h2>Related tables share identifiers.</h2>
+    <p>A <strong>relational database</strong> organizes data into tables that can be connected through matching values. A <strong>foreign key (FK)</strong> refers to a key in another table. These links let us keep a supplier's details in one place and reuse its identifier on many orders.</p>
+    <input class="db-key-toggle" type="checkbox" id="highlight-keys" checked>
+    <label class="db-toggle-label" for="highlight-keys">Highlight the matching keys</label>
+    <div class="db-relationships">
+      <div class="db-table-card">
+        <h3>supplier <span>One row per supplier</span></h3>
+        <div class="db-table-scroll"><table>
+          <caption>Supplier referenced by the example order</caption>
+          <thead><tr><th scope="col">supplier_no <span class="db-key-label">PK</span></th><th scope="col">name</th></tr></thead>
+          <tbody><tr><td class="db-supplier-key">V-10017</td><td>Corvane RF Systems</td></tr></tbody>
+        </table></div>
+      </div>
+      <p class="db-connector"><span aria-hidden="true">↓</span> <strong>One supplier → many orders</strong><br>Match supplier_no. Many orders may carry the same supplier number.</p>
+      <div class="db-table-card">
+        <h3>purchase_order <span>One row per order</span></h3>
+        <div class="db-table-scroll"><table>
+          <caption>One of that supplier's purchase orders</caption>
+          <thead><tr><th scope="col">po_no <span class="db-key-label">PK</span></th><th scope="col">supplier_no <span class="db-key-label">FK</span></th><th scope="col">plant_code <span class="db-key-label">FK</span></th></tr></thead>
+          <tbody><tr><td class="db-order-key">PO-0006693</td><td class="db-supplier-key">V-10017</td><td>SC01</td></tr></tbody>
+        </table></div>
+      </div>
+      <p class="db-connector"><span aria-hidden="true">↓</span> <strong>One order → many items</strong><br>Match po_no. Each item belongs to an order; an order can contain several items.</p>
+      <div class="db-table-card">
+        <h3>purchase_order_item <span>One row per order item</span></h3>
+        <div class="db-table-scroll"><table>
+          <caption>Two of the order's three items; only selected columns are shown</caption>
+          <thead><tr><th scope="col">po_no <span class="db-key-label">PK + FK</span></th><th scope="col">line_no <span class="db-key-label">PK</span></th><th scope="col">material_no <span class="db-key-label">FK</span></th><th scope="col">order_qty</th></tr></thead>
+          <tbody><tr><td class="db-order-key">PO-0006693</td><td>1</td><td>M-001332</td><td>49</td></tr><tr><td class="db-order-key">PO-0006693</td><td>2</td><td>M-001570</td><td>10</td></tr></tbody>
+        </table></div>
+      </div>
+    </div>
+    <div class="db-two-up">
+      <div class="db-callout"><h3>Sometimes the key is a pair</h3><p>In purchase_order_item, the primary key is <strong>po_no + line_no together</strong>. PO-0006693 repeats for each item, and item 1 can appear on other orders. Only the pair identifies a particular item.</p></div>
+      <div class="db-callout"><h3>Why separate the tables?</h3><p>Copying a supplier's name and address onto every item would repeat data and invite conflicting updates. A supplier table stores those facts once. A JOIN brings related facts together when we need them.</p></div>
+    </div>
+    <p>The PK/FK labels describe each column's role; the highlights show equal values used to connect these example rows. The lab models these relationships, but does not enforce every foreign-key rule in its generated database.</p>
+    <details class="db-check"><summary>Check your understanding: is line_no enough to identify one order item?</summary><p>No. Different orders can both have item 1. You need the PO number and item number together.</p></details>
+    <details class="db-check"><summary>What happens when an order has three items?</summary><p>The purchase_order table still has one header row for that order. The purchase_order_item table has three rows with that PO number. Joining the header to the items produces three matching pairs.</p></details>
+  </section>
+
+  <section id="screen-to-data" class="db-section">
+    <p class="db-eyebrow">04 / BACK TO THE SCREEN</p>
+    <h2>One screen can read several tables.</h2>
+    <div class="db-document-map" aria-label="Purchase order screen mapped to source tables">
+      <div class="db-document-title">Display Purchase Order <strong>PO-0006693</strong></div>
+      <div><strong>Header fields</strong><span>Order number, supplier name, plant</span><code>purchase_order + supplier + plant</code></div>
+      <div><strong>Item overview</strong><span>Material, description, ordered and received quantities</span><code>purchase_order_item + material + goods_receipt</code></div>
+      <div><strong>Purchase order history</strong><span>Individual goods receipts against each item</span><code>goods_receipt + purchase_order_item + purchase_order</code></div>
+    </div>
+    <p>A screen layout is not the database structure. The application can show names from lookup tables, calculate quantities, and display only part of a result. A JOIN connects matching records; it does not permanently merge the stored tables.</p>
+    <p>A <strong>schema</strong> describes the structure: tables, column names, types, and keys. Use the lab's Schema page as your data dictionary. A <strong>view</strong> is a named query you can read like a table; the lab also includes views with SAP-style field names.</p>
+    <p><a class="db-primary-link" href="/screens/ME23N?key=PO-0006693">Explore this purchase order &#8594;</a> <a class="db-secondary-link" href="/schema">Browse the schema</a></p>
+    <details class="db-check"><summary>Check your understanding: where would you look for a supplier's name?</summary><p>In supplier. Follow purchase_order.supplier_no to supplier.supplier_no to find the matching supplier record. The order stores the identifier; the supplier table provides the name.</p></details>
+  </section>
+
+  <section id="quick-reference" class="db-section">
+    <p class="db-eyebrow">KEEP THIS HANDY</p><h2>Your first database vocabulary</h2>
+    <dl class="db-glossary">
+      <div><dt>Database</dt><dd>An organized collection of stored data.</dd></div>
+      <div><dt>Table</dt><dd>Rows of the same kind of record, with named columns.</dd></div>
+      <div><dt>Primary key</dt><dd>One or more columns that uniquely identify a row; primary-key values cannot be NULL.</dd></div>
+      <div><dt>Foreign key</dt><dd>A reference from a row to a key in another table. When enforced, it prevents references to missing records.</dd></div>
+      <div><dt>Query / result</dt><dd>A request for data, and the rows returned in response.</dd></div>
+      <div><dt>JOIN</dt><dd>A way to combine matching rows from tables in a query.</dd></div>
+    </dl>
+    <div class="db-next"><h2>Ready to ask your first question?</h2><p>Next, use SELECT to choose columns and FROM to choose a table. You can return to this introduction whenever a term is unfamiliar.</p><a class="db-primary-link" href="/lessons/01-tables-and-keys">Continue to lesson 1: Tables, rows and keys &#8594;</a></div>
+  </section>
+</article>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% set labels = {'line_no': 'Item', 'material_no': 'Material', 'description': 'Short text', 'plant_code': 'Plant', 'requested_delivery_date': 'Delivery date', 'confirmed_delivery_date': 'Confirmed date', 'order_qty': 'Order qty', 'received_qty': 'Received qty', 'open_qty': 'Open qty', 'gr_no': 'Receipt document', 'receipt_date': 'Posting date', 'qty': 'Quantity', 'storage_location': 'Storage location'} %}
+{% if run.error %}
+<p class="message">{{ run.error }}</p>
+{% elif not run.result.rows %}
+<p class="empty po-grid-help">{% if selectable %}No items on this order.{% else %}No goods receipts on this order yet.{% endif %}</p>
+{% else %}
+{% set columns = run.result.columns %}
+<div class="grid-wrap po-grid-wrap" tabindex="0" role="region" aria-label="{{ run.query.title }} table; scroll horizontally for more columns">
+  <table class="grid po-grid">
+    <caption class="po-sr-only">{{ run.query.title }} for {{ key }}</caption>
+    <thead><tr>{% for column in columns %}<th scope="col"{% if run.result.column_types[loop.index0] is numeric_type %} class="num"{% endif %}>{{ labels.get(column, column | header_label) }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for row in run.result.rows %}
+      <tr{% if selectable and chosen.row and row[0] == chosen.row[0] %} class="po-selected"{% endif %}>
+        {% for value in row %}
+        {% set column = columns[loop.index0] %}
+        {% set type_name = run.result.column_types[loop.index0] %}
+        <td{% if type_name is numeric_type %} class="num"{% endif %}>
+          {% if selectable and column == 'line_no' %}
+          <a href="/screens/ME23N?key={{ key | urlencode }}&amp;line={{ value }}" aria-label="Select item {{ value }}"{% if chosen.row and row[0] == chosen.row[0] %} aria-current="true"{% endif %}>{{ value | cell(type_name) }}</a>
+          {% else %}{% include "screens/_drill.html" %}{% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if run.result.truncated %}<p class="po-grid-help">Showing the first {{ run.result.rows | length }} of {{ run.result.total_rows }} rows.</p>{% endif %}
+{% endif %}
