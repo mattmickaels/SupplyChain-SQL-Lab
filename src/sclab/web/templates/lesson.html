@@ -3,6 +3,7 @@
 {% block content %}
 <p class="today">Today in the lab is {{ today }}.</p>
 <h1>{{ lesson_title }}</h1>
+<p><a href="/">All lessons</a> &middot; <a href="#exercises">Go to exercises</a></p>
 <div class="prose">{{ body_html }}</div>
 {% if sap_links %}
 <h2>SAP views</h2>
@@ -16,6 +17,9 @@
   {% endfor %}
 </ul>
 {% endif %}
+<h2 id="exercises">Practice</h2>
+<p>Write one query in an SQL box. Run shows its rows; Check compares your answer with the exercise. Use Hint if you get stuck, or Show solution after your first Check.</p>
+<p>Run and Check save your SQL on this computer. Run or Check before leaving the page to keep your latest edits. <a href="/schema" target="_blank" rel="noopener">Open the schema in a new tab</a> to look up columns without leaving your work.</p>
 {% for exercise in exercises %}
 {% if exercise.is_drill %}
 {% include "_drill.html" %}
@@ -47,8 +51,15 @@
   <div class="hint-panel" id="hint-{{ exercise.id }}"></div>
   <div id="solution-{{ exercise.id }}"></div>
   <div id="result-{{ exercise.id }}"></div>
-  <div id="check-{{ exercise.id }}"></div>
+  <div id="check-{{ exercise.id }}" aria-live="polite">
+    {% if exercise.status == "passed" %}<p class="banner">You have passed this exercise.</p>{% endif %}
+  </div>
 </section>
 {% endif %}
 {% endfor %}
+<nav aria-label="Lesson navigation" class="actions">
+  {% if previous_lesson %}<a href="/lessons/{{ previous_lesson.id }}">Previous: {{ previous_lesson.title }}</a>{% endif %}
+  <a href="/">All lessons</a>
+  {% if next_lesson %}<a href="/lessons/{{ next_lesson.id }}">Next: {{ next_lesson.title }}</a>{% endif %}
+</nav>
 {% endblock %}

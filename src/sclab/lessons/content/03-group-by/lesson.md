@@ -7,6 +7,13 @@ GROUP BY collapses many rows into one row per group.
 You then count, sum, or average inside that group.
 A pivot table in Excel does the same job.
 The group is the row label, and the aggregate is the value.
+Without Excel experience, think of sorting rows into buckets and calculating one answer for each bucket.
+Every selected column must either identify a group (and appear in GROUP BY) or be inside an aggregate such as COUNT, SUM, or AVG.
+For example, selecting an individual plant name while grouping only by country would leave SQL without a single plant name to return for the US group.
+
+Write clauses in this order: SELECT, FROM, WHERE, GROUP BY, HAVING, ORDER BY, LIMIT.
+Skip any clauses you do not need.
+Conceptually, SQL reads the table, filters rows, builds groups, filters groups, chooses result columns, sorts, and limits the result.
 
 This query counts plants by country.
 

@@ -4,6 +4,13 @@
 <p class="today">Today in the lab is {{ today }}.</p>
 <h1>Lessons</h1>
 {% if lessons %}
+<section class="prose" aria-label="Getting started">
+  <h2>New to SQL? Start here</h2>
+  <p>SQL is a language for asking questions about data stored in tables. You do not need programming or supply-chain experience.</p>
+  <p>Start with lessons 1 and 2 to select columns, filter rows, and sort results. Continue with lessons 3 and 4 to summarize data and combine tables. Lessons 5 and 6 build confidence with dates and missing values.</p>
+  <p>Lessons 7 to 10 are optional next steps: advanced queries, planning problems, and timed practice. You can leave them until the basics feel comfortable.</p>
+  <p>Read a worked example, then try one exercise at a time. Run shows your results; Check tells you whether they answer the question. Mistakes are safe: lessons cannot change the data.</p>
+</section>
 <ul class="lesson-list">
   {% for lesson in lessons %}
   <li>

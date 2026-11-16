@@ -1,4 +1,17 @@
 [[example]]
+id = "first-plant-query"
+sql = """
+SELECT plant_code, name, city, country
+FROM plant;
+"""
+expected_rows = [
+  ["AU01", "Austin", "Austin", "US"],
+  ["SC01", "Santa Clara", "Santa Clara", "US"],
+  ["SG01", "Singapore", "Singapore", "SG"],
+]
+order_matters = false
+
+[[example]]
 id = "product-families"
 sql = """
 SELECT family_code, name

@@ -1,4 +1,5 @@
 import argparse
+import signal
 import socket
 import sys
 import threading
@@ -43,6 +44,15 @@ def _wait_until_listening(host: str, port: int, timeout_s: float = 15.0) -> None
             time.sleep(0.1)
 
 
+def _open_browser_when_ready(url: str, port: int) -> None:
+    """Open the browser once the server accepts connections."""
+    try:
+        _wait_until_listening(_HOST, port)
+    except TimeoutError:
+        return
+    webbrowser.open(url)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="sclab",
@@ -71,13 +81,17 @@ def main(argv: list[str] | None = None) -> None:
     port = pick_port()
     url = f"http://{_HOST}:{port}"
     print(url)
-    server = threading.Thread(
-        target=uvicorn.run,
-        kwargs={"app": create_app(), "host": _HOST, "port": port},
-        daemon=True,
-    )
-    server.start()
-    _wait_until_listening(_HOST, port)
     if not args.no_browser:
-        webbrowser.open(url)
-    server.join()
+        threading.Thread(target=_open_browser_when_ready, args=(url, port), daemon=True).start()
+    server = uvicorn.Server(uvicorn.Config(create_app(), host=_HOST, port=port))
+    # Run in the main thread so uvicorn installs its own SIGINT and SIGBREAK handlers.
+    # After a clean shutdown uvicorn re-raises the signal it caught. On Windows SIGBREAK
+    # would then kill the process outright, so route it to KeyboardInterrupt like SIGINT.
+    sigbreak = getattr(signal, "SIGBREAK", None)
+    if sigbreak is not None:
+        signal.signal(sigbreak, signal.default_int_handler)
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        pass
+    print("Lab stopped.")

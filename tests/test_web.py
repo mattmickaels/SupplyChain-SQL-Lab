@@ -104,6 +104,30 @@ def test_solution_hidden_before_first_attempt(client) -> None:
     assert "SELECT count(*) AS plant_count FROM plant" in shown.text
 
 
+def test_check_syntax_error_saves_attempt_and_unlocks_solution(client) -> None:
+    _clear_progress()
+    sql = "SELEC plant_code FROM plant"
+    response = client.post("/api/check/plant-columns", data={"sql": sql})
+    assert "syntax error" in response.text.lower()
+    progress = ProgressStore(progress_path())
+    assert progress.status("plant-columns") == "attempted"
+    assert progress.editor_sql("plant-columns") == sql
+    assert sql in client.get("/lessons/01-tables-and-keys").text
+    solution = client.get("/api/solution/plant-columns")
+    assert 'class="solution"' in solution.text
+    assert "FROM plant" in solution.text
+
+
+def test_check_error_keeps_completed_status_and_latest_sql(client) -> None:
+    _clear_progress()
+    client.post("/api/check/plant-columns", data={"sql": "SELECT * FROM plant"})
+    client.post("/api/check/plant-columns", data={"sql": "SELECT unknown_column FROM plant"})
+    progress = ProgressStore(progress_path())
+    assert progress.status("plant-columns") == "passed"
+    assert progress.editor_sql("plant-columns") == "SELECT unknown_column FROM plant"
+    assert "You have passed this exercise." in client.get("/lessons/01-tables-and-keys").text
+
+
 def test_schema_page_shows_sap_names(client) -> None:
     response = client.get("/schema/material")
     assert response.status_code == 200
@@ -216,11 +240,12 @@ def test_slow_query_does_not_block_other_requests(lab_home, monkeypatch) -> None
 
 def test_browser_opens_after_server_ready(lab_home, monkeypatch) -> None:
     calls: list[str] = []
+    browser_opened = threading.Event()
 
-    def fake_run(*_args, **kwargs):
+    def fake_run(server):
         calls.append("server")
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.bind((kwargs["host"], kwargs["port"]))
+        sock.bind((server.config.host, server.config.port))
         sock.listen(1)
         sock.settimeout(5)
         try:
@@ -231,10 +256,12 @@ def test_browser_opens_after_server_ready(lab_home, monkeypatch) -> None:
 
     def fake_open(_url):
         calls.append("browser")
+        browser_opened.set()
 
-    monkeypatch.setattr("sclab.cli.uvicorn.run", fake_run)
+    monkeypatch.setattr("sclab.cli.uvicorn.Server.run", fake_run)
     monkeypatch.setattr("sclab.cli.webbrowser.open", fake_open)
     main([])
+    assert browser_opened.wait(timeout=5)
     assert calls == ["server", "browser"]
 
 
@@ -254,22 +281,13 @@ def test_help_exits_before_building_the_database(monkeypatch, capsys) -> None:
 def test_no_browser_skips_the_browser(lab_home, monkeypatch) -> None:
     calls: list[str] = []
 
-    def fake_run(*_args, **kwargs):
+    def fake_run(_server):
         calls.append("server")
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.bind((kwargs["host"], kwargs["port"]))
-        sock.listen(1)
-        sock.settimeout(5)
-        try:
-            conn, _addr = sock.accept()
-            conn.close()
-        finally:
-            sock.close()
 
     def fake_open(_url):
         calls.append("browser")
 
-    monkeypatch.setattr("sclab.cli.uvicorn.run", fake_run)
+    monkeypatch.setattr("sclab.cli.uvicorn.Server.run", fake_run)
     monkeypatch.setattr("sclab.cli.webbrowser.open", fake_open)
     main(["--no-browser"])
     assert calls == ["server"]
@@ -347,7 +365,7 @@ def test_check_empty_sql_does_not_record_or_unlock(client) -> None:
     assert saved.last_sql("sample-count") == "SELECT 1"
 
 
-def test_check_query_error_does_not_record_or_overwrite(client) -> None:
+def test_check_query_error_records_latest_attempt(client) -> None:
     _clear_progress()
     client.post("/api/check/sample-plants", data={"sql": "SELECT 1"})
     response = client.post("/api/check/sample-plants", data={"sql": "SELEC 1"})
@@ -355,12 +373,12 @@ def test_check_query_error_does_not_record_or_overwrite(client) -> None:
     assert "syntax error" in response.text.lower()
     store = ProgressStore(progress_path())
     assert store.status("sample-plants") == "attempted"
-    assert store.last_sql("sample-plants") == "SELECT 1"
+    assert store.last_sql("sample-plants") == "SELEC 1"
     fresh = client.post("/api/check/sample-count", data={"sql": "SELEC 1"})
     assert fresh.status_code == 200
-    assert ProgressStore(progress_path()).status("sample-count") == "new"
-    hidden = client.get("/api/solution/sample-count")
-    assert "Try a Check first, then the solution unlocks." in hidden.text
+    assert ProgressStore(progress_path()).status("sample-count") == "attempted"
+    shown = client.get("/api/solution/sample-count")
+    assert 'class="solution"' in shown.text
 
 
 def test_run_saves_draft_shown_ahead_of_older_sql(client) -> None:

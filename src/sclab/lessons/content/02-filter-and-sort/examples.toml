@@ -1,4 +1,16 @@
 [[example]]
+id = "combined-plant-filters"
+sql = """
+SELECT plant_code, name
+FROM plant
+WHERE country = 'US'
+  AND (city = 'Austin' OR city = 'Santa Clara')
+ORDER BY plant_code
+"""
+expected_rows = [["AU01", "Austin"], ["SC01", "Santa Clara"]]
+order_matters = true
+
+[[example]]
 id = "us-plants-sorted"
 sql = """
 SELECT plant_code, name

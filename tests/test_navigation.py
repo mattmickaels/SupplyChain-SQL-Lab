@@ -56,6 +56,21 @@ def test_nav_links_return_200(client) -> None:
         assert client.get(href).status_code == 200
 
 
+def test_lesson_navigation_follows_loaded_lesson_order(client) -> None:
+    lessons = load_lessons()
+    for index, lesson in enumerate(lessons):
+        page = client.get(f"/lessons/{lesson.id}")
+        nav = re.search(r'<nav aria-label="Lesson navigation"[^>]*>(.*?)</nav>', page.text, re.S)
+        assert nav is not None
+        hrefs = re.findall(r'href="([^"]+)"', nav.group(1))
+        expected = ["/"]
+        if index:
+            expected.insert(0, f"/lessons/{lessons[index - 1].id}")
+        if index + 1 < len(lessons):
+            expected.append(f"/lessons/{lessons[index + 1].id}")
+        assert hrefs == expected
+
+
 def test_transaction_code_box_is_on_every_page(client) -> None:
     lesson = next(item.id for item in load_lessons() if item.number == 1)
     paths = (

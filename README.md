@@ -6,7 +6,7 @@ Every company, supplier, customer, part and number in it is made up.
 
 ## What is in it
 
-- Five years of realistic planning data (sales orders, purchase orders, deliveries, stock, bills of materials, build bays) in a DuckDB database that is built on first start, in well under a minute.
+- Five years of realistic planning data (sales orders, purchase orders, deliveries, stock, bills of materials, build bays) in a DuckDB database that is built on first start.
 - Ten lessons, from tables and keys through planning analytics and timed drills.
 - A SQL editor that checks each answer and shows exactly which rows are missing or extra.
 - Read-only display screens (material, supplier, purchase order, sales order, BOM, where-used, stock and requirements, and bay load), each with the SQL behind it.
@@ -34,9 +34,12 @@ Your progress is saved on your computer as you go, so you can stop and come back
 
 ## How to work through it
 
-- Do the lessons in order; each one starts with a short explanation, an Excel comparison and a worked example.
+- Start with lessons 1 and 2 for selecting, filtering, and sorting; lessons 3 and 4 add summaries and joins.
+- Lessons 5 and 6 cover dates and missing values; lessons 7 to 10 are optional advanced practice.
+- Each lesson starts with an explanation, an Excel comparison and a worked example.
 - Write your answer, press Run (or Ctrl+Enter, Cmd+Enter on a Mac) to see your result, then Check to compare it with the expected answer.
 - Hints go from the idea, to the clause to use, to an outline of the query; the full solution unlocks after your first Check.
+- Run or Check before leaving a lesson to save your latest SQL edits.
 - Use the Schema page whenever you need to know which table holds what.
 - Open Screens from the top of the page, or type a transaction code such as MM03 in the box and press Go.
 - The notebook is for exploring a question in steps.

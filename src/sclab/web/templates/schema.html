@@ -5,6 +5,8 @@
 <h1>{% if spec %}{{ spec.name }}{% elif view %}{{ view.name }}{% else %}Schema{% endif %}</h1>
 {% if spec %}
 <p>{{ spec.description }}</p>
+<p><strong>Primary key:</strong> <code>{{ spec.primary_key | join(', ') }}</code>. This column, or combination of columns, identifies one row.</p>
+<p>Types describe stored values: VARCHAR is text, INTEGER is a whole number, DECIMAL is a decimal number, DATE is a calendar date, and BOOLEAN is true or false. NULL means a value is missing.</p>
 <p>{% if spec.sap_table %}SAP table: {{ spec.sap_table }}{% else %}-{% endif %}</p>
 {% if view_name %}
 <p>SAP view: <a href="/schema/{{ view_name }}">{{ view_name }}</a></p>

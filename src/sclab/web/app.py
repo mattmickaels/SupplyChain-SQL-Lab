@@ -98,6 +98,7 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
                         "databricks_note": _note_html(item.databricks_note),
                         "excel_tip": item.excel_tip,
                         "sql": progress.editor_sql(item.id) or "",
+                        "status": progress.status(item.id),
                     }
                 )
         return render(
@@ -109,6 +110,12 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
                 "body_html": _markdown(lesson.body_md),
                 "exercises": blocks,
                 "sap_links": _sap_links(lesson.body_md),
+                "previous_lesson": lessons[lessons.index(lesson) - 1]
+                if lessons.index(lesson) > 0
+                else None,
+                "next_lesson": lessons[lessons.index(lesson) + 1]
+                if lessons.index(lesson) + 1 < len(lessons)
+                else None,
             },
         )
 
@@ -213,6 +220,8 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
             try:
                 outcome = await run_in_threadpool(check_answer, exercise, sql)
             except QueryError as exc:
+                if sql.strip():
+                    store().record_attempt(exercise_id, sql, False)
                 return render(request, "_check.html", {"error": exc.message, "outcome": None})
             store().record_attempt(exercise_id, sql, outcome.passed)
             response = render(
