@@ -61,6 +61,12 @@
 .db-company-sites > div { display: flex; flex-direction: column; gap: 0.3rem; padding: 1rem; border-left: 4px solid var(--accent); background: var(--paper); }
 .db-company-sites strong { font-family: var(--mono); color: var(--accent); }
 .db-company-sites span { font-size: 0.85rem; }
+@media (prefers-color-scheme: dark) {
+  .db-primary-link { background: var(--action); color: var(--action-ink); }
+  .db-document-title { background: #2b3647; color: var(--ink); }
+  .db-key-toggle:checked ~ .db-relationships .db-supplier-key { background: #293f3a; color: #b2d5c4; box-shadow: inset 0 -3px #739d8a; }
+  .db-key-toggle:checked ~ .db-relationships .db-order-key { background: #413829; color: #e5c895; box-shadow: inset 0 -3px #b59965; }
+}
 @media (max-width: 50rem) { .db-company-products { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 35rem) { .db-company-sites { grid-template-columns: 1fr; } }
 @media (max-width: 50rem) { .db-flow, .db-glossary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .db-anatomy { grid-template-columns: 1fr; } }

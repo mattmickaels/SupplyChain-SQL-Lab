@@ -37,6 +37,7 @@
 <section class="exercise" id="exercise-{{ exercise.id }}">
   <p class="eyebrow">EXERCISE {{ loop.index }} / {{ exercises | length }}</p>
   <h2>{{ exercise.title }}</h2>
+  <button type="button" data-workbench-exercise="{{ exercise.id }}">Open in workbench</button>
   <div class="prose">{{ exercise.prompt_html }}</div>
   {% if exercise.databricks_note %}
   <p class="note">On Databricks: {{ exercise.databricks_note }}</p>

@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/static/vendor/codemirror.min.css">
   <link rel="stylesheet" href="/static/app.css">
   <link rel="stylesheet" href="/static/learning-ui.css">
+  <link rel="stylesheet" href="/static/workbench.css">
 </head>
 <body>
   <a href="#main-content" class="skip-link">Skip to content</a>
@@ -39,11 +40,13 @@
   </main>
   <footer class="app-footer"><span>{{ company }} &middot; Fictional data. Real SQL.</span><a href="/start#company">Meet the company</a></footer>
   <div class="request-indicator" role="status" aria-live="polite">Working…</div>
+  {% include "_workbench.html" %}
   <script src="/static/vendor/htmx.min.js"></script>
   <script src="/static/vendor/codemirror.min.js"></script>
   <script src="/static/vendor/mode/sql/sql.min.js"></script>
   <script src="/static/vendor/addon/edit/matchbrackets.min.js"></script>
   {% block head_scripts %}{% endblock %}
   <script src="/static/app.js"></script>
+  <script src="/static/workbench.js"></script>
 </body>
 </html>

@@ -1,0 +1,34 @@
+<button type="button" id="wb-launch" class="wb-launch" aria-controls="sql-workbench" aria-expanded="false">SQL workbench</button>
+<section id="sql-workbench" class="sql-workbench" aria-labelledby="wb-title" hidden>
+  <header class="wb-header">
+    <button type="button" id="wb-move" title="Drag to move when floating. Arrow keys move the window." aria-label="Move SQL workbench">&#10021;</button>
+    <h2 id="wb-title">SQL workbench</h2>
+    <button type="button" id="wb-mode">Float</button>
+    <button type="button" id="wb-minimize">Minimize</button>
+  </header>
+  <div class="wb-body">
+    <label for="wb-query">Query / exercise</label>
+    <select id="wb-query"></select>
+    <p class="wb-database">Lesson database · Read-only</p>
+    <details id="wb-task" hidden><summary>Exercise instructions</summary><p id="wb-prompt"></p><a id="wb-lesson">Go to exercise</a></details>
+    <form id="workbench-form">
+      <label for="wb-sql">SQL <small>Ctrl+Enter to run</small></label>
+      <textarea id="wb-sql" name="sql" data-editor rows="6" aria-label="Workbench SQL"></textarea>
+      <input type="hidden" name="target" value="lesson">
+      <input type="hidden" name="form_id" value="workbench-form">
+      <input type="hidden" name="exercise_id" value="">
+      <input type="hidden" name="label" value="workbench">
+      <div class="actions wb-actions">
+        <button type="button" data-run data-wb-action="run">Run</button>
+        <button type="button" data-wb-action="check">Check</button>
+        <button type="button" data-wb-action="hint">Hint</button>
+        <button type="button" data-wb-action="solution">Show solution</button>
+      </div>
+    </form>
+    <p id="wb-status" role="status" aria-live="polite">Write a SELECT query, then Run.</p>
+    <p id="wb-storage" class="message" hidden>Browser draft storage is unavailable. Keep this page open or copy your SQL before navigating.</p>
+    <div id="wb-help" class="hint-panel"></div>
+    <div id="wb-result" aria-live="polite"></div>
+  </div>
+  <footer class="wb-footer"><small>Drafts stay in this browser tab. Run or Check saves exercise SQL.</small><button type="button" id="wb-resize" aria-label="Resize SQL workbench" title="Drag to resize. Arrow keys change width and height.">&#9698;</button></footer>
+</section>

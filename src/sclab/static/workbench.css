@@ -1,0 +1,51 @@
+.sql-workbench[hidden], .wb-launch[hidden] { display: none; }
+.wb-launch { position: fixed; bottom: 1rem; right: 1rem; z-index: 70; background: var(--accent); color: var(--accent-ink); box-shadow: 0 4px 20px #0003; }
+.sql-workbench { position: fixed; z-index: 70; right: 0; top: 0; width: min(46vw, 44rem); height: 100dvh; display: flex; flex-direction: column; background: var(--paper); color: var(--ink); border: 1px solid var(--line); box-shadow: -6px 0 24px #0002; min-width: 0; }
+.wb-header { display: flex; align-items: center; gap: .5rem; padding: .65rem; background: var(--bg); border-bottom: 2px solid var(--accent); flex: 0 0 auto; }
+.wb-header h2 { font-size: 1rem; margin: 0 auto 0 0; }
+.wb-header button { padding: .4rem .65rem; font-size: .8rem; }
+.wb-header button, .wb-actions button:not([data-run]), #wb-resize { background: var(--paper); color: var(--ink); border: 1px solid var(--line); }
+.wb-body { overflow: auto; flex: 1 1 auto; min-height: 0; padding: 1rem; overscroll-behavior: contain; }
+.wb-body label { display: block; font-size: .85rem; font-weight: 600; }
+.wb-body select { width: 100%; }
+.wb-body label small { float: right; font-weight: 400; color: var(--muted); }
+.wb-database, #wb-status { font-size: .8rem; color: var(--muted); }
+#wb-task { margin-bottom: 1rem; font-size: .85rem; }
+#wb-prompt { white-space: pre-line; }
+.wb-body .CodeMirror { height: 200px; padding: 0; }
+.wb-body .CodeMirror-scroll { min-height: 0; }
+.wb-body textarea { width: 100%; }
+.wb-actions { flex-wrap: wrap; gap: .4rem; margin: .75rem 0; }
+.wb-actions button { font-size: .85rem; padding: .5rem .8rem; }
+#wb-result, #wb-help { min-width: 0; overflow-wrap: anywhere; }
+.wb-footer { display: flex; align-items: center; gap: .5rem; padding: .4rem .75rem; border-top: 1px solid var(--line); }
+.wb-footer small { flex: 1; font-size: .7rem; color: var(--muted); }
+#wb-move, #wb-resize { touch-action: none; }
+#wb-move { cursor: move; }
+#wb-resize { cursor: nwse-resize; }
+.sql-workbench:not(.wb-floating) #wb-move, .sql-workbench:not(.wb-floating) #wb-resize { display: none; }
+.sql-workbench.wb-floating { right: auto; border-radius: .6rem; overflow: hidden; box-shadow: 0 8px 35px #0004; }
+@media (prefers-color-scheme: dark) {
+  .wb-launch { background: var(--action); color: var(--action-ink); border: 1px solid #6986ad; }
+  .wb-header { background: #292e38; border-bottom-color: #536d95; }
+  .wb-header button, .wb-actions button:not([data-run]), #wb-resize { background: #303642; border-color: #535d6d; }
+  .wb-footer { background: #1c1f25; }
+  .sql-workbench { box-shadow: -6px 0 24px #0005; }
+}
+@media (min-width: 901px) {
+  body.wb-docked { padding-right: min(46vw, 44rem); }
+  body.wb-docked .top { flex-wrap: wrap; gap: .5rem; padding: 1rem; }
+  body.wb-docked .top nav { flex-wrap: wrap; margin-left: 0; }
+  body.wb-docked .lesson-workspace { grid-template-columns: minmax(0, 1fr); }
+  body.wb-docked .lesson-outline { position: static; }
+  body.wb-docked .lesson-outline nav { display: flex; flex-direction: row; flex-wrap: wrap; }
+  body.wb-docked .outline-help { display: none; }
+  body.wb-docked main { padding: 1.25rem; }
+  body.wb-docked .learning-welcome, body.wb-docked .tool-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+  .sql-workbench, .sql-workbench.wb-floating { inset: 0 !important; width: 100% !important; height: 100dvh !important; border-radius: 0; }
+  #wb-mode, #wb-move, #wb-resize { display: none; }
+  body.wb-open { overflow: hidden; }
+  .wb-body { padding: .75rem; }
+}

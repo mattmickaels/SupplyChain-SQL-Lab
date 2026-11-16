@@ -46,6 +46,10 @@ Your progress is saved on your computer as you go, so you can stop and come back
 - Lessons link to the explorer in a separate browser tab so you can look up records while keeping your SQL editor open.
 - The introduction begins with Kestrel's company profile, products, plants, operating flow, and the supply problem you will investigate.
 - ME23N uses a classic desktop-style purchase-order workbench with selectable items, receipt history, and the SQL behind each section.
+- Open the SQL workbench to query while reading, or use an exercise's **Open in workbench** button for Run, Check, and hints beside the lesson.
+  Dock it, float it, drag or resize it, or minimize it without losing SQL.
+  Drafts survive navigation in the same browser tab; Run or Check saves exercise SQL to the lab.
+  On small screens the workbench fills the screen; Minimize returns to the lesson.
 - The notebook is for exploring a question in steps.
 - The sample notebook walks the supply story.
 - From a material screen you can open its BOM, where it is used, and its stock and requirements list.

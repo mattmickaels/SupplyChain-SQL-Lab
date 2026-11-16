@@ -81,6 +81,46 @@ body:has(.po-workspace) main { max-width: 100rem; }
 .po-examples a:hover { border-color: #165784; background: #edf4fb; }
 .po-examples small { color: #506376; }
 .po-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (prefers-color-scheme: dark) {
+  .po-workspace {
+    color-scheme: dark;
+    --ink: #e2e5eb; --muted: #a5adba; --paper: #20232a; --bg: #17191e;
+    --line: #46505e; --accent: #a2bfee; --null-bg: #2c313b;
+    --warn-bg: #382f24; --warn: #dfbf8d;
+    border-color: #46505e; box-shadow: 0 5px 18px #0003;
+  }
+  .po-titlebar { background: linear-gradient(#344459, #293647); color: var(--ink); }
+  .po-titlebar h1 span { color: #bcc8db; }
+  .po-mode { border-color: #667890; }
+  .po-toolbar, .po-section-bar { background: #2a303b; border-color: var(--line); }
+  .po-search input { background: #393329; color: #ead8b4; border-color: #8e7a57; }
+  .po-workspace button, .po-tool { background: #303a49; color: #d4e1f5; border-color: #62738a; }
+  .po-workspace button:hover, .po-tool:hover { background: #3b4a60; }
+  .po-workspace :focus-visible { outline-color: var(--accent); }
+  .po-panel { background: var(--paper); border-color: var(--line); box-shadow: none; }
+  .po-panel .doc-header dt { color: var(--muted); }
+  .po-panel .doc-header dd { background: #191c22; border-color: #46505e; }
+  .po-tabs { background: #1c2027; border-color: var(--line); }
+  .po-tabs a { color: #b8c6da; background: #2a303b; border-color: var(--line); }
+  .po-tabs a[aria-current] { color: var(--ink); background: #343e4e; box-shadow: inset 0 3px #b59965; }
+  .po-tabs span { background: #242b36; }
+  .po-grid-help, .po-learning-note, .po-examples small { color: var(--muted); }
+  .po-grid-wrap { background: var(--paper); }
+  .po-grid th { background: #2a303b; color: #c3cede; }
+  .po-grid th, .po-grid td { border-color: var(--line); }
+  .po-grid tbody tr:nth-child(even) td { background: #242830; }
+  .po-grid tbody tr.po-selected td { background: #413829; border-top-color: #8e7a57; border-bottom-color: #8e7a57; }
+  .po-grid .po-selected td:first-child { border-left-color: #c4a368; }
+  .po-sql { background: var(--paper); border-color: var(--line); }
+  .po-sql-heading { background: #293344; border-color: var(--line); }
+  .po-sql-heading .po-app-name, .po-query-card .sql-panel summary { color: var(--accent); }
+  .po-query-card { border-color: var(--line); }
+  .po-query-card:target { background: #343e4e; }
+  .po-statusbar { background: #2a303b; border-color: var(--line); color: #b8c6da; }
+  .po-status-dot { background: #96bca2; }
+  .po-examples a { background: var(--paper); border-color: var(--line); color: var(--accent); }
+  .po-examples a:hover { background: #293344; border-color: #667890; }
+}
 @media (max-width: 75rem) { .po-body { grid-template-columns: minmax(0, 1fr); } .po-sql { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); } .po-sql-heading, .po-sql > .po-learning-note { grid-column: 1 / -1; } }
 @media (max-width: 45rem) { .po-titlebar { align-items: flex-start; } .po-titlebar h1 span { display: block; } .po-body { padding: 0.5rem; } .po-panel .doc-header { grid-template-columns: repeat(2, minmax(0, 1fr)); } .po-sql { display: block; } .po-mode { font-size: 0.65rem; } }
 @media (max-width: 25rem) { .po-panel .doc-header { grid-template-columns: minmax(0, 1fr); } }

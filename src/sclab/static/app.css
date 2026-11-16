@@ -20,27 +20,29 @@
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --bg: #12171c;
-    --paper: #1b232b;
-    --ink: #e7eef4;
-    --muted: #a8b6c2;
-    --line: #2e3b46;
-    --accent: #3dbeb6;
-    --accent-ink: #06211f;
-    --ok: #8ed7ad;
-    --ok-bg: #163226;
-    --warn: #f0c08a;
-    --warn-bg: #3a261c;
-    --null-bg: #2a3641;
-    --shadow: none;
+    --bg: #17191e;
+    --paper: #20232a;
+    --ink: #e2e5eb;
+    --muted: #a5adba;
+    --line: #3b414c;
+    --accent: #a2bfee;
+    --accent-ink: #17243a;
+    --action: #42638f;
+    --action-ink: #f4f6fa;
+    --ok: #a0c9ad;
+    --ok-bg: #25362d;
+    --warn: #dfbf8d;
+    --warn-bg: #382f24;
+    --null-bg: #2c313b;
+    --shadow: 0 4px 18px #0003;
   }
 
-  .CodeMirror span.cm-keyword { color: #7ddecb; }
-  .CodeMirror span.cm-string { color: #f0c48a; }
-  .CodeMirror span.cm-number { color: #8fe7b0; }
-  .CodeMirror span.cm-comment { color: #c5d0da; }
-  .CodeMirror span.cm-operator { color: #e7eef4; }
-  .CodeMirror span.cm-variable-2 { color: #9dc7ff; }
+  .CodeMirror span.cm-keyword { color: #b7aff0; }
+  .CodeMirror span.cm-string { color: #d9bc91; }
+  .CodeMirror span.cm-number { color: #a8cbb3; }
+  .CodeMirror span.cm-comment { color: #a0a9b7; }
+  .CodeMirror span.cm-operator { color: #d8dee9; }
+  .CodeMirror span.cm-variable-2 { color: #a2bfee; }
 }
 
 * { box-sizing: border-box; }
@@ -156,8 +158,8 @@ textarea {
 .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.7rem; }
 
 button {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--action, var(--accent));
+  color: var(--action-ink, var(--accent-ink));
   border: 0;
   border-radius: 0.4rem;
   padding: 0.45rem 0.8rem;
