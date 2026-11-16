@@ -49,3 +49,15 @@ Success and warning colors remain reserved for feedback; SQL keywords, strings, 
 The classic purchase-order layout adopts dark surfaces while retaining its blue titlebar, warm input field, and amber item selection.
 Verify desktop and mobile layouts at 1440x1000 and 390x844, including editor cursor/selection, results, relationship keys, and the floating workbench.
 Normal text and primary action labels must meet a 4.5:1 contrast ratio on their actual backgrounds.
+
+## Graphical learning refresh
+
+Use consistent local line icons, real completion progress, and a business-route diagram to orient the learner.
+The company illustration explains tool/module/component nesting; it is illustrative equipment, not a specific product drawing.
+The interactive plant preview teaches projection, filtering, grouping, and ordering through four portable queries.
+Compare every preview against the real lesson database in browser checks.
+The schema explorer derives its nodes, keys, and references from TABLES metadata rather than a manually maintained diagram.
+Show outgoing and incoming references with directional labels, accessible controls, and links to definitions; do not infer unsupported cardinalities.
+Preserve compact query output while adding actual column counts and a visual result header.
+Review the dashboard, introduction, lessons, schema, ERP, notebooks, playground, and workbench at 1440x1000 and 390x844 in both palettes.
+All graphics are local SVG, CSS, or browser-rendered tables; no runtime network service is introduced.

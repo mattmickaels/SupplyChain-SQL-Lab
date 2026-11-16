@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from '_visuals.html' import icon %}
 {% block title %}ERP Explorer - {{ area.title }}{% endblock %}
 {% block head_scripts %}<link rel="stylesheet" href="/static/explorer.css">{% endblock %}
 {% block content %}
@@ -12,7 +13,7 @@
       <h2>Explore by business area</h2>
       <nav aria-label="ERP business areas">
         {% for item in areas %}
-        <a href="/erp?area={{ item.slug }}"{% if area.slug == item.slug %} aria-current="page"{% endif %}><strong>{{ item.title }}</strong><span>{{ item.code }}</span></a>
+        <a href="/erp?area={{ item.slug }}"{% if area.slug == item.slug %} aria-current="page"{% endif %}>{{ icon({'materials':'box','suppliers':'truck','purchases':'order','sales':'chart','bom':'network','where-used':'search','stock':'database','capacity':'factory'}[item.slug]) }}<strong>{{ item.title }}</strong><span>{{ item.code }}</span></a>
         {% endfor %}
       </nav>
       <div class="erp-help"><h3>Stuck in a SQL lesson?</h3><ol><li>Find a material, supplier, or order.</li><li>Open its familiar display screen.</li><li>Expand <strong>Show the SQL</strong> to see how the screen gets its data.</li></ol><p>These screens use the original lesson database. They cannot change your records.</p></div>

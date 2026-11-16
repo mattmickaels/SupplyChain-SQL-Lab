@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from '_visuals.html' import icon, query_lab, equipment %}
 {% block title %}Start here: databases and relationships{% endblock %}
 {% block head_scripts %}<link rel="stylesheet" href="/static/database-intro.css">{% endblock %}
 {% block content %}
@@ -16,6 +17,7 @@
   <section id="company" class="db-section">
     <p class="db-eyebrow">YOUR TRAINING COMPANY</p>
     <h2>Kestrel Process Equipment</h2>
+    {{ equipment() }}
     <p>Kestrel builds the specialized equipment that semiconductor manufacturers use to make and inspect chips. Its finished products are called <strong>tools</strong>: complex machines assembled from modules, which in turn contain purchased components. Kestrel also sells spare parts to support equipment already in use.</p>
     <p>This is a fictional company created for the lab. Its suppliers, customers, materials, and transactions are made up, but the questions facing its operations team should feel familiar.</p>
     <div class="db-company-products">
@@ -48,6 +50,7 @@
   </section>
 
   <section id="table-anatomy" class="db-section">
+    {{ query_lab() }}
     <p class="db-eyebrow">02 / INSIDE A TABLE</p>
     <h2>One kind of thing. One row per thing.</h2>
     <p>The <a href="/schema/plant" target="_blank" rel="noopener">plant table</a> stores factory locations. Each row represents one plant; each column describes one fact about it.</p>

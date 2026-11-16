@@ -1,0 +1,15 @@
+<section class="relationship-map" data-schema-map>
+  <div class="section-kicker">{{ icon('network') }}<div><p class="eyebrow">EXPLORE THE CONNECTIONS</p><h2>How the tables fit together</h2></div></div>
+  <p>Choose a table to see its declared key relationships. Follow a connected table to keep exploring.</p>
+  <label for="map-table">Focus table</label>
+  <select id="map-table" data-map-select>{% for item in tables %}<option value="{{ item.name }}"{% if (spec and spec.name == item.name) or (not spec and item.name == 'purchase_order') %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
+  <div class="map-columns">
+    <div><h3>References these tables <span aria-hidden="true">&#8592;</span></h3><div data-map-parents tabindex="0" aria-label="Outgoing key references"></div></div>
+    <div class="map-focus" data-map-focus></div>
+    <div><h3><span aria-hidden="true">&#8592;</span> Referenced by these tables</h3><div data-map-children tabindex="0" aria-label="Incoming key references"></div></div>
+  </div>
+  <p class="map-status" data-map-status role="status" aria-live="polite"></p>
+  <small>Arrows point from a foreign key to the table it references. Multiple fields may form one key; use the full key when joining.</small>
+  <script type="application/json" data-map-data>{{ schema_map | tojson }}</script>
+  <noscript><p>Enable JavaScript to explore connections, or use the table links below to read their definitions.</p></noscript>
+</section>

@@ -1,11 +1,12 @@
 {% extends "base.html" %}
+{% from '_visuals.html' import icon, business_route %}
 {% block title %}Lessons{% endblock %}
 {% block content %}
 <div class="learning-dashboard">
 {% if lessons %}
 <section class="learning-welcome" aria-label="Getting started">
   <div><p class="eyebrow">YOUR LEARNING WORKSPACE</p><h1>Familiar business.<br>New SQL skills.</h1><p>Explore Kestrel's operations, understand the data, and learn to answer questions one query at a time.</p><div class="actions"><a class="button-link" href="/start">Start with Kestrel &#8594;</a>{% if completed and resume %}<a class="quiet-link" href="/lessons/{{ resume.id }}">Continue: {{ resume.title }}</a>{% else %}<a class="quiet-link" href="#learning-path">Explore the lessons &#8595;</a>{% endif %}</div></div>
-  <aside class="learning-progress"><p class="eyebrow">YOUR PROGRESS</p><p class="progress-number">{{ completed }} <span>/ {{ exercise_total }}</span></p><p>exercises completed</p><progress value="{{ completed }}" max="{{ exercise_total or 1 }}" aria-label="Exercises completed"></progress><p class="progress-reassurance">No deadlines. Hints when you need them. Learn at your own pace.</p></aside>
+  <aside class="learning-progress"><p class="eyebrow">YOUR PROGRESS</p><div class="progress-orbit" style="--completion: {{ (completed * 100 / (exercise_total or 1)) | round(1) }}%"><div><p class="progress-number">{{ completed }} <span>/ {{ exercise_total }}</span></p><span>exercises completed</span></div></div><progress value="{{ completed }}" max="{{ exercise_total or 1 }}" aria-label="Exercises completed"></progress><p class="progress-reassurance">No deadlines. Hints when you need them. Learn at your own pace.</p></aside>
 </section>
 <div class="dashboard-heading"><div><p class="eyebrow">BUILD YOUR CONFIDENCE</p><h2 id="learning-path">Your learning path</h2></div><p class="today">Today in the lab is {{ today }}.</p></div>
 <p class="path-guide">Lessons 1-4 build the foundations. Lessons 5-6 cover dates and missing values. Lessons 7-10 are optional advanced practice.</p>
@@ -20,7 +21,7 @@
   {% for lesson in lessons %}
   <li>
     <a href="/lessons/{{ lesson.id }}"{% if lesson.passed == lesson.total %} class="lesson-complete"{% endif %}>
-      <span class="lesson-number">{{ lesson.number }}</span>
+      <span class="lesson-number">{{ icon('check' if lesson.passed == lesson.total else ['table', 'filter', 'chart', 'network', 'order', 'search', 'query', 'box', 'factory', 'book'][(lesson.number - 1) % 10]) }}<span>{{ '%02d' | format(lesson.number) }}</span></span>
       <span>
         <span class="lesson-stage">{% if lesson.number <= 4 %}Foundations{% elif lesson.number <= 6 %}Working with data{% else %}Optional challenge{% endif %}</span><strong>{{ lesson.title }}</strong>
         <small>{{ lesson.summary }}</small>
@@ -30,14 +31,15 @@
   </li>
   {% endfor %}
 </ul>
+{{ business_route() }}
 {% else %}
 <h1>Lessons</h1>
 <p class="empty">No lessons are loaded yet.</p>
 {% endif %}
 <section class="learning-tools"><div class="dashboard-heading"><div><p class="eyebrow">LEARN BY EXPLORING</p><h2>Your workbench</h2></div></div><div class="tool-grid">
-  <a href="/erp"><span class="tool-symbol" aria-hidden="true">▦</span><strong>ERP Explorer</strong><span>Find the records behind a business question in familiar transaction screens.</span><small>Browse the business &#8594;</small></a>
-  <a href="/notebooks"><span class="tool-symbol" aria-hidden="true">≡</span><strong>Notebook</strong><span>Build an answer step by step with SQL, notes, and charts.</span><small>Open your notebook &#8594;</small></a>
-  <a href="/schema"><span class="tool-symbol" aria-hidden="true">⌘</span><strong>Data dictionary</strong><span>Find the table, column, or key you need for your next query.</span><small>Explore the schema &#8594;</small></a>
+  <a href="/erp"><span class="tool-symbol" aria-hidden="true">{{ icon('factory') }}</span><strong>ERP Explorer</strong><span>Find the records behind a business question in familiar transaction screens.</span><small>Browse the business &#8594;</small></a>
+  <a href="/notebooks"><span class="tool-symbol" aria-hidden="true">{{ icon('book') }}</span><strong>Notebook</strong><span>Build an answer step by step with SQL, notes, and charts.</span><small>Open your notebook &#8594;</small></a>
+  <a href="/schema"><span class="tool-symbol" aria-hidden="true">{{ icon('network') }}</span><strong>Data dictionary</strong><span>Find the table, column, or key you need for your next query.</span><small>Explore the schema &#8594;</small></a>
 </div></section>
 <details class="transaction-directory"><summary>Browse the Kestrel ERP transaction directory</summary>
 <h2>Kestrel ERP</h2>

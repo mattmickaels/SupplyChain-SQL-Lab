@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from '_visuals.html' import icon %}
 {% block title %}{{ lesson_title }}{% endblock %}
 {% block content %}
 <div class="lesson-heading"><p class="eyebrow">LEARN / PRACTICE / UNDERSTAND</p>
@@ -27,6 +28,7 @@
 </details>
 <div class="practice-heading"><p class="eyebrow">PUT IT INTO PRACTICE</p>
 <h2 id="exercises">Practice</h2>
+<ol class="practice-loop" aria-label="Practice workflow"><li>{{ icon('query') }}<span><strong>Write</strong><small>Ask one question</small></span></li><li>{{ icon('table') }}<span><strong>Run</strong><small>Inspect the rows</small></span></li><li>{{ icon('check') }}<span><strong>Check</strong><small>Compare your answer</small></span></li></ol>
 <p>Write one query in an SQL box. Run shows its rows; Check compares your answer with the exercise. Use Hint if you get stuck, or Show solution after your first Check.</p>
 <p>Run and Check save your SQL on this computer. Run or Check before leaving the page to keep your latest edits. <a href="/schema" target="_blank" rel="noopener">Open the schema in a new tab</a> to look up columns without leaving your work.</p>
 </div>
@@ -35,7 +37,7 @@
 {% include "_drill.html" %}
 {% else %}
 <section class="exercise" id="exercise-{{ exercise.id }}">
-  <p class="eyebrow">EXERCISE {{ loop.index }} / {{ exercises | length }}</p>
+  <p class="eyebrow exercise-marker">{{ icon('check' if exercise.status == 'passed' else 'query') }} EXERCISE {{ loop.index }} / {{ exercises | length }}{% if exercise.status == 'passed' %}<span class="completion-chip">Completed</span>{% endif %}</p>
   <h2>{{ exercise.title }}</h2>
   <button type="button" data-workbench-exercise="{{ exercise.id }}">Open in workbench</button>
   <div class="prose">{{ exercise.prompt_html }}</div>

@@ -1,7 +1,8 @@
+{% from '_visuals.html' import icon %}
 {% if error %}
 <p class="message">{{ error }}</p>
 {% elif result %}
-<p class="meta">{{ note }} {{ result.elapsed_ms }} ms.</p>
+<div class="result-summary"><span class="result-symbol">{{ icon('table') }}</span><p class="meta">{{ note }} {{ result.elapsed_ms }} ms.</p><span class="result-columns">{{ result.columns | length }} columns</span></div>
 {% with columns=result.columns, rows=result.rows, types=result.column_types %}
 {% include "_grid.html" %}
 {% endwith %}

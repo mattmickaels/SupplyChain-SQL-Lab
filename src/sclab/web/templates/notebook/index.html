@@ -1,10 +1,12 @@
 {% extends "base.html" %}
+{% from '_visuals.html' import icon %}
 {% block title %}Notebooks{% endblock %}
 {% block content %}
 <p class="eyebrow">YOUR ANALYSIS WORKSPACE</p>
 <h1>Notebooks</h1>
 <p class="page-lead">Build an answer one step at a time. Keep your SQL, observations, and charts together.</p>
 <p class="today">Today in the lab is {{ today }}.</p>
+<ol class="practice-loop notebook-flow" aria-label="Notebook workflow"><li>{{ icon('query') }}<span><strong>Ask</strong><small>Write a query</small></span></li><li>{{ icon('chart') }}<span><strong>Visualize</strong><small>Choose a bar or line chart</small></span></li><li>{{ icon('book') }}<span><strong>Explain</strong><small>Capture what you found</small></span></li></ol>
 <form hx-post="/notebooks" class="notebook-create">
   <label for="notebook-title">New notebook</label>
   <input id="notebook-title" name="title" type="text" maxlength="80">
@@ -22,7 +24,7 @@
   {% for notebook in notebooks %}
   <li>
     <a href="/notebooks/{{ notebook.id }}">
-      <span class="lesson-number">{{ loop.index }}</span>
+      <span class="lesson-number notebook-cover">{{ icon('book') }}</span>
       <span>
         <strong>{{ notebook.title }}</strong>
         <small>{% if notebook.target == "sandbox" %}Practice database{% else %}Lesson database{% endif %}</small>
@@ -33,6 +35,6 @@
   {% endfor %}
 </ul>
 {% else %}
-<p class="empty">No notebooks yet.</p>
+<div class="visual-empty">{{ icon('book') }}<h2>Your next insight starts here</h2><p>No notebooks yet. Create one above, then add SQL, a chart, and a note about what the rows tell you.</p></div>
 {% endif %}
 {% endblock %}

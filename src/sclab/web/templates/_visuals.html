@@ -1,0 +1,62 @@
+{% macro icon(name, class_name='') -%}
+<svg class="ui-icon {{ class_name }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{% if name == 'database' %}<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/>
+{% elif name == 'query' %}<path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 22"/>
+{% elif name == 'chart' %}<path d="M4 3v17h17M8 16v-5m5 5V6m5 10V9"/>
+{% elif name == 'book' %}<path d="M3 4h7l2 2 2-2h7v16h-7l-2 2-2-2H3ZM12 6v16M6 8h3m-3 4h3m6-4h3m-3 4h3"/>
+{% elif name == 'network' %}<rect x="8" y="2" width="8" height="6" rx="1"/><rect x="2" y="16" width="7" height="6" rx="1"/><rect x="15" y="16" width="7" height="6" rx="1"/><path d="M12 8v4H5v4m7-4h7v4"/>
+{% elif name == 'factory' %}<path d="M3 21V10l6 3V8l7 4V3h4v18ZM7 17h1m4 0h1m4 0h1"/>
+{% elif name == 'box' %}<path d="m12 2 9 5v10l-9 5-9-5V7Zm0 10 9-5M12 12 3 7m9 5v10M7 4.8l9 5"/>
+{% elif name == 'truck' %}<path d="M2 5h12v12H2Zm12 5h5l3 4v3h-8"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>
+{% elif name == 'order' %}<path d="M6 3h12v19H6ZM9 3V1h6v2M9 8h6m-6 4h6m-6 4h3"/>
+{% elif name == 'filter' %}<path d="M3 4h18l-7 8v7l-4 2v-9Z"/>
+{% elif name == 'check' %}<circle cx="12" cy="12" r="9"/><path d="m7 12 3 3 7-7"/>
+{% elif name == 'search' %}<circle cx="10" cy="10" r="7"/><path d="m15 15 7 7"/>
+{% else %}<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12M3 15h18"/>{% endif %}
+</svg>
+{%- endmacro %}
+
+{% macro business_route() %}
+<section class="business-route" aria-label="Explore the business flow">
+  <div class="section-kicker">{{ icon('network') }}<div><p class="eyebrow">FOLLOW THE BUSINESS</p><h2>One operation. Connected records.</h2></div></div>
+  <p class="muted">A business journey, from incoming parts to customer demand. Pick a starting point.</p>
+  <ol class="route-stations">
+    {% for title, symbol, area, detail in [('Suppliers', 'truck', 'suppliers', 'Who provides the parts?'), ('Purchasing', 'order', 'purchases', 'What is on order?'), ('Materials', 'box', 'materials', 'What do we build with?'), ('Production', 'factory', 'capacity', 'What can we build?'), ('Customers', 'chart', 'sales', 'What needs to ship?')] %}
+    <li><a href="/erp?area={{ area }}"><span class="station-icon">{{ icon(symbol) }}</span><strong>{{ title }}</strong><small>{{ detail }}</small><span class="station-number">0{{ loop.index }}</span></a></li>
+    {% endfor %}
+  </ol>
+</section>
+{% endmacro %}
+
+{% macro query_lab() %}
+<section class="query-lab" data-query-lab aria-label="Interactive SQL example">
+  <div class="section-kicker">{{ icon('query') }}<div><p class="eyebrow">SEE SQL WORK</p><h2>Change the question. Watch the rows.</h2></div></div>
+  <p>Explore four queries using Kestrel's three plants. This preview reads the example rows below and does not change data.</p>
+  <div class="query-steps" role="group" aria-label="Example query">
+    <button type="button" data-query-step="all" aria-pressed="true">{{ icon('table') }} All rows</button>
+    <button type="button" data-query-step="columns" aria-pressed="false">{{ icon('query') }} Pick columns</button>
+    <button type="button" data-query-step="filter" aria-pressed="false">{{ icon('filter') }} Filter rows</button>
+    <button type="button" data-query-step="group" aria-pressed="false">{{ icon('chart') }} Group &amp; count</button>
+  </div>
+  <div class="query-example-grid">
+    <div class="example-source"><h3><span class="data-badge">SOURCE</span> plant</h3><div class="grid-wrap"><table class="grid"><thead><tr><th>plant_code</th><th>name</th><th>country</th></tr></thead><tbody><tr data-country="US"><td>AU01</td><td>Austin</td><td>US</td></tr><tr data-country="US"><td>SC01</td><td>Santa Clara</td><td>US</td></tr><tr data-country="SG"><td>SG01</td><td>Singapore</td><td>SG</td></tr></tbody></table></div><small>Three example records. Each plant has one row.</small></div>
+    <div class="example-answer"><h3><span class="data-badge">RESULT</span> <span data-example-count>3 rows</span></h3><div class="grid-wrap" data-example-result></div></div>
+  </div>
+  <div class="example-query"><code data-example-sql>SELECT plant_code, name, country FROM plant ORDER BY plant_code;</code></div>
+  <p data-example-explanation role="status" aria-live="polite">Choose a step to see which columns and rows SQL returns.</p>
+  <noscript><p>SELECT picks columns, WHERE filters rows, and GROUP BY combines rows into groups. For example, grouping these plants by country gives US: 2 and SG: 1.</p></noscript>
+</section>
+{% endmacro %}
+
+{% macro equipment() %}
+<figure class="equipment-figure">
+  <svg viewBox="0 0 700 230" role="img" aria-label="A finished tool contains modules, which contain components. Illustrative equipment, not a specific product." fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+    <g class="equipment-cabinet"><rect x="25" y="25" width="180" height="150" rx="8"/><path d="M25 65h180M145 65v110M40 175v12m150-12v12"/><rect x="42" y="39" width="50" height="14" rx="3"/><circle cx="85" cy="117" r="34"/><circle cx="85" cy="117" r="22"/><path d="M159 86h30m-30 15h30m-30 15h30m-30 15h30"/></g>
+    <path class="equipment-connector" d="M215 105h80m-10-8 10 8-10 8M445 105h75m-10-8 10 8-10 8"/>
+    <g class="equipment-module"><rect x="310" y="60" width="120" height="95" rx="8"/><circle cx="370" cy="107" r="32"/><circle cx="370" cy="107" r="18"/><path d="M340 60V45h60v15M370 139v32m-40 0h80"/></g>
+    <g class="equipment-component"><rect x="550" y="70" width="100" height="70" rx="6"/><rect x="580" y="90" width="40" height="30" rx="3"/><path d="M590 90V78m20 12V78m-20 42v12m20-12v12m-30-32h-18m18 14h-18m58-14h18m-18 14h18"/></g>
+    <g fill="currentColor" stroke="none" font-family="Segoe UI, sans-serif" font-size="15" text-anchor="middle"><text x="115" y="215">Finished tool</text><text x="370" y="215">Module</text><text x="600" y="215">Component</text></g>
+  </svg>
+  <figcaption>Think in layers: the bill of materials connects the finished tool to the parts inside it.</figcaption>
+</figure>
+{% endmacro %}

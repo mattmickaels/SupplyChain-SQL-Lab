@@ -1,10 +1,12 @@
 {% extends "base.html" %}
+{% from '_visuals.html' import icon %}
 {% block title %}{% if spec %}{{ spec.name }}{% elif view %}{{ view.name }}{% else %}Schema{% endif %}{% endblock %}
 {% block content %}
 <p class="eyebrow">YOUR DATA DICTIONARY</p>
 <h1>{% if spec %}{{ spec.name }}{% elif view %}{{ view.name }}{% else %}Schema{% endif %}</h1>
 <p class="today">Today in the lab is {{ today }}.</p>
 {% if not spec and not view %}<p class="page-lead">Find the tables, columns, and keys behind your next question. Open a table to inspect its structure and preview real rows.</p>{% endif %}
+{% if spec %}<details class="visual-disclosure"><summary>Explore connections to {{ spec.name }}</summary>{% include '_schema_map.html' %}</details>{% elif not view %}{% include '_schema_map.html' %}{% endif %}
 {% if spec %}
 <p>{{ spec.description }}</p>
 <p><strong>Primary key:</strong> <code>{{ spec.primary_key | join(', ') }}</code>. This column, or combination of columns, identifies one row.</p>
@@ -26,8 +28,8 @@
     <tbody>
       {% for column in spec.columns %}
       <tr>
-        <td>{{ column.name }}</td>
-        <td>{{ column.sql_type }}</td>
+        <td>{% if column.name in spec.primary_key %}<span class="key-badge">PK</span> {% endif %}{{ column.name }}</td>
+        <td><span class="type-badge">{{ column.sql_type }}</span></td>
         <td>{% if column.sap_field %}{{ column.sap_field }}{% else %}-{% endif %}</td>
         <td class="prose">{{ column.description }}</td>
       </tr>

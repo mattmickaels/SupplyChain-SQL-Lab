@@ -50,6 +50,8 @@ Your progress is saved on your computer as you go, so you can stop and come back
   Dock it, float it, drag or resize it, or minimize it without losing SQL.
   Drafts survive navigation in the same browser tab; Run or Check saves exercise SQL to the lab.
   On small screens the workbench fills the screen; Minimize returns to the lesson.
+- The introduction includes an interactive plant example: change SELECT, WHERE, and GROUP BY and compare the source rows with the result.
+- The schema page includes a relationship explorer built from the lab's table definitions, with links to connected tables and their keys.
 - The notebook is for exploring a question in steps.
 - The sample notebook walks the supply story.
 - From a material screen you can open its BOM, where it is used, and its stock and requirements list.

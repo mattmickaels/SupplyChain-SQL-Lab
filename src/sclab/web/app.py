@@ -58,6 +58,16 @@ def create_app(content_dir: Path | None = None, include_sample: bool = False) ->
     templates.env.filters["notebook_time"] = format_updated
     templates.env.globals["md04_weeks"] = MD04_WEEKS
     templates.env.globals["cm01_weeks"] = CM01_WEEKS
+    templates.env.globals["schema_map"] = [
+        {
+            "name": item.name,
+            "description": item.description,
+            "key": item.primary_key,
+            "columns": len(item.columns),
+            "links": item.foreign_keys,
+        }
+        for item in TABLES
+    ]
     templates.env.tests["numeric_type"] = is_numeric_type
     app = FastAPI(title=COMPANY_NAME, docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")

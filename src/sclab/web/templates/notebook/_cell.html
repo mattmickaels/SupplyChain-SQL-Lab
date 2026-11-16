@@ -1,4 +1,6 @@
+{% from '_visuals.html' import icon %}
 <section class="cell" id="cell-{{ cell.id }}" data-cell="{{ cell.id }}">
+  <div class="cell-heading">{{ icon('book' if cell.kind == 'markdown' else 'query') }}<span>{{ 'OBSERVATION' if cell.kind == 'markdown' else 'SQL QUERY' }}</span></div>
   <form id="form-{{ cell.id }}">
     <input type="hidden" name="target" value="{{ notebook.target }}" data-notebook-target-value>
     <input type="hidden" name="form_id" value="form-{{ cell.id }}">

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from '_visuals.html' import icon %}
 {% block title %}{{ notebook.title }}{% endblock %}
 {% block head_scripts %}
 <script src="/static/vendor/chart.umd.min.js"></script>
@@ -6,9 +7,11 @@
 {% block content %}
 <p class="today">Today in the lab is {{ today }}.</p>
 <h1>{{ notebook.title }}</h1>
+<p class="workspace-tag">{{ icon('book') }} ANALYSIS NOTEBOOK <span>SQL, notes and charts</span></p>
 <p>Run each cell. The last cell is yours to write.</p>
 <p><a href="/erp" target="_blank" rel="noopener">Open ERP Explorer in a new tab</a> to browse the lesson data. Changes made in a practice database will not appear there.</p>
-<form>
+<div class="notebook-controls">
+<form class="notebook-delete">
   <button type="button" class="danger" hx-delete="/notebooks/{{ notebook.id }}" hx-confirm="{% if is_sample %}Delete this notebook? You can restore the sample notebook from the notebook list.{% else %}Delete this notebook?{% endif %}" hx-target="body">Delete notebook</button>
 </form>
 <form>
@@ -18,6 +21,7 @@
     <option value="sandbox"{% if notebook.target == "sandbox" %} selected{% endif %}>Practice database</option>
   </select>
 </form>
+</div>
 <div id="cells">
 {% include "notebook/_cells.html" %}
 </div>

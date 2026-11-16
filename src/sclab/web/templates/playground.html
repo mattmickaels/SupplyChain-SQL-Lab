@@ -1,8 +1,10 @@
 {% extends "base.html" %}
+{% from '_visuals.html' import icon, query_lab %}
 {% block title %}Playground{% endblock %}
 {% block content %}
 <p class="eyebrow">ROOM TO EXPERIMENT</p>
 <h1>Playground</h1>
+<p class="workspace-tag">{{ icon('query') }} PRACTICE WORKSPACE <span>Separate database copy</span></p>
 <p class="today">Today in the lab is {{ today }}.</p>
 <p>This editor writes to the practice database. The lesson database stays read-only.</p>
 <p><a href="/erp" target="_blank" rel="noopener">Open ERP Explorer in a new tab</a> to browse the original lesson data. Your practice edits will not appear there.</p>
@@ -19,4 +21,5 @@
 </form>
 <div id="reset-note"></div>
 <div id="playground-result"></div>
+<details class="visual-disclosure"><summary>Explore a query visually</summary>{{ query_lab() }}</details>
 {% endblock %}
