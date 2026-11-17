@@ -48,7 +48,7 @@ The launcher and the terminal version use the same local data folder.
 
 Current builds are unsigned, so Windows or macOS may show an unverified-app warning or block launch under your organization's policy.
 If a managed computer blocks the app, ask your IT team to approve it.
-The macOS packaging workflow must pass on a Mac before a macOS installer is distributed.
+The packaging workflow checks each platform's bundled app before producing its installer download.
 
 ## Setup from source (no Python installation required)
 

@@ -36,6 +36,8 @@ uv run --no-sync python packaging/smoke_test.py "dist/SupplyChain SQL Lab/Supply
 On macOS, substitute `dist/SupplyChain SQL Lab.app/Contents/MacOS/SupplyChain SQL Lab`.
 The smoke check uses a fresh temporary `SCLAB_HOME`, starts the actual graphical executable, waits for database generation, loads all ten lessons and static assets, executes SQL over HTTP, and closes the launcher.
 It checks that the server socket is closed, then repeats the launch against existing data.
+It removes development Python settings and excludes developer tool directories from PATH for the launched app.
+The Windows CI job also installs the generated setup package on its disposable runner, tests that installed copy, and uninstalls it.
 Run the installed executable through the same check to validate installer output as well as the build folder.
 Also inspect the launcher visually and verify install, shortcut launch, and uninstall on a clean target machine without Python.
 The smoke check is automated evidence, not a substitute for that clean-machine acceptance check.

@@ -41,6 +41,18 @@ jobs:
           $version = uv run --no-sync python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" packaging/windows.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify Windows install and uninstall
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:RUNNER_TEMP "Installed SQL Lab"
+          $setup = Start-Process -FilePath "dist/installers/SupplyChain-SQL-Lab-Windows-Setup.exe" -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', ('/DIR="{0}"' -f $installDir)) -WindowStyle Hidden -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "Setup failed: $($setup.ExitCode)" }
+          uv run --no-sync python packaging/smoke_test.py "$installDir/SupplyChain SQL Lab.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $uninstall = Start-Process -FilePath "$installDir/unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -WindowStyle Hidden -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) { throw "Uninstall failed: $($uninstall.ExitCode)" }
+          if (Test-Path "$installDir/SupplyChain SQL Lab.exe") { throw "Uninstall left the executable behind" }
       - name: Test macOS bundle
         if: runner.os == 'macOS'
         run: uv run --no-sync python packaging/smoke_test.py "dist/SupplyChain SQL Lab.app/Contents/MacOS/SupplyChain SQL Lab"
@@ -51,6 +63,8 @@ jobs:
           cp -R "dist/SupplyChain SQL Lab.app" dist/dmg/
           ln -s /Applications dist/dmg/Applications
           hdiutil create -volname "SupplyChain SQL Lab" -srcfolder dist/dmg -ov -format UDZO "dist/installers/SupplyChain-SQL-Lab-${{ matrix.name }}.dmg"
+      - name: Record installer checksums
+        run: uv run --no-sync python packaging/checksums.py
       - uses: actions/upload-artifact@v4
         with:
           name: SupplyChain-SQL-Lab-${{ matrix.name }}
