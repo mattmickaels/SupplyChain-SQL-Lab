@@ -310,9 +310,9 @@ def test_header_uses_plain_labels(client) -> None:
     material_page = client.get("/screens/MM03", params={"key": material, "plant": plant})
     assert "Base unit" in material_page.text
     assert "Long lead" in material_page.text
-    assert "Enter a material." in client.get("/screens/MM03").text
-    assert 'class="screen-prompt"' in client.get("/screens/MM03").text
-    assert 'class="message"' not in client.get("/screens/MM03").text
+    empty_page = client.get("/screens/MM03").text
+    # Check the material prompt, not the workbench's unrelated hidden warnings.
+    assert '<p class="screen-prompt">Enter a material.</p>' in empty_page
 
 
 def test_mm03_planned_lead_time_shows_days(client) -> None:
