@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> None:
         help="Start the lab without opening a browser.",
     )
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
-    console = Console(file=sys.stdout, force_terminal=True)
+    console = Console(file=sys.stdout, force_terminal=sys.stdout.isatty())
     with Progress(
         TextColumn("{task.description}"),
         BarColumn(),

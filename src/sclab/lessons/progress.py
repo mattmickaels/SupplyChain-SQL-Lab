@@ -31,6 +31,12 @@ def _valid_timestamp(value: object) -> bool:
     return True
 
 
+def _next_edit_time(entry: dict) -> int:
+    """Preserve save order even when the system clock repeats or moves backwards."""
+    previous = [entry[key] for key in ("checked_at", "draft_at") if isinstance(entry.get(key), int)]
+    return max(time.time_ns(), max(previous, default=0) + 1)
+
+
 def _valid_entry(entry: object) -> bool:
     if not isinstance(entry, dict):
         return False
@@ -73,7 +79,7 @@ class ProgressStore:
             updated = {
                 "sql": sql,
                 "passed": current.get("passed") is True or passed,
-                "checked_at": time.time_ns(),
+                "checked_at": _next_edit_time(current),
             }
             draft_sql = current.get("draft_sql")
             draft_at = current.get("draft_at")
@@ -100,7 +106,7 @@ class ProgressStore:
                 current = {}
             updated = dict(current)
             updated["draft_sql"] = sql
-            updated["draft_at"] = time.time_ns()
+            updated["draft_at"] = _next_edit_time(current)
             self._data["exercises"][exercise_id] = updated
             self._save()
 

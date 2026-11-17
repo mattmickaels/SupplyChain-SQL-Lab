@@ -78,6 +78,7 @@ def test_interrupt_stops_server(lab_home) -> None:
             output.append(raw)
         text = "".join(output)
         assert "Traceback" not in text, text
+        assert "\x1b[" not in text, "Redirected CLI output must not contain terminal controls."
         assert "Lab stopped." in text, text
         assert not _listening(port)
     finally:

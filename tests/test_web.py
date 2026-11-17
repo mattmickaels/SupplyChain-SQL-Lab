@@ -3,7 +3,6 @@
 import re
 import socket
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -209,31 +208,42 @@ def test_app_js_syncs_editor_on_change() -> None:
 
 
 def test_slow_query_does_not_block_other_requests(lab_home, monkeypatch) -> None:
-    def limited(sql: str, target: str = "lesson", max_rows: int = 1000, timeout_s: float = 3.0):
-        return real_run_query(sql, target=target, max_rows=max_rows, timeout_s=3.0)
+    query_started = threading.Event()
+    release_query = threading.Event()
+    home_finished = threading.Event()
 
-    monkeypatch.setattr("sclab.web.app.run_query", limited)
-    # count(*) of two ranges returns immediately, so the cross join is summed instead.
-    sql = "SELECT sum(a.range) FROM range(1000000) a, range(3000) b"
+    def held_query(sql: str, target: str = "lesson"):
+        query_started.set()
+        assert release_query.wait(timeout=30), "Test did not release the query"
+        return real_run_query(sql, target=target)
+
+    monkeypatch.setattr("sclab.web.app.run_query", held_query)
     box: dict = {}
     # One portal, so both requests share an event loop. A fresh TestClient does not.
     with TestClient(create_app(include_sample=True), base_url="http://127.0.0.1") as client:
         client.headers.update({"HX-Request": "true"})
 
         def post() -> None:
-            box["response"] = client.post("/api/run", data={"sql": sql, "target": "lesson"})
+            box["response"] = client.post("/api/run", data={"sql": "SELECT 1", "target": "lesson"})
+
+        def get_home() -> None:
+            box["home"] = client.get("/")
+            home_finished.set()
 
         worker = threading.Thread(target=post)
+        reader = threading.Thread(target=get_home)
         worker.start()
-        time.sleep(0.2)
-        assert worker.is_alive()
-        started = time.perf_counter()
-        home = client.get("/")
-        elapsed = time.perf_counter() - started
-        assert home.status_code == 200
-        assert elapsed < 1
-        assert worker.is_alive()
-        worker.join(timeout=10)
+        try:
+            assert query_started.wait(timeout=10)
+            reader.start()
+            assert home_finished.wait(timeout=10), "Home request blocked behind a running query"
+            assert box["home"].status_code == 200
+            assert worker.is_alive()
+        finally:
+            release_query.set()
+            worker.join(timeout=10)
+            if reader.ident is not None:
+                reader.join(timeout=10)
         assert not worker.is_alive()
         assert box["response"].status_code == 200
 
@@ -381,9 +391,13 @@ def test_check_query_error_records_latest_attempt(client) -> None:
     assert 'class="solution"' in shown.text
 
 
-def test_run_saves_draft_shown_ahead_of_older_sql(client) -> None:
+@pytest.mark.parametrize("clock_step", [0, -100, 100])
+def test_run_saves_draft_shown_ahead_of_older_sql(client, monkeypatch, clock_step) -> None:
+    clock = [1000]
+    monkeypatch.setattr("sclab.lessons.progress.time.time_ns", lambda: clock[0])
     _clear_progress()
     client.post("/api/check/sample-plants", data={"sql": "SELECT 1"})
+    clock[0] += clock_step
     draft = "SELECT plant_code FROM plant"
     saved = client.post(
         "/api/run",
@@ -393,6 +407,7 @@ def test_run_saves_draft_shown_ahead_of_older_sql(client) -> None:
     page = client.get("/lessons/00-sample")
     assert draft in page.text
     assert "SELECT 1" not in page.text
+    clock[0] += clock_step
     client.post("/api/check/sample-plants", data={"sql": "SELECT 9"})
     checked = client.get("/lessons/00-sample")
     assert "SELECT 9" in checked.text
