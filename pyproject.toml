@@ -27,6 +27,9 @@ dev = [
     "pytest",
     "ruff",
 ]
+packaging = [
+    "pyinstaller>=6.16,<7",
+]
 
 [build-system]
 requires = ["hatchling"]

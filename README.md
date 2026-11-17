@@ -16,7 +16,41 @@ Every company, supplier, customer, part and number in it is made up.
 
 The lab's "today" is fixed at 1 November 2026, so answers never change as real time passes.
 
-## Setup (no Python installation required)
+## Desktop installer (no terminal required)
+
+The desktop edition includes Python and all of the lab's packages.
+You do not need Python, uv, Git, or an internet connection to install and run a downloaded desktop package.
+Use a built installer supplied by the project maintainer; GitHub's **Code > Download ZIP** downloads source code, not the desktop app.
+
+### Windows 11
+
+1. Double-click **SupplyChain-SQL-Lab-Windows-Setup.exe**.
+2. Follow the installation prompts, then leave **Open SupplyChain SQL Lab** checked and click **Finish**.
+3. Wait for the launcher to prepare your sample data and open the lab in your browser.
+
+For future sessions, double-click the **SupplyChain SQL Lab** desktop shortcut or find it in the Start menu.
+Installation is for your Windows account and does not request administrator access.
+
+### macOS
+
+1. Open the disk image for your Mac: **macOS-Apple-Silicon** for an Apple chip, or **macOS-Intel** for an Intel processor.
+   You can check your chip in **Apple menu > About This Mac**.
+2. Drag **SupplyChain SQL Lab** into **Applications**.
+3. Open **SupplyChain SQL Lab** from Applications.
+
+### Using the launcher
+
+The first launch builds your sample database and shows progress in a small window.
+The browser opens when the lab is ready; **Open lab** brings it back if you close the browser tab.
+Keep the launcher open while learning, and click **Stop lab** or close its window when you are done.
+Saved lesson progress and notebooks stay on your computer, including when you upgrade or uninstall the app.
+The launcher and the terminal version use the same local data folder.
+
+Current builds are unsigned, so Windows or macOS may show an unverified-app warning or block launch under your organization's policy.
+If a managed computer blocks the app, ask your IT team to approve it.
+The macOS packaging workflow must pass on a Mac before a macOS installer is distributed.
+
+## Setup from source (no Python installation required)
 
 These steps work on Windows 11 and macOS.
 You do not need to install Python, Git, or a database separately.
@@ -153,3 +187,4 @@ Keep the extracted project folder for future launches.
 - Tests: `uv run pytest` (on machines that block uv's launchers, `uv run -m pytest`).
 - Lint: `uv run ruff check` and `uv run ruff format --check`.
 - Design and plans: `docs/superpowers/`.
+- Desktop packaging and smoke checks: [packaging/README.md](packaging/README.md).

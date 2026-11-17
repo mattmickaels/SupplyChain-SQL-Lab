@@ -1,0 +1,58 @@
+name: Desktop installers
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["codex/desktop-installer"]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+          - os: macos-15
+            name: macOS-Apple-Silicon
+          - os: macos-15-intel
+            name: macOS-Intel
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      # python.org builds include Tcl/Tk for the graphical launcher.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --locked --group packaging --python python
+      - run: uv run --no-sync python -m PyInstaller --noconfirm packaging/sclab.spec
+      - name: Test Windows bundle
+        if: runner.os == 'Windows'
+        run: uv run --no-sync python packaging/smoke_test.py "dist/SupplyChain SQL Lab/SupplyChain SQL Lab.exe"
+      - name: Build Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = uv run --no-sync python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" packaging/windows.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test macOS bundle
+        if: runner.os == 'macOS'
+        run: uv run --no-sync python packaging/smoke_test.py "dist/SupplyChain SQL Lab.app/Contents/MacOS/SupplyChain SQL Lab"
+      - name: Build macOS disk image
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist/dmg dist/installers
+          cp -R "dist/SupplyChain SQL Lab.app" dist/dmg/
+          ln -s /Applications dist/dmg/Applications
+          hdiutil create -volname "SupplyChain SQL Lab" -srcfolder dist/dmg -ov -format UDZO "dist/installers/SupplyChain-SQL-Lab-${{ matrix.name }}.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SupplyChain-SQL-Lab-${{ matrix.name }}
+          path: dist/installers/*
+          if-no-files-found: error
