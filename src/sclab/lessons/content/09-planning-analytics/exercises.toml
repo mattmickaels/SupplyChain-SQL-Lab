@@ -2,11 +2,26 @@
 id = "plan-open-demand"
 title = "Open tool demand"
 prompt_md = """
+**Situation**
+
+You are preparing the demand section of Kestrel's sales and operations planning review.
+
+**Business question**
+
+How much open tool quantity is promised in each family and month?
+
+**SQL task**
+
 Total the open tool demand by family and promised month.
 Use sales lines for TOOL materials with status Open, promised from DATE '2026-11-01' up to but not including DATE '2027-05-01'.
 Use promised_date, not the order date.
 Return family_code, month (a DATE, the first day of the month), open_qty, in that column order.
 Sort by family_code, then month.
+
+**Reflect after Check (not graded)**
+
+Identify the larger demand buckets.
+These are customer commitments by promised month, not production-start requirements; build timing needs a separate check.
 """
 hints = [
   "Start at the grain of one sales line: keep only Open lines promised in the date range.",
@@ -30,10 +45,25 @@ excel_tip = "Use a pivot table with family and promised month as rows and open q
 id = "plan-forecast-waterfall"
 title = "Forecast version waterfall"
 prompt_md = """
+**Situation**
+
+The planning team needs to understand what changed between the September and October forecast releases.
+
+**Business question**
+
+Where did the forecast rise or fall by family and month?
+
+**SQL task**
+
 Compare the TOOL forecast in versions 2026-09 and 2026-10 for the months from DATE '2026-11-01' up to but not including DATE '2027-05-01'.
 Return family_code, forecast_month, qty_09, qty_10, change_qty (October minus September), in that column order.
 Sort by family_code, then forecast_month.
 Total each version separately before you compare them; do not add the versions together.
+
+**Reflect after Check (not graded)**
+
+Explain a notable version-to-version change and ask the forecast owner for its basis.
+Do not add two versions together as if they were separate demand.
 """
 hints = [
   "A waterfall is the change from one plan to the next. Keep the two versions in separate columns and subtract; never add them.",
@@ -61,12 +91,27 @@ excel_tip = "Put version in pivot columns, then add an October-minus-September c
 id = "plan-forecast-coverage"
 title = "Booked orders versus forecast"
 prompt_md = """
+**Situation**
+
+Sales and operations planning needs to compare confirmed open bookings with the current forecast.
+
+**Business question**
+
+How much of each family-month forecast is represented by open booked quantity?
+
+**SQL task**
+
 For TOOLs promised in November 2026 through January 2027, compare open booked quantity with the 2026-10 forecast.
 Use DATE '2026-11-01' inclusive and DATE '2027-02-01' exclusive.
 Return family_code, month (DATE), booked_qty, forecast_qty, coverage_pct, in that column order.
 coverage_pct is 100 times booked divided by forecast, rounded to 2 decimals, and NULL when the forecast is zero.
 Keep a family-month that appears on only one side, and show its missing quantity as 0.
 Sort by family_code, then month.
+
+**Reflect after Check (not graded)**
+
+Distinguish low coverage from missing or zero forecast values.
+Use the comparison to ask about assumptions, not to add bookings and forecast into one demand total.
 """
 hints = [
   "Orders and forecast come from different tables, so total each one by family and month before you join them.",
@@ -103,6 +148,16 @@ excel_tip = "Build two pivots at the same grain, then look up matching family-mo
 id = "plan-weekly-balance"
 title = "Weekly RF projected available balance"
 prompt_md = """
+**Situation**
+
+The Santa Clara planner needs to track one RF generator through the next 26 weekly buckets.
+
+**Business question**
+
+What projected end-of-week balance results from stock, confirmed outstanding receipts, and production needs?
+
+**SQL task**
+
 Project RF generator M-001324 at plant SC01, week by week.
 Use 26 consecutive seven-day buckets.
 The first bucket starts on DATE '2026-11-01' and the last one ends before DATE '2027-05-02'.
@@ -116,6 +171,11 @@ Demand is the quantity the production orders need, multiplied down every BOM pat
 Production demand follows the lesson rule: status Planned or Released, and planned_start after the snapshot.
 Leave out spare sales lines in this exercise.
 projected_balance is the balance at the end of the week: opening stock, plus all receipts so far, minus all demand so far.
+
+**Reflect after Check (not graded)**
+
+Find weeks where the balance tightens and review the inputs.
+The result follows the stated demand scope and timing assumptions; it is not a guarantee that receipts will arrive.
 """
 hints = [
   "Build one row per week first. Then attach the receipts and the demand to the week each falls in. Then run the balance down the weeks.",
@@ -194,6 +254,16 @@ excel_tip = "A running Excel balance adds each week's receipts and subtracts its
 id = "plan-shortages"
 title = "First shortage week"
 prompt_md = """
+**Situation**
+
+The materials team needs an exception list to organize its next supply review.
+
+**Business question**
+
+When does each qualifying material-plant balance first fall below safety stock?
+
+**SQL task**
+
 Repeat the weekly balance for every long-lead material and every RF generator, at every plant.
 Use the same 26 weekly buckets, from DATE '2026-11-01' inclusive to DATE '2027-05-02' exclusive, and the same rules: RM01 stock, confirmed outstanding supply, production demand only.
 Count only POs ordered on or before the snapshot.
@@ -204,6 +274,11 @@ Return material_no, plant_code, first_shortage_week (DATE), in that column order
 Sort by material_no, then plant_code.
 Include a material-plant pair that has no future demand but already starts below its safety stock.
 Keep only pairs that go below safety stock, and return the earliest such week, not the week with the lowest balance.
+
+**Reflect after Check (not graded)**
+
+Use the earliest breach to prioritize follow-up.
+Falling below safety stock does not necessarily mean negative inventory or a stopped build; inspect the balance and timing.
 """
 hints = [
   "A shortage starts when the balance falls below safety stock, even while it is still positive.",
@@ -342,12 +417,27 @@ excel_tip = "Look up each tool family's plant, then pick the first plant alphabe
 id = "plan-rf-need-ledger"
 title = "Need ledger for one RF generator"
 prompt_md = """
+**Situation**
+
+An RF planner needs a dated explanation of the demand competing for one generator's supply.
+
+**Business question**
+
+What daily and cumulative needs arise from production and open spare demand at each plant?
+
+**SQL task**
+
 Build the need ledger for RF generator M-001327 at every plant.
 A need is either production demand (the production order quantity times the generator's quantity per tool, through every BOM path) or an Open spare sales line promised after DATE '2026-11-01', placed at the generator's spare plant from the previous step.
 Production demand follows the lesson rule: status Planned or Released, and planned_start after the snapshot.
 Add up all the need that falls on the same day, then keep a running total by plant in date order.
 Return material_no, plant_code, need_date, day_qty, cumulative_qty, in that column order.
 Sort by plant_code, then need_date.
+
+**Reflect after Check (not graded)**
+
+Identify the dates on which cumulative need increases most.
+Use this ledger alongside supply before claiming a shortage, and remember the lab's spare-plant convention.
 """
 hints = [
   "First list every need event for the generator: production orders and spare sales lines, each with a plant, a date and a quantity.",
@@ -412,6 +502,16 @@ excel_tip = "Sort the need rows by date, then add a running total column for eac
 id = "plan-rf-supply-ledger"
 title = "Supply ledger for one RF generator"
 prompt_md = """
+**Situation**
+
+The same planner needs a dated view of the stock and confirmed receipts available to meet that demand.
+
+**Business question**
+
+What daily and cumulative RF supply is available under the exercise's assumptions?
+
+**SQL task**
+
 Build the supply ledger for RF generator M-001327 at every plant.
 Supply is the RM01 stock on hand, dated DATE '2026-11-01', plus each outstanding PO line that has a confirmed date, dated on that date.
 Outstanding means ordered minus everything received on the PO line, and only PO lines from orders dated on or before the snapshot count.
@@ -419,6 +519,11 @@ A line confirmed before the snapshot is overdue; date it on the snapshot as an o
 Add up all the supply that lands on the same day, then keep a running total by plant in date order.
 Return material_no, plant_code, supply_date, day_qty, cumulative_qty, in that column order.
 Sort by plant_code, then supply_date.
+
+**Reflect after Check (not graded)**
+
+Review overdue receipts counted at the snapshot first.
+Their assumed availability is optimistic and needs supplier confirmation before being used as a firm recovery plan.
 """
 hints = [
   "First list every supply event: the stock on the snapshot date, and each outstanding PO line on its confirmed date.",
@@ -471,6 +576,16 @@ excel_tip = "List stock and each confirmed PO date as rows, then add a running t
 id = "plan-at-risk-orders"
 title = "Etch orders waiting for RF supply"
 prompt_md = """
+**Situation**
+
+Customer service asks which Etch orders may be affected by late RF supply.
+
+**Business question**
+
+Which sales lines have production starts delayed under the current supply-and-need ledgers?
+
+**SQL task**
+
 Find open Etch tool sales lines that will start late because RF generator supply arrives late.
 Use your two ledgers for every RF generator now, not only M-001327: the need ledger and the supply ledger at each material and plant.
 Production demand follows the lesson rule: status Planned or Released, and planned_start after the snapshot.
@@ -485,6 +600,11 @@ Use the current confirmations, with no extra slip.
 Count only POs ordered on or before the snapshot.
 Return so_no, line_no, customer_name, promised_date, planned_start, days_at_risk, in that column order.
 Sort by so_no, then line_no.
+
+**Reflect after Check (not graded)**
+
+Explain the calculated start delay and flag the unconfirmed-supply cases excluded by the rules.
+Verify scheduling and downstream capacity before translating a start delay into a shipment promise.
 """
 hints = [
   "A late purchase order is only a warning. Earlier stock can still cover a start that comes before the delivery.",
@@ -602,6 +722,16 @@ databricks_note = "Write `datediff(DAY, p.planned_start, a.available_date)` or `
 id = "plan-bay-load"
 title = "Build bay load by week"
 prompt_md = """
+**Situation**
+
+The factory planner needs a weekly start-slot review before approving the December-to-February build plan.
+
+**Business question**
+
+Which build bays exceed their weekly start-slot capacity?
+
+**SQL task**
+
 For production starts from DATE '2026-12-01' inclusive to DATE '2027-03-01' exclusive, count production orders per bay and ISO Monday week.
 Count orders under the lesson rule: status Planned or Released.
 Each production order uses one start slot, whatever its quantity or duration.
@@ -609,6 +739,11 @@ Include every build bay in all 13 ISO weeks that touch the window, from DATE '20
 A boundary week counts only starts inside the date range, and keeps the full weekly_slots as its capacity; do not prorate it.
 Return bay_id, week_start (DATE), starts, weekly_slots, load_pct (rounded to 2 decimals), overloaded (boolean, true only when strictly over 100 percent), in that column order.
 Sort by bay_id, then week_start.
+
+**Reflect after Check (not graded)**
+
+Look for overloaded weeks rather than relying only on averages.
+Check compatible bays and the limits of this start-slot model before proposing a move.
 """
 hints = [
   "A start slot is one production order, whatever its size or length. Build the weeks first, from a calendar and not from production_order.",
@@ -648,11 +783,26 @@ excel_tip = "Pivot order counts by bay and Monday week, then divide by the bay's
 id = "plan-corvane-exposure"
 title = "Corvane RF supply still owed"
 prompt_md = """
+**Situation**
+
+Purchasing is preparing the outstanding-supply section of a Corvane recovery meeting.
+
+**Business question**
+
+How many confirmed RF purchase lines and units does Corvane still owe by plant?
+
+**SQL task**
+
 Corvane RF Systems (supplier V-10017) is slipping.
 First see how much confirmed RF generator supply it still owes.
 Use outstanding PO lines (ordered minus everything received, from orders dated on or before DATE '2026-11-01') for supplier V-10017 on RF generators, and only lines with a confirmed date.
 Return plant_code, open_lines (the number of PO lines), outstanding_qty, in that column order.
 Sort by plant_code.
+
+**Reflect after Check (not graded)**
+
+Use the line and quantity totals to scope supplier follow-up.
+They show outstanding supply, not the number of customer orders that will be late.
 """
 hints = [
   "Only confirmed, outstanding supply from this supplier can slip. Find those lines first.",
@@ -685,6 +835,16 @@ excel_tip = "Filter the PO list to this supplier and RF generators, then total o
 id = "plan-corvane-line-compare"
 title = "Order risk with and without the slip"
 prompt_md = """
+**Situation**
+
+The planning team wants to stress-test the schedule against another four-week Corvane slip.
+
+**Business question**
+
+How does each affected sales line's modeled start delay differ between the current plan and the slip scenario?
+
+**SQL task**
+
 Run the order-risk check twice side by side: as it stands (0 days) and with every confirmed date of supplier V-10017 pushed back by 28 days.
 Put 28 AS slip_days in a parameters CTE.
 Only outstanding V-10017 supply moves. Received quantities, other suppliers, stock and need stay as they are.
@@ -693,6 +853,11 @@ Use the same rules as the order-risk exercise: RF generators only, production ru
 For each sales line return so_no, line_no, baseline_days, slipped_days.
 Each is the largest positive delay in days under that run, or 0 when the line is not late.
 Keep only the lines that are late in at least one run, in that column order, sorted by so_no, then line_no.
+
+**Reflect after Check (not graded)**
+
+Separate lines already late from lines that become late only after the slip.
+Treat the added slip as a scenario, not an updated supplier commitment.
 """
 hints = [
   "Run your order-risk method for two scenarios at once: slip 0 days and slip 28 days. Only the Corvane lines move.",
@@ -834,6 +999,16 @@ databricks_note = "Write `datediff(DAY, p.planned_start, a.available_date)` or `
 id = "plan-corvane-what-if"
 title = "What if Corvane slips again?"
 prompt_md = """
+**Situation**
+
+The operations manager needs a concise summary of the additional exposure from the Corvane slip scenario.
+
+**Business question**
+
+How many sales lines are at risk before and after the slip, and how many become newly at risk?
+
+**SQL task**
+
 Count the lines affected by the slip.
 Use the same comparison as the previous step: slip_days of 28 for supplier V-10017 in a parameters CTE, and the current plan as the baseline.
 Return one row with baseline_at_risk, slipped_at_risk, additional_at_risk, in that column order.
@@ -841,6 +1016,11 @@ baseline_at_risk and slipped_at_risk count the sales lines that are late in each
 additional_at_risk counts the lines that are late only after the slip; it does not add up delay days.
 Only V-10017 (Corvane) confirmations slip; the dates of other suppliers do not move.
 The slip is a what-if on supplier dates; it does not say customer shipment dates move by the same number of days.
+
+**Reflect after Check (not graded)**
+
+Explain the counts without adding delay days or assuming shipment dates move equally.
+Recommend validating supplier recovery dates and the affected build plans next.
 """
 hints = [
   "Each sales line is either late or not late in each run. Count lines, not days.",

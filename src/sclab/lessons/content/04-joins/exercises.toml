@@ -2,11 +2,26 @@
 id = "join-october-po-supplier"
 title = "October purchase orders with the supplier name"
 prompt_md = """
+**Situation**
+
+A buyer has an October order-line extract, but supplier codes alone are difficult to discuss in a review.
+
+**Business question**
+
+Which supplier name belongs to each purchase line placed in October 2026?
+
+**SQL task**
+
 List purchase order lines placed in October 2026.
 October is order_date from 1 October 2026 through 31 October 2026.
 Return po_no, line_no, and supplier_name.
 The supplier name is on supplier, and the supplier number is on purchase_order.
 Order by po_no, then line_no.
+
+**Reflect after Check (not graded)**
+
+Confirm that each output row still represents one purchase line.
+Use the names for the review while retaining order and line identifiers for follow-up.
 """
 hints = [
   "The supplier name is a lookup from the supplier number on the purchase order header.",
@@ -32,6 +47,16 @@ excel_tip = "VLOOKUP the supplier name from the supplier sheet using the supplie
 id = "join-long-lead-without-open-po"
 title = "Long-lead materials with no open purchase line"
 prompt_md = """
+**Situation**
+
+A planner wants a first-pass supply screen rather than a complete shortage calculation.
+
+**Business question**
+
+Which long-lead materials have no purchase line meeting this exercise's future-confirmation rule?
+
+**SQL task**
+
 Find long-lead materials that have no open purchase order line.
 A line is open here when confirmed_delivery_date is on or after 1 November 2026.
 Return material_no and description.
@@ -40,6 +65,11 @@ Use a LEFT JOIN and keep the rows where the purchase line is NULL.
 Some material descriptions are copies that end with a trailing space.
 Leave those copies out.
 A trailing space is not a second material that lacks supply.
+
+**Reflect after Check (not graded)**
+
+Explain the rule used to build this list.
+Check receipts, overdue supply, stock, and demand before concluding that a material has no supply or needs a new order.
 """
 hints = [
   "A long-lead material with no confirmed line on or after today shows up as a failed lookup.",
@@ -67,11 +97,26 @@ excel_tip = "This is a VLOOKUP that you keep only when the lookup fails."
 id = "join-open-sales-lines"
 title = "Open sales lines with names"
 prompt_md = """
+**Situation**
+
+Customer service needs an open-order report that colleagues can read without looking up codes.
+
+**Business question**
+
+Who is the customer, and what material is on each open sales line?
+
+**SQL task**
+
 List open sales order lines with the customer name and the material description.
 Open means status = 'Open'.
 The customer number is on the sales order header, not on the line.
 Return so_no, line_no, customer_name, and description.
 Order by so_no, then line_no.
+
+**Reflect after Check (not graded)**
+
+Use the customer name and material description to explain a line, but keep its order and line number as the identifier.
+Names alone may not uniquely identify a record.
 """
 hints = [
   "The customer name and the material description each need their own lookup.",
@@ -97,11 +142,26 @@ excel_tip = "The line needs two lookups: the customer name from the header, and 
 id = "join-halcyon-open-lines"
 title = "Open lines for Halcyon Memory"
 prompt_md = """
+**Situation**
+
+The account team is preparing for a backlog call with Halcyon Memory.
+
+**Business question**
+
+Which Halcyon sales lines are open, and when did the customer request them?
+
+**SQL task**
+
 List the open sales order lines for Halcyon Memory, customer C-2003.
 Open means status = 'Open'.
 The customer number is on sales_order, not on the line.
 Return so_no, line_no, material_no, qty, and requested_date.
 Order by requested_date, then so_no, then line_no.
+
+**Reflect after Check (not graded)**
+
+Use the requested dates to organize the conversation.
+Check promised dates and fulfillment status before giving Halcyon a delivery update.
 """
 hints = [
   "Halcyon Memory is customer C-2003, and an open line has status Open.",
@@ -126,6 +186,16 @@ excel_tip = "Filter the order header to customer C-2003, then list the open line
 id = "join-open-rf-po-lines"
 title = "Open RF generator purchase lines"
 prompt_md = """
+**Situation**
+
+The planner responsible for RF components needs a supplier follow-up list.
+
+**Business question**
+
+Which RF generator purchase lines still have quantity outstanding, and who supplies them?
+
+**SQL task**
+
 List purchase order lines for materials whose description starts with RF generator, including the comma so the spare kit stays out.
 The order was placed on or before 1 November 2026.
 Received quantity is below order_qty.
@@ -133,6 +203,11 @@ A line with no goods receipt counts as received quantity 0.
 A fully received line stays out.
 Return po_no, line_no, supplier_name, and confirmed_delivery_date.
 Order by confirmed_delivery_date, then po_no, then line_no.
+
+**Reflect after Check (not graded)**
+
+The confirmation dates help organize follow-up.
+A missing or overdue confirmation needs clarification; do not assume every outstanding line will arrive on time.
 """
 hints = [
   "An open RF generator line is not fully received. A missing receipt counts as zero. The description starts with RF generator, and a comma.",
@@ -165,6 +240,16 @@ excel_tip = "Filter to RF generator, then look up the supplier name and keep lin
 id = "join-multi-receipt-qty"
 title = "Received quantity when a line has several receipts"
 prompt_md = """
+**Situation**
+
+Receiving has posted several deliveries against each of a few purchase lines, and a report is repeating the ordered quantity.
+
+**Business question**
+
+What was ordered and received on each line without multiplying the order quantity?
+
+**SQL task**
+
 Show order quantity and received quantity for these purchase orders.
 The orders are PO-0000003, PO-0000006, PO-0000009, PO-0000013, and PO-0000016.
 Each order has one line, and that line has three goods receipts.
@@ -172,6 +257,11 @@ Return po_no, line_no, order_qty, and received_qty.
 received_qty is the sum of goods_receipt.qty for that line, or 0 when nothing has been received.
 Order by po_no, then line_no.
 Add the receipts up before you join them, so order_qty is not repeated once per receipt.
+
+**Reflect after Check (not graded)**
+
+Compare one ordered quantity with the total receipts for that line.
+If a report repeats the order quantity for every receipt, fix the join before using its totals.
 """
 hints = [
   "These lines have three receipts each, so joining the receipts first would repeat order_qty.",
@@ -201,12 +291,27 @@ excel_tip = "SUMIF the receipts by order and line first, then look that total up
 id = "join-etch-tool-components"
 title = "Components of one etch tool"
 prompt_md = """
+**Situation**
+
+A production planner needs the first-level parts list for a specific Etch tool.
+
+**Business question**
+
+Which direct components does tool M-000011 contain, and in what quantities?
+
+**SQL task**
+
 List the direct components of tool M-000011, Etch system, 300mm, 2-chamber, conductor.
 The parent is parent_material_no on bom_item.
 Return component_material_no, description, and qty_per.
 The description comes from material.
 Order by component_material_no.
 Another Etch tool also has 2 chambers, so keep this material number.
+
+**Reflect after Check (not graded)**
+
+This list covers direct components only.
+Open the lower-level BOMs before treating it as a complete purchased-parts requirement.
 """
 hints = [
   "The bill of materials lists the direct components, and material holds their descriptions.",
@@ -230,11 +335,26 @@ excel_tip = "Filter the bill of materials to one parent, then VLOOKUP each compo
 id = "join-single-source-long-lead"
 title = "Single-source materials"
 prompt_md = """
+**Situation**
+
+Sourcing is preparing an initial review of materials with only one quoted supplier.
+
+**Business question**
+
+Which materials have exactly one supplier record?
+
+**SQL task**
+
 Find materials that have exactly one row on material_supplier.
 Return material_no, description, and supplier_no.
 Order by material_no.
 Filtering to the description RF generator is not the definition.
 Other materials have exactly one supplier too.
+
+**Reflect after Check (not graded)**
+
+Treat the list as single-source exposure in the available records.
+Review qualification, lead time, inventory, and demand before assigning a risk priority.
 """
 hints = [
   "A single-source material has exactly one supplier row.",
@@ -259,6 +379,16 @@ excel_tip = "Pivot the source list by material, keep counts of 1, and bring back
 id = "join-corvane-late-lines"
 title = "Late open lines from Corvane"
 prompt_md = """
+**Situation**
+
+Corvane's delivery promises have slipped, and purchasing needs a precise list for a recovery call.
+
+**Business question**
+
+Which outstanding Corvane lines are confirmed at least 56 days after their requested dates?
+
+**SQL task**
+
 List open purchase order lines for Corvane RF Systems, supplier V-10017.
 The order was placed on or before 1 November 2026.
 Received quantity is below order_qty.
@@ -267,6 +397,11 @@ Return po_no, line_no, description, requested_delivery_date, and confirmed_deliv
 Order by po_no, then line_no.
 The RF generator lines in this list are the ones behind the at-risk Etch orders in lesson 9.
 Other late lines in this list are not that shortage.
+
+**Reflect after Check (not graded)**
+
+Separate the RF generator lines from other late items.
+Trace demand and available supply before saying which customer orders are affected.
 """
 hints = [
   "An open Corvane line is late when the confirmed date is at least 56 days after the requested date.",

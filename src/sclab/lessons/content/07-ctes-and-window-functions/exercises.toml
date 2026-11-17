@@ -2,12 +2,27 @@
 id = "cte-open-qty-above-avg"
 title = "Materials above the average open quantity"
 prompt_md = """
+**Situation**
+
+Purchasing wants to screen for materials carrying unusually large outstanding purchase quantities.
+
+**Business question**
+
+Which material totals are above the average of the outstanding material totals?
+
+**SQL task**
+
 Find materials whose open purchase quantity is above the average open quantity.
 An open line has order_date on or before 1 November 2026, and order_qty greater than the sum of its goods receipts.
 A material's open quantity is the sum of those remaining quantities.
 Compare that material total with the average of the material totals, using a subquery in WHERE.
 Return material_no, description, and open_qty.
 Order by open_qty descending, then material_no.
+
+**Reflect after Check (not graded)**
+
+Use the result to choose records for review, not to conclude that they are overordered.
+Different materials can have different units and demand patterns.
 """
 hints = [
   "Subtract receipts from order quantity at the purchase line, then sum by material.",
@@ -105,6 +120,16 @@ excel_tip = "Name the remaining-quantity pivot once, then filter it with AVERAGE
 id = "cte-supplier-on-time-rank"
 title = "Rank suppliers by on-time rate"
 prompt_md = """
+**Situation**
+
+The supplier-review team needs a consistent ranking based on recent receipt performance.
+
+**Business question**
+
+How do suppliers with sufficient receipt history rank by on-time rate?
+
+**SQL task**
+
 Rank suppliers by on-time receipt rate over the last 12 months.
 The window is receipt_date from 1 November 2025 up to, and not including, 1 November 2026.
 A receipt is on time when receipt_date is on or before confirmed_delivery_date.
@@ -114,6 +139,11 @@ Keep suppliers with at least 20 receipts in the window.
 Use RANK(), so a tie shares a rank and the next rank skips.
 Return supplier_no, supplier_name, receipts, on_time_pct, and rank_no.
 Order by rank_no, then supplier_no.
+
+**Reflect after Check (not graded)**
+
+Check the receipt counts and shared ranks before selecting suppliers for follow-up.
+A rank is a comparison within this population, not a complete measure of supplier quality.
 """
 hints = [
   "Count receipts and the on-time share by supplier, then keep groups of at least 20.",
@@ -161,6 +191,16 @@ excel_tip = "A pivot of on-time receipts by supplier, then the RANK of that rate
 id = "cte-latest-receipt"
 title = "Latest receipt on each October order line"
 prompt_md = """
+**Situation**
+
+A buyer needs the latest receiving event for purchase lines placed in October.
+
+**Business question**
+
+What is the most recent receipt on each qualifying line?
+
+**SQL task**
+
 For each purchase order line placed in October 2026, keep the latest goods receipt.
 October is order_date from 1 October 2026 through 31 October 2026.
 Latest means the greatest receipt_date.
@@ -169,6 +209,11 @@ Number the receipts with ROW_NUMBER() inside a CTE, then keep row 1 in an outer 
 Return po_no, line_no, gr_no, receipt_date, and qty.
 Order by po_no, then line_no.
 Lines with no receipt are left out.
+
+**Reflect after Check (not graded)**
+
+The latest event helps describe recent activity but does not show total quantity received.
+Sum all receipts separately before deciding whether a line is complete.
 """
 hints = [
   "The October filter is on the purchase order date, not the receipt date.",
@@ -207,6 +252,16 @@ excel_tip = "Sort receipts newest first inside each order line, then keep the fi
 id = "cte-rf-running-total"
 title = "Running total of RF generator receipts"
 prompt_md = """
+**Situation**
+
+An RF planner wants to explain how received generator quantity accumulated through 2026.
+
+**Business question**
+
+How much arrived each month, and what is the cumulative received quantity?
+
+**SQL task**
+
 Build a running total of goods-receipt quantity for RF generators in 2026.
 Keep materials whose description starts with RF generator, (the comma matters, so the spare kit is out).
 The receipt dates run from 1 January 2026 up to, and not including, 1 November 2026.
@@ -216,6 +271,11 @@ month_qty is the receipt quantity in the month.
 running_qty is SUM(month_qty) OVER (ORDER BY month).
 Return month, month_qty, and running_qty.
 Order by month.
+
+**Reflect after Check (not graded)**
+
+Distinguish the monthly quantity from the cumulative total.
+Receipts alone are not stock on hand because consumption and other movements also affect inventory.
 """
 hints = [
   "Group receipt quantity to one row per month before the window, or each receipt becomes its own step.",
@@ -252,6 +312,16 @@ excel_tip = "A monthly sum, then a running total down that month column."
 id = "cte-tool-order-change"
 title = "Month-over-month change in tool orders"
 prompt_md = """
+**Situation**
+
+Sales operations wants to identify months when tool bookings changed sharply.
+
+**Business question**
+
+How did booked tool quantity change from the previous month?
+
+**SQL task**
+
 Show the month-over-month change in tool sales-order quantity for 2025 and 2026.
 A tool has material_type TOOL.
 Include cancelled lines.
@@ -265,6 +335,11 @@ qty_change is order_qty minus the previous month's order_qty, using LAG().
 The first month's change is NULL.
 Return month, order_qty, and qty_change.
 Order by month.
+
+**Reflect after Check (not graded)**
+
+Choose a change worth investigating and explain the comparison.
+The first month has no prior month in the result, and cancelled bookings remain included.
 """
 hints = [
   "Sum tool sales quantity by order month first.",
@@ -299,6 +374,16 @@ excel_tip = "A monthly sum of tool order quantity, then this month minus the cel
 id = "cte-customer-share"
 title = "Each customer's share of open tool quantity"
 prompt_md = """
+**Situation**
+
+The account team wants to understand how open tool demand is concentrated across customers.
+
+**Business question**
+
+What share of open tool quantity belongs to each customer?
+
+**SQL task**
+
 For each customer, show that customer's share of total open tool quantity.
 Open means status = 'Open'.
 A tool has material_type TOOL.
@@ -307,6 +392,11 @@ share_pct is 100 times open_qty divided by the total open quantity, rounded to 1
 Use SUM(open_qty) OVER () for that total.
 Return customer_no, customer_name, open_qty, and share_pct.
 Order by share_pct descending, then customer_no.
+
+**Reflect after Check (not graded)**
+
+Use the shares to identify large demand contributors.
+Quantity share is not revenue share or proof that a customer has the most urgent delivery risk.
 """
 hints = [
   "Sum open tool quantity by customer before you take the share.",
@@ -343,6 +433,16 @@ excel_tip = "Quantity divided by the total of the quantity column, shown as a pe
 id = "cte-top-suppliers-by-country"
 title = "Top 3 suppliers by spend in each country"
 prompt_md = """
+**Situation**
+
+Regional purchasing leads want a short list of their largest suppliers by purchase-order value.
+
+**Business question**
+
+Who are the top three suppliers by calculated spend within each country?
+
+**SQL task**
+
 List the top 3 suppliers by spend in each supplier country.
 Spend is the sum of order_qty times net_price, rounded to 2 decimals.
 Use purchase orders placed from 1 November 2025 up to, and not including, 1 November 2026.
@@ -351,6 +451,11 @@ When spend ties, the lower supplier_no comes first.
 Keep rank 1, 2, and 3 in an outer query.
 Return country, supplier_no, supplier_name, spend, and rank_no.
 Order by country, then rank_no.
+
+**Reflect after Check (not graded)**
+
+Use the ranking to prepare regional reviews.
+The metric is order quantity times price in the selected period, not a statement of cash paid or supplier profitability.
 """
 hints = [
   "Sum spend by supplier, and take the country from the supplier.",

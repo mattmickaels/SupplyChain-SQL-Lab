@@ -3,6 +3,14 @@ title = "Dates and time"
 summary = "Measure gaps between dates, then group those dates into weeks, months, and quarters."
 +++
 
+## Business brief
+
+Purchasing and sales operations need to understand when activity happened and whether promises were met.
+Build review lists and trends with explicit date windows.
+Explain which date you measured and whether the period is complete before recommending follow-up.
+
+## SQL skills
+
 A date column is a day on the calendar, not text.
 Subtracting two dates, or adding a number of days, is how you measure a promise against what happened.
 In Excel this is the same job as subtracting two date cells, or using WEEKNUM and EOMONTH to bucket them.

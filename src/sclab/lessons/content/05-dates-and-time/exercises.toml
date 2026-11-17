@@ -2,12 +2,27 @@
 id = "dates-october-late-receipts"
 title = "October receipts that arrived late"
 prompt_md = """
+**Situation**
+
+Receiving and purchasing are reviewing delivery exceptions from October.
+
+**Business question**
+
+Which receipt events arrived after their confirmed dates, and by how many days?
+
+**SQL task**
+
 List goods receipts in October 2026 that arrived after the confirmed date.
 October is receipt_date from 1 October 2026 through 31 October 2026.
 A receipt on the confirmed date is not late.
 Return po_no, line_no, receipt_date, confirmed_delivery_date, and days_late.
 days_late is the number of days from confirmed_delivery_date to receipt_date.
 Order by days_late descending, then po_no, then line_no.
+
+**Reflect after Check (not graded)**
+
+Use the largest delays to choose examples for investigation.
+A late receipt event is not automatically a late whole order or proof of customer impact.
 """
 hints = [
   "Late means the receipt date is after the confirmed date.",
@@ -35,12 +50,27 @@ databricks_note = "Write `datediff(DAY, i.confirmed_delivery_date, g.receipt_dat
 id = "dates-late-rate-by-year"
 title = "Late receipt rate by year"
 prompt_md = """
+**Situation**
+
+The purchasing manager wants a historical view of receipt lateness.
+
+**Business question**
+
+How does the late receipt rate vary by year?
+
+**SQL task**
+
 For each year from 2022 through 2026, show the late receipt rate.
 Use receipt_date from 1 January 2022 up to but not including 1 January 2027.
 A receipt is late when receipt_date is after confirmed_delivery_date.
 Return receipt_year, receipt_count, late_count, and late_pct.
 late_pct is 100 times late_count divided by receipt_count, rounded to 1 decimal.
 Order by receipt_year.
+
+**Reflect after Check (not graded)**
+
+Compare rates alongside receipt counts.
+The 2026 data ends in October, so avoid describing it as a full-year result or treating a rate change alone as proof of a cause.
 """
 hints = [
   "Group the receipts by year, then divide the late ones by the total.",
@@ -73,6 +103,16 @@ excel_tip = "This is a pivot of receipts by year, with a count of late rows divi
 id = "dates-actual-vs-quoted-lead-time"
 title = "Actual lead time versus the quote"
 prompt_md = """
+**Situation**
+
+Planning suspects some supplier lead-time assumptions may differ from recent delivery experience.
+
+**Business question**
+
+How do average actual first-receipt lead times compare with quoted lead times?
+
+**SQL task**
+
 Compare actual lead time with the supplier's quoted lead time.
 The last 12 months are receipt_date from 1 November 2025 up to but not including 1 November 2026.
 Keep a supplier only when that supplier has at least 20 goods receipts in that window.
@@ -83,6 +123,11 @@ Average both numbers per supplier and round each average to 1 decimal.
 The quoted average skips blank quotes and still includes a quote of 0.
 Return supplier_no, avg_actual_lead_time_days, avg_quoted_lead_time_days, and receipt_count.
 Order by supplier_no.
+
+**Reflect after Check (not graded)**
+
+Look for suppliers whose averages differ enough to investigate.
+Check the material mix, missing quotes, and receipt population before recommending a new planning lead time.
 """
 hints = [
   "Take the earliest receipt on each line, then average those day counts by supplier.",
@@ -134,6 +179,16 @@ databricks_note = "Write `datediff(DAY, h.order_date, MIN(g.receipt_date))` or `
 id = "dates-lines-booked-by-month"
 title = "Sales lines booked by month in 2025"
 prompt_md = """
+**Situation**
+
+Sales operations is reviewing how order-entry workload varied through 2025.
+
+**Business question**
+
+How many sales lines were booked in each month?
+
+**SQL task**
+
 Count sales order lines booked in each month of 2025.
 A line is booked on sales_order.order_date, not on the requested date.
 Keep order_date from 1 January 2025 up to but not including 1 January 2026.
@@ -143,6 +198,11 @@ A line is booked on the order date even when status is later Cancelled.
 Return booked_month and line_count.
 booked_month is date_trunc('month', order_date).
 Order by booked_month.
+
+**Reflect after Check (not graded)**
+
+Describe the pattern in line counts, not units or revenue.
+Cancelled lines remain in this booking history; check cancellations separately when assessing current demand.
 """
 hints = [
   "The booking month comes from the sales order header.",
@@ -169,6 +229,16 @@ excel_tip = "Group the order date with EOMONTH or the first of the month, then c
 id = "dates-open-po-lines-by-week"
 title = "Open purchase lines due in the next 8 weeks"
 prompt_md = """
+**Situation**
+
+The receiving team wants a view of confirmed incoming purchase-line workload for the next eight weeks.
+
+**Business question**
+
+How many outstanding purchase lines fall into each delivery week?
+
+**SQL task**
+
 Count open purchase order lines by the week of the confirmed delivery date.
 A line is open when received quantity is below order_qty.
 A line with no goods receipt has received quantity 0.
@@ -184,6 +254,11 @@ A past-due open line is still short of order_qty and has confirmed_delivery_date
 That bucket has 1726 lines.
 Return week_start and open_line_count.
 Order by week_start.
+
+**Reflect after Check (not graded)**
+
+Identify busy weeks, then assess quantities and handling requirements separately.
+Review the excluded overdue lines in a separate queue rather than assuming they disappeared.
 """
 hints = [
   "Add the receipts up first, then keep lines that are still short and due in the next 56 days.",
@@ -215,6 +290,16 @@ excel_tip = "Sum the receipts with SUMIF, keep lines still short of the order qu
 id = "dates-quiet-tool-customers"
 title = "Customers with no recent tool order"
 prompt_md = """
+**Situation**
+
+Account managers want to check in with customers that have not placed a recent tool order.
+
+**Business question**
+
+Which customers last ordered a tool more than 90 days before the snapshot?
+
+**SQL task**
+
 Find customers whose most recent tool order is more than 90 days before 1 November 2026.
 A tool order is a sales order line whose material has material_type = 'TOOL'.
 Use one row per customer, not per product family.
@@ -226,6 +311,11 @@ Return customer_no, name, and last_tool_order_date.
 name is customer.name.
 last_tool_order_date is the latest sales_order.order_date among that customer's tool lines.
 Order by last_tool_order_date, then customer_no.
+
+**Reflect after Check (not graded)**
+
+Use the result as an outreach list.
+Check the customer's buying cycle and account history before interpreting a quiet period as lost business.
 """
 hints = [
   "Take the latest tool order once per customer.",
@@ -255,6 +345,16 @@ excel_tip = "Take the latest tool order date per customer with MAXIFS, then keep
 id = "dates-corvane-on-time-by-quarter"
 title = "Corvane on-time rate by quarter"
 prompt_md = """
+**Situation**
+
+Purchasing needs delivery-history evidence for a performance discussion with Corvane.
+
+**Business question**
+
+How has Corvane's on-time receipt rate changed by quarter?
+
+**SQL task**
+
 Show Corvane RF Systems on-time rate by quarter for 2025 and 2026.
 Corvane is supplier V-10017.
 Use receipt_date from 1 January 2025 up to but not including 1 January 2027.
@@ -263,6 +363,11 @@ Return receipt_year, receipt_quarter, receipt_count, and on_time_pct.
 on_time_pct is 100 times the on-time receipts divided by receipt_count, rounded to 1 decimal.
 Order by receipt_year, then receipt_quarter.
 The fourth quarter of 2026 only contains receipts through the end of October 2026.
+
+**Reflect after Check (not graded)**
+
+Describe the pattern alongside the receipt counts.
+The last quarter contains October only; investigate the underlying receipts before explaining why performance changed.
 """
 hints = [
   "On time includes a receipt that lands on the confirmed date.",

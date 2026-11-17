@@ -105,10 +105,25 @@ excel_tip = "This is like comparing a row count with the count of unique values 
 id = "corvane-po-lines"
 title = "Lines on one Corvane order"
 prompt_md = """
+**Situation**
+
+A buyer is checking a Corvane order before calling the supplier.
+
+**Business question**
+
+What materials and quantities are on purchase order PO-0006693?
+
+**SQL task**
+
 Purchase order PO-0006693 was sent to Corvane RF Systems, supplier V-10017.
 Show po_no, line_no, material_no, and order_qty for every line on that order.
 po_no alone is not the key, because one order has several lines.
 po_no plus line_no is the key, because that pair identifies exactly one line.
+
+**Reflect after Check (not graded)**
+
+Use the order and line number together when discussing an item with the supplier.
+Ordered quantity alone does not tell you what is still due; receipts would be the next thing to check.
 """
 hints = [
   "Several lines can share one purchase order number, so filter to the named order.",

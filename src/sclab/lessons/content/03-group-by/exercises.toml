@@ -27,11 +27,26 @@ excel_tip = "This is a pivot with material type on the rows and a count of mater
 id = "group-open-qty-by-material"
 title = "Open quantity by material"
 prompt_md = """
+**Situation**
+
+Sales operations needs a demand summary without reading every open order line.
+
+**Business question**
+
+How much open sales quantity is recorded for each material?
+
+**SQL task**
+
 Add up the open sales order quantity for each material_no.
 Use sales_order_item only, and keep lines whose status is Open.
 Return material_no and total_qty, the sum of qty.
 Order by total_qty descending, then material_no.
 Some materials share the same total, so the material number has to break the tie.
+
+**Reflect after Check (not graded)**
+
+Look at which materials have the largest totals.
+Compare like materials and units, and check stock and supply separately before calling those totals shortages.
 """
 hints = [
   "Add up open line quantity once per material.",
@@ -81,10 +96,25 @@ excel_tip = "Pivot the supplier sheet with country on the rows and a count in th
 id = "group-avg-quoted-lead-time"
 title = "Average quoted lead time"
 prompt_md = """
+**Situation**
+
+A sourcing analyst is preparing a first comparison of suppliers' quoted lead times.
+
+**Business question**
+
+What is the average quoted lead time for each supplier?
+
+**SQL task**
+
 For each supplier_no on material_supplier, average quoted_lead_time_days.
 Round the average to 1 decimal place.
 Return supplier_no and avg_lead_time_days.
 Order by supplier_no.
+
+**Reflect after Check (not graded)**
+
+The average reflects that supplier's mix of quoted materials.
+Review the underlying parts and missing or zero quotes before interpreting differences as supplier performance.
 """
 hints = [
   "Average the quoted lead time once per supplier, then keep one decimal place.",
@@ -107,10 +137,25 @@ excel_tip = "This is a pivot of quoted lead time by supplier, with the value set
 id = "group-materials-many-suppliers"
 title = "Materials with more than one supplier"
 prompt_md = """
+**Situation**
+
+Purchasing wants to find materials that may offer alternative sources.
+
+**Business question**
+
+Which materials have more than one supplier listed?
+
+**SQL task**
+
 Find materials on material_supplier that have more than one supplier.
 Return material_no and supplier_count.
 Order by material_no.
 The cutoff belongs in HAVING, because it tests the group.
+
+**Reflect after Check (not graded)**
+
+Identify candidates for a sourcing discussion.
+Multiple supplier records do not prove that each source is qualified, available, or able to meet the required date.
 """
 hints = [
   "Keep materials whose supplier list has more than one row.",
@@ -134,12 +179,27 @@ excel_tip = "Pivot suppliers by material, then filter the pivot to counts greate
 id = "group-lines-by-order-year"
 title = "Sales lines by requested year"
 prompt_md = """
+**Situation**
+
+Sales operations is summarizing order-line workload by requested delivery year.
+
+**Business question**
+
+How many sales lines have requested dates in each year from 2022 through 2026?
+
+**SQL task**
+
 Count sales order lines by the year of requested_date.
 Keep years 2022 through 2026.
 Return requested_year and line_count.
 Order by requested_year.
 Requested dates also fall in 2021, and the open backlog reaches into 2027.
 Leave both of those years out of this count.
+
+**Reflect after Check (not graded)**
+
+Describe the result as line counts by requested year.
+It is not booked revenue or shipped quantity, and the snapshot does not contain a complete calendar year of 2026 activity.
 """
 hints = [
   "The year of requested_date is the group, and 2021 and 2027 stay out.",
@@ -164,6 +224,16 @@ excel_tip = "Add a year column from the requested date, then pivot a count of li
 id = "group-null-lead-time"
 title = "Missing and filled lead times"
 prompt_md = """
+**Situation**
+
+The master-data team needs to decide which plant's lead-time records to review first.
+
+**Business question**
+
+How many planned lead-time fields are missing or filled at each plant?
+
+**SQL task**
+
 On material_plant, count missing and filled planned_lead_time_days for each plant_code.
 missing_lead_time is the rows where that column is NULL.
 filled_lead_time is the rows where it has a value.
@@ -171,6 +241,11 @@ Return plant_code, missing_lead_time, and filled_lead_time.
 Order by plant_code.
 count(planned_lead_time_days) skips NULL.
 count(*) does not.
+
+**Reflect after Check (not graded)**
+
+Compare missing counts with each plant's total records.
+A filled value can still be zero or incorrect, so missingness is only the first data-quality check.
 """
 hints = [
   "COUNT of the lead time column skips NULL, and COUNT(*) does not.",

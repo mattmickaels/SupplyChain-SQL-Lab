@@ -3,6 +3,14 @@ title = "BOM explosion"
 summary = "Walk a four-level bill of materials down and back up, and stop the walk with a depth guard."
 +++
 
+## Business brief
+
+A concern about an RF component needs to be traced through Kestrel's product structure.
+First practice the mechanics of walking a bill of materials and multiplying quantities.
+Then use those techniques to identify dependent tools and estimate gross component requirements for open tool orders.
+
+## SQL skills
+
 This lesson is optional and advanced.
 A bill of materials lists what goes into a parent.
 The lab's bill has four levels: tool, module, subassembly, and component.

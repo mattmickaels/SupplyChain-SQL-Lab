@@ -3,6 +3,14 @@ title = "Joins"
 summary = "Look up a matching row from another table, and do not let one match become many."
 +++
 
+## Business brief
+
+You are assembling reports for buyers, account teams, and production planners.
+The facts are spread across headers, lines, suppliers, customers, and materials.
+Your job is to connect them without losing records or multiplying quantities.
+
+## SQL skills
+
 An inner join keeps rows that match in both tables.
 Like VLOOKUP, a join can look up a name from a code.
 Unlike VLOOKUP, an inner join drops unmatched rows and returns every matching pair, not just the first match.

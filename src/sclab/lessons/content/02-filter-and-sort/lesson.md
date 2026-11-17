@@ -3,6 +3,14 @@ title = "Filter and sort"
 summary = "WHERE keeps the rows you want, and ORDER BY puts those rows in an order you can explain."
 +++
 
+## Business brief
+
+You are helping purchasing and customer service turn large lists into focused review queues.
+Use filters to select the right records and sorting to make follow-up easier.
+For each business question, distinguish a useful screening list from a conclusion about delivery risk.
+
+## SQL skills
+
 WHERE throws away rows that fail a test.
 ORDER BY sorts the rows that remain.
 Write the lab's today as DATE '2026-11-01'.

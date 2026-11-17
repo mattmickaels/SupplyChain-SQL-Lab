@@ -3,6 +3,14 @@ title = "Subqueries, CTEs and window functions"
 summary = "Filter with a query, name each step, and calculate across rows without collapsing them."
 +++
 
+## Business brief
+
+You are preparing supplier and demand comparisons for an operations review.
+Some answers need an intermediate summary, a ranking, or a running total.
+The CTE rewrite is technical practice; the surrounding business questions ask what the results do and do not tell the team.
+
+## SQL skills
+
 A subquery is a query inside another query.
 Excel does the same thing when a condition uses AVERAGE of a range.
 

@@ -124,6 +124,16 @@ excel_tip = "Multiply the quantity-per down the tree, the way a multi-level BOM 
 id = "bom-long-lead-count"
 title = "Long-lead components in each tool"
 prompt_md = """
+**Situation**
+
+Engineering and planning want to compare tools by the number of distinct long-lead components in their BOMs.
+
+**Business question**
+
+Which tools depend on the most distinct long-lead components?
+
+**SQL task**
+
 Count the distinct long-lead components in each tool's full bill of materials.
 A tool has material_type TOOL.
 A long-lead component has material_type COMPONENT and is_long_lead = true.
@@ -132,6 +142,11 @@ Include tools whose count is zero.
 Guard every recursive term with level < 10.
 Return tool_material_no, description, and long_lead_count.
 Order by long_lead_count descending, then tool_material_no.
+
+**Reflect after Check (not graded)**
+
+Use the count to prioritize a deeper BOM review.
+It does not measure shortage severity, required quantities, or how long each component takes to obtain.
 """
 hints = [
   "Explode every tool, keep component rows that are long-lead, then count distinct materials per tool.",
@@ -178,6 +193,16 @@ excel_tip = "Explode each tool to its components, keep the long-lead ones, and c
 id = "bom-where-used"
 title = "Tools that use one RF generator"
 prompt_md = """
+**Situation**
+
+A buyer reports a concern with RF generator M-001324, and engineering needs to trace its product dependencies.
+
+**Business question**
+
+Which finished tools contain that exact generator at any BOM level?
+
+**SQL task**
+
 List every tool that contains RF generator M-001324 at any depth.
 Walk from that component up through parent_material_no.
 Guard the recursive term with level < 10.
@@ -185,6 +210,11 @@ Keep rows whose material_type is TOOL.
 Return material_no and description.
 Order by material_no.
 A different RF generator, with another frequency or power, is not this part.
+
+**Reflect after Check (not graded)**
+
+Use the tool list to identify where to investigate demand.
+BOM membership alone does not prove that any open order is late or short of parts.
 """
 hints = [
   "Start from bom_item rows whose component is M-001324, then keep joining parents.",
@@ -218,6 +248,16 @@ excel_tip = "Start from the component and follow parent links until you reach a 
 id = "bom-rf-for-open-orders"
 title = "RF generators for open tool orders"
 prompt_md = """
+**Situation**
+
+The RF planner needs a parts-demand view of the open tool order book.
+
+**Business question**
+
+How many of each RF generator would the open tool lines require?
+
+**SQL task**
+
 How many of each RF generator are needed for all open tool sales orders?
 A tool sales line has status = 'Open' and the ordered material has material_type TOOL.
 An RF generator has material_type COMPONENT and description starting with RF generator,.
@@ -227,6 +267,11 @@ COUNT(*) of those lines is not the required quantity.
 Guard the recursive term with level < 10.
 Return material_no, description, and required_qty.
 Order by material_no.
+
+**Reflect after Check (not graded)**
+
+Treat the totals as gross component requirements for these sales lines.
+Check timing, stock, and scheduled supply separately before recommending purchases.
 """
 hints = [
   "Sum the extended quantity of each RF generator on a tool before you multiply by the order quantity.",

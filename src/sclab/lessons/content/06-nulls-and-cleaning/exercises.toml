@@ -2,6 +2,16 @@
 id = "clean-duplicate-materials"
 title = "Materials that match after trim"
 prompt_md = """
+**Situation**
+
+A master-data analyst has noticed near-identical material descriptions in search results.
+
+**Business question**
+
+Which material records need review because their descriptions match after trimming spaces?
+
+**SQL task**
+
 List candidate materials whose descriptions match once spaces at the ends are removed.
 A match is a candidate, not proof that two material numbers are the same part.
 Materials with different variant numbers are different parts, like the gas box variants.
@@ -12,6 +22,11 @@ Return material_no, description, and trimmed_description.
 trimmed_description is TRIM(description).
 Keep the stored description, including any trailing space.
 Order by trimmed_description, then material_no.
+
+**Reflect after Check (not graded)**
+
+The result is a candidate-review queue, not permission to merge parts.
+Verify specifications and identifiers before recommending any cleanup.
 """
 hints = [
   "Trim the description before you decide which rows share text.",
@@ -41,12 +56,27 @@ excel_tip = "Use TRIM on the description, then a pivot that keeps descriptions w
 id = "clean-lead-time-counts"
 title = "Null, zero, and valid lead times"
 prompt_md = """
+**Situation**
+
+Planning needs to distinguish unknown lead times from explicit zero values before reviewing its assumptions.
+
+**Business question**
+
+How many NULL, zero, and positive planned lead times does each plant hold?
+
+**SQL task**
+
 Count planned lead times that are NULL, 0, and valid, for each plant.
 Valid means planned_lead_time_days is greater than 0.
 Return one row per plant_code.
 Return plant_code, null_count, zero_count, and valid_count.
 Use CASE inside SUM so the three counts come from one pass.
 Order by plant_code.
+
+**Reflect after Check (not graded)**
+
+Keep missing values and zeros separate when describing the findings.
+Ask the data owner what zero means before replacing it or using it as an immediate-availability assumption.
 """
 hints = [
   "NULL and 0 are different, so count them with separate tests.",
@@ -169,6 +199,16 @@ excel_tip = "Count the country as stored, then count TRIM(country), and put the 
 id = "clean-fill-lead-time"
 title = "Fill a missing lead time from the primary quote"
 prompt_md = """
+**Situation**
+
+A planner wants a review report showing a possible fallback when the planned lead time is missing.
+
+**Business question**
+
+What would the lead time be if a missing value used the primary supplier quote?
+
+**SQL task**
+
 Fill a missing planned lead time from the primary supplier quote.
 Keep rows where planned_lead_time_days IS NULL.
 The quote comes from material_supplier where is_primary is true.
@@ -179,6 +219,11 @@ Keep the row when the quote is missing or 0.
 A missing quote leaves filled_lead_time_days NULL.
 A quote of 0 fills the planned lead time with 0.
 Order by material_no, then plant_code.
+
+**Reflect after Check (not graded)**
+
+Check which rows remain NULL or become zero.
+This SELECT produces a proposed value for review; it does not update master data or prove that the quote is a suitable planning value.
 """
 hints = [
   "COALESCE replaces NULL only, so a quote of 0 is copied and a missing quote stays blank.",

@@ -3,6 +3,15 @@ title = "Planning analytics"
 summary = "Reconcile demand, material supply and build capacity, then test what a supplier delay does to customer orders."
 +++
 
+## Business brief
+
+You are preparing Kestrel's sales and operations planning review at the 1 November 2026 snapshot.
+The team needs a connected view of demand, RF supply, and build capacity, plus a what-if for another Corvane delay.
+Build the evidence in stages and separate model assumptions from confirmed operational facts.
+The spare-plant convention is a technical modeling step within this workflow.
+
+## SQL skills
+
 Planning answers three questions.
 What do customers want, and when?
 Can supply deliver it?

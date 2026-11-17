@@ -2,6 +2,13 @@
 id = "drill-late-suppliers"
 title = "Who drives late receipts?"
 prompt_md = """
+**Situation**
+
+You are briefing purchasing on where to focus its late-delivery recovery effort.
+Use the executive-summary task to explain the result and recommend a next action.
+
+**Business question and SQL task**
+
 Which suppliers drove late receipt events in the last 12 months, and how concentrated is it?
 Use receipt_date from DATE '2025-11-01' inclusive to DATE '2026-11-01' exclusive.
 A receipt event is late when receipt_date > confirmed_delivery_date; omit NULL confirmations and count each goods_receipt event once, not PO lines or units.
@@ -45,6 +52,13 @@ summary_checklist = ["Names the number that matters", "States the date window an
 id = "drill-halcyon-demand"
 title = "Is Halcyon demand real?"
 prompt_md = """
+**Situation**
+
+Sales has raised a question about Halcyon's Etch demand, and planning needs evidence before adjusting its assumptions.
+Use the executive-summary task to explain the result and recommend a next action.
+
+**Business question and SQL task**
+
 Assess whether Halcyon Memory's Etch increase is backed by real bookings, and separately report the forward Etch forecast change.
 Return one row: booked_2025, booked_2026, booking_growth_pct, forecast_09, forecast_10, forecast_growth_pct.
 Include cancelled lines.
@@ -99,6 +113,13 @@ summary_checklist = ["Names the number that matters", "States the date window an
 id = "drill-bay-bottleneck"
 title = "Which bay is the bottleneck?"
 prompt_md = """
+**Situation**
+
+The factory manager needs a recommendation about which bay requires attention and whether compatible capacity could help.
+Use the executive-summary task to explain the result and recommend a next action.
+
+**Business question and SQL task**
+
 For this drill, next quarter means the planning quarter DATE '2026-12-01' inclusive through DATE '2027-03-01' exclusive.
 Use the weekly start-slot method from lesson 9, including all 13 ISO weeks from DATE '2026-11-30' through DATE '2027-02-22', zero-load bay-weeks and full slots in boundary weeks.
 Return one row per bay: bay_id, total_starts, total_slots (weekly_slots times all 13 calendar weeks), excess_starts (sum of positive weekly starts minus slots), load_pct (100 times total starts / total slots, rounded to 2 decimals).
@@ -157,6 +178,13 @@ summary_checklist = ["Names the number that matters", "States the date window an
 id = "drill-spare-otd"
 title = "Spare-part delivery by segment"
 prompt_md = """
+**Situation**
+
+The service manager wants to know which customer segment should receive the first spare-delivery performance review.
+Use the executive-summary task to explain the result and recommend a next action.
+
+**Business question and SQL task**
+
 Measure spare-part on-time delivery by customer segment for shipped COMPONENT sales lines with shipped_date from DATE '2025-11-01' inclusive to DATE '2026-11-01' exclusive.
 Include only status Shipped and non-NULL promised_date and shipped_date.
 Return segment, shipped_lines, on_time_lines, on_time_pct (100 times on-time lines / shipped lines, rounded to 2 decimals), sorted by segment.
@@ -194,6 +222,13 @@ summary_checklist = ["Names the number that matters", "States the date window an
 id = "drill-excess-inventory"
 title = "Where is idle inventory value?"
 prompt_md = """
+**Situation**
+
+Finance and inventory control are reviewing potentially idle stock before considering disposition options.
+Use the executive-summary task to explain the result and recommend a next action.
+
+**Business question and SQL task**
+
 Find the 10 materials with the highest positive on-hand value at DATE '2026-11-01' and no usage in the last 12 months.
 Aggregate inventory over all plants and storage locations before pricing at material_supplier.unit_price for is_primary = true.
 No usage means no stock_movement of type 261 or 601 with posting_date from DATE '2025-11-01' inclusive to DATE '2026-11-01' exclusive; receipts and opening stock are not usage.
@@ -237,6 +272,13 @@ summary_checklist = ["Names the number that matters", "States the date window an
 id = "drill-single-source"
 title = "Single-source dependency exposure"
 prompt_md = """
+**Situation**
+
+Sourcing needs a defensible explanation of open-order dependency on single-source, long-lead components.
+Use the executive-summary task to explain the result and recommend a next action.
+
+**Business question and SQL task**
+
 Find long-lead COMPONENT materials with exactly one supplier quote and demand from open TOOL sales lines as of DATE '2026-11-01'.
 Explode each tool's BOM through all paths with a level < 10 guard, multiplying quantities and summing repeated component paths.
 Include open sales lines booked on or before the snapshot, regardless of promised date; no production-order join is needed.

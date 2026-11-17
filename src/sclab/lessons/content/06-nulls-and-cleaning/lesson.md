@@ -3,6 +3,14 @@ title = "NULLs and cleaning"
 summary = "Find the blank, the zero, and the near-duplicate before you trust an average."
 +++
 
+## Business brief
+
+Planning has asked the master-data team to review missing lead times and suspiciously similar records.
+The business exercises produce review reports, not automatic master-data changes.
+The trimming, counting, and averaging drills focus directly on how SQL treats imperfect data.
+
+## SQL skills
+
 NULL means the value was never filled in.
 It is not zero, and it does not equal a blank string.
 A comparison with NULL is unknown, so WHERE planned_lead_time_days = NULL keeps nothing.

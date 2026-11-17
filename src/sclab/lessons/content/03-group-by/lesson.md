@@ -3,6 +3,14 @@ title = "Group by and having"
 summary = "Turn detail rows into one row per group, the way a pivot table does."
 +++
 
+## Business brief
+
+Operations needs summaries it can review without reading every line.
+The business exercises ask you to summarize demand, supplier quotes, and missing planning data.
+Keep the meaning of each count or total clear; the basic grouping drills focus on the SQL technique itself.
+
+## SQL skills
+
 GROUP BY collapses many rows into one row per group.
 You then count, sum, or average inside that group.
 A pivot table in Excel does the same job.
